@@ -24,6 +24,7 @@ import { Button } from '../components/ui/Button'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
 import { Checkbox } from '../components/ui/Checkbox'
 import { Input } from '../components/ui/Input'
+import { Modal } from '../components/ui/Modal'
 import { Select } from '../components/ui/Select'
 import { Spinner } from '../components/ui/Spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeadCell, TableRow } from '../components/ui/Table'
@@ -63,6 +64,17 @@ function jobStatusBadge(status: string): JSX.Element {
 
 function isActiveStatus(status: string): boolean {
   return status === 'queued' || status === 'running'
+}
+
+function isDateInput(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value)
+}
+
+function jobErrors(job: CfdiJob): string[] {
+  const s = job.status
+  if (s.status === 'done') return s.errors
+  if (s.status === 'failed') return [s.error]
+  return []
 }
 
 /** KPIs + monthly emitidos/recibidos series, ported from `cfdi_charts` in
@@ -117,6 +129,7 @@ export default function Cfdi(): JSX.Element {
   const [downloadType, setDownloadType] = createSignal<CfdiDownloadType>('both')
   const [autoPay, setAutoPay] = createSignal(false)
   const [dlError, setDlError] = createSignal<string | null>(null)
+  const [errorDetail, setErrorDetail] = createSignal<{ title: string; errors: string[] } | null>(null)
 
   // Auto-select the first SAT config once configs load — mirrors the Leptos
   // `if let Some(first) = list.first() { sat_config.set(first.id) }`.
@@ -168,6 +181,14 @@ export default function Cfdi(): JSX.Element {
     ev.preventDefault()
     if (satConfigId() === '') {
       setDlError('Selecciona una configuración SAT')
+      return
+    }
+    if (!isDateInput(start()) || !isDateInput(end())) {
+      setDlError('Las fechas deben tener formato YYYY-MM-DD')
+      return
+    }
+    if (start() > end()) {
+      setDlError('Desde no puede ser mayor que Hasta')
       return
     }
     setDlError(null)
@@ -267,8 +288,7 @@ export default function Cfdi(): JSX.Element {
                   <TableBody>
                     {(jobsQuery.data ?? []).map((j) => {
                       const s = j.status
-                      const errors = s.status === 'done' ? s.errors : s.status === 'failed' ? [s.error] : []
-                      const errTitle = errors.join('\n')
+                      const errors = jobErrors(j)
                       return (
                         <TableRow>
                           <TableCell>{j.label ?? j.chunk_start ?? ''}</TableCell>
@@ -278,7 +298,24 @@ export default function Cfdi(): JSX.Element {
                           <TableCell>{s.status === 'done' ? s.transactions_updated : 0}</TableCell>
                           <TableCell>{s.status === 'done' ? s.transactions_skipped : 0}</TableCell>
                           <TableCell>
-                            <span title={errTitle}>{errors.length}</span>
+                            <Show
+                              when={errors.length > 0}
+                              fallback={<span class="text-muted-foreground">0</span>}
+                            >
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                class="h-7 px-2 text-destructive hover:text-destructive"
+                                onClick={() =>
+                                  setErrorDetail({
+                                    title: `Errores ${j.label ?? j.chunk_start ?? ''}`,
+                                    errors,
+                                  })
+                                }
+                              >
+                                {errors.length}
+                              </Button>
+                            </Show>
                           </TableCell>
                         </TableRow>
                       )
@@ -289,6 +326,24 @@ export default function Cfdi(): JSX.Element {
             </Show>
           </CardContent>
         </Card>
+
+        <Modal
+          open={errorDetail() !== null}
+          onOpenChange={(open) => !open && setErrorDetail(null)}
+          title={errorDetail()?.title ?? 'Errores de descarga'}
+          class="max-w-2xl"
+        >
+          <div class="max-h-[60vh] overflow-y-auto">
+            <ol class="space-y-3">
+              {(errorDetail()?.errors ?? []).map((error, index) => (
+                <li class="rounded-md border border-border bg-muted/30 p-3 text-sm text-foreground">
+                  <p class="mb-1 text-xs font-semibold uppercase text-muted-foreground">Error {index + 1}</p>
+                  <p class="whitespace-pre-wrap break-words">{error}</p>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </Modal>
       </Show>
 
       <Show when={hasCfdis()}>

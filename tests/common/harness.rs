@@ -29,10 +29,10 @@ pub use alfredodev::{
         create_resource, create_resource_log, create_resource_usage, create_sat_config,
         create_session, create_transaction, create_user, create_user_with_permissions,
         get_user_by_id, list_accounts, list_categories, list_companies, list_contacts,
-        update_user_with_permissions,
         list_forecasts, list_planned_entries, list_projects, list_recurring_plans,
         list_resource_logs, list_resource_usage_allocations, list_resource_usages, list_resources,
         list_transactions, list_users, update_resource_allowed_statuses,
+        update_user_with_permissions,
     },
 };
 pub use bson::{DateTime, doc};
@@ -98,6 +98,10 @@ pub fn build_app(state: Arc<AppState>) -> Router {
         .route("/admin/cfdis", get(routes::cfdis_index))
         .route("/api/admin/cfdis/data", get(routes::cfdis_data_api))
         .route("/api/admin/cfdis/{uuid}", get(routes::cfdi_data_api))
+        .route(
+            "/api/admin/companies/{id}/cfdi/download",
+            post(routes::company_cfdi_download_api),
+        )
         .route(
             "/admin/companies/{id}/cfdi/jobs",
             get(routes::company_cfdi_jobs_list),
@@ -500,7 +504,12 @@ pub fn build_app(state: Arc<AppState>) -> Router {
         .with_state(state)
 }
 
-pub async fn get_with_cookie(app: Router, host: &str, path: &str, token: &str) -> (StatusCode, String) {
+pub async fn get_with_cookie(
+    app: Router,
+    host: &str,
+    path: &str,
+    token: &str,
+) -> (StatusCode, String) {
     let req = Request::builder()
         .uri(path)
         .header("host", host)
@@ -633,7 +642,6 @@ pub async fn post_multipart_with_cookie(
     (status, String::from_utf8_lossy(&body_bytes).to_string())
 }
 
-
 pub async fn assert_requires_auth_get(shared: &Arc<AppState>, path: &str) {
     let req = Request::builder()
         .uri(path)
@@ -702,4 +710,3 @@ pub async fn assert_post_denied(
         "POST {path} must be denied cross-tenant, got {status}"
     );
 }
-

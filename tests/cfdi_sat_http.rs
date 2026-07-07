@@ -132,7 +132,6 @@ async fn cfdi_json_endpoints_scope_to_active_tenant() {
     common::teardown(Some(ctx)).await;
 }
 
-
 #[tokio::test]
 async fn cfdi_job_endpoints_scope_to_company_and_admin() {
     let ctx = match common::setup_state().await {
@@ -246,6 +245,76 @@ async fn cfdi_job_endpoints_scope_to_company_and_admin() {
     common::teardown(Some(ctx)).await;
 }
 
+#[tokio::test]
+async fn cfdi_download_rejects_malformed_dates_before_starting_jobs() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+
+    let company = create_company(
+        &state,
+        "CFDI Date Guard",
+        "cfdi-date-guard",
+        "MXN",
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+    let admin_id = create_user(
+        &state,
+        "cfdi-date-guard-admin@example.com",
+        "SECRET",
+        &[(company.clone(), UserRole::Admin)],
+    )
+    .await
+    .unwrap();
+    let admin = get_user_by_id(&state, &admin_id).await.unwrap().unwrap();
+    let token = create_session(&state, &admin.username).await.unwrap();
+    let config_id = bson::oid::ObjectId::new();
+    create_sat_config(
+        &state,
+        config_id.clone(),
+        company.clone(),
+        "XAXX010101000".to_string(),
+        "/tmp/missing.cer".to_string(),
+        "/tmp/missing.key".to_string(),
+        "secret".to_string(),
+        Some("Test SAT".to_string()),
+    )
+    .await
+    .unwrap();
+
+    let (status, body) = post_json_with_cookie(
+        build_app(shared),
+        "cfdi-date-guard.miapp.local",
+        &format!("/api/admin/companies/{}/cfdi/download", company.to_hex()),
+        &token,
+        serde_json::json!({
+            "sat_config_id": config_id.to_hex(),
+            "start": "20206-06-01",
+            "end": "2026-07-07",
+            "download_type": "both",
+            "auto_create_payments": false
+        }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(
+        body.contains("YYYY-MM-DD"),
+        "expected a format error, got: {body}"
+    );
+    assert!(
+        state.jobs.lock().await.is_empty(),
+        "invalid input must not create SAT jobs"
+    );
+
+    common::teardown(Some(ctx)).await;
+}
 
 #[tokio::test]
 async fn sat_config_json_endpoints_scope_and_redact_sensitive_fields() {
@@ -435,7 +504,6 @@ async fn sat_config_json_endpoints_scope_and_redact_sensitive_fields() {
     common::teardown(Some(ctx)).await;
 }
 
-
 #[tokio::test]
 async fn sat_config_upload_json_creates_config_and_enforces_admin() {
     let ctx = match common::setup_state().await {
@@ -500,7 +568,10 @@ async fn sat_config_upload_json_creates_config_and_enforces_admin() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert!(body.contains("AAA010101AAA"), "RFC should be uppercased: {body}");
+    assert!(
+        body.contains("AAA010101AAA"),
+        "RFC should be uppercased: {body}"
+    );
     assert!(body.contains("Test FIEL"));
     assert!(!body.contains("supersecret"));
     assert!(!body.contains("private.key"));
@@ -549,4 +620,3 @@ async fn sat_config_upload_json_creates_config_and_enforces_admin() {
 // must never be able to read, mutate, or delete a record that belongs to tenant
 // B, and every protected endpoint must reject requests with no session.
 // ---------------------------------------------------------------------------
-

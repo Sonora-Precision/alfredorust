@@ -187,7 +187,16 @@ async fn start_cfdi_download(
         _ => vec![DownloadType::Issued],
     };
 
-    let chunks = monthly_chunks(&form.start, &form.end);
+    let chunks = match monthly_chunks(&form.start, &form.end) {
+        Ok(chunks) => chunks,
+        Err(message) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": message })),
+            )
+                .into_response();
+        }
+    };
     let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
     let mut started = Vec::new();
 
@@ -592,33 +601,12 @@ fn parse_cfdi_date(fecha: &str) -> bson::DateTime {
 
 // ── Monthly chunking ───────────────────────────────────────────────────────
 
-fn monthly_chunks(start_iso: &str, end_iso: &str) -> Vec<(String, String, String)> {
-    let start_str = &start_iso[..start_iso.len().min(10)];
-    let end_str = &end_iso[..end_iso.len().min(10)];
-
-    let start = match NaiveDate::parse_from_str(start_str, "%Y-%m-%d") {
-        Ok(d) => d,
-        Err(_) => {
-            return vec![(
-                "Descarga".into(),
-                start_iso.to_string(),
-                end_iso.to_string(),
-            )];
-        }
-    };
-    let end = match NaiveDate::parse_from_str(end_str, "%Y-%m-%d") {
-        Ok(d) => d,
-        Err(_) => {
-            return vec![(
-                "Descarga".into(),
-                start_iso.to_string(),
-                end_iso.to_string(),
-            )];
-        }
-    };
+fn monthly_chunks(start_iso: &str, end_iso: &str) -> Result<Vec<(String, String, String)>, String> {
+    let start = parse_download_date(start_iso, "Desde")?;
+    let end = parse_download_date(end_iso, "Hasta")?;
 
     if start > end {
-        return vec![];
+        return Err("Desde no puede ser mayor que Hasta".to_string());
     }
 
     // The SAT interprets dates in Mexico City time (UTC-6 CST / UTC-5 CDT).
@@ -628,7 +616,7 @@ fn monthly_chunks(start_iso: &str, end_iso: &str) -> Vec<(String, String, String
     let end = end.min(mexico_now.date_naive());
 
     if start > end {
-        return vec![];
+        return Ok(vec![]);
     }
 
     let mut chunks = Vec::new();
@@ -665,7 +653,16 @@ fn monthly_chunks(start_iso: &str, end_iso: &str) -> Vec<(String, String, String
         month_cursor = next_month;
     }
 
-    chunks
+    Ok(chunks)
+}
+
+fn parse_download_date(value: &str, label: &str) -> Result<NaiveDate, String> {
+    let value = value.trim();
+    if value.len() != 10 {
+        return Err(format!("La fecha {label} debe tener formato YYYY-MM-DD"));
+    }
+    NaiveDate::parse_from_str(value, "%Y-%m-%d")
+        .map_err(|_| format!("La fecha {label} debe tener formato YYYY-MM-DD"))
 }
 
 fn next_month_start(date: NaiveDate) -> NaiveDate {
