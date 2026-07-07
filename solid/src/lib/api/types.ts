@@ -622,15 +622,17 @@ export interface CfdiDownloadPayload {
   auto_create_payments: boolean
 }
 
-export interface CfdiJobStatus {
-  status: CfdiJobState
-  imported: number
-  transactions_created: number
-  transactions_updated: number
-  transactions_skipped: number
-  errors: string[]
-  error?: string | null
-}
+export type CfdiJobStatus =
+  | { status: 'queued' | 'running' }
+  | {
+      status: 'done'
+      imported: number
+      transactions_created: number
+      transactions_updated: number
+      transactions_skipped: number
+      errors: string[]
+    }
+  | { status: 'failed'; error: string }
 
 export interface CfdiJob {
   job_id: string
@@ -641,7 +643,7 @@ export interface CfdiJob {
 }
 
 export interface StartedJobs {
-  job_ids: string[]
+  jobs: { job_id: string; label: string }[]
 }
 
 // --- fiscal: CFDIs (read-only listing) ------------------------------------------------

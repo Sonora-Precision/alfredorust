@@ -102,7 +102,7 @@ pub async fn init_state() -> Result<AppState> {
 }
 
 pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppState> {
-    println!("Connecting to MongoDB at {}", uri);
+    println!("Connecting to MongoDB at {}", redact_mongo_uri(uri));
     let client = Client::with_uri_str(uri).await?;
     let db = client.database(&db_name);
 
@@ -162,4 +162,12 @@ pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppStat
         resource_usage_allocations: db
             .collection::<ResourceUsageAllocation>("resource_usage_allocations"),
     })
+}
+
+fn redact_mongo_uri(uri: &str) -> String {
+    let Some((scheme, rest)) = uri.split_once("://") else {
+        return "<redacted>".to_string();
+    };
+    let host_and_options = rest.rsplit_once('@').map_or(rest, |(_, tail)| tail);
+    format!("{scheme}://{host_and_options}")
 }

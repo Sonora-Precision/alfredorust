@@ -31,7 +31,9 @@ test.describe("cfdi download (mocked API)", () => {
       started = JSON.parse(route.request().postData() || "{}");
       return route.fulfill({ status: 202, json: { jobs: [{ job_id: "j1", label: "Ene 2026" }] } });
     });
-    // Jobs list: empty until a download has been started, then one done job.
+    // Jobs list: empty until a download has been started, then one active job.
+    // Real queued/running statuses only include `{ status }`; result counters
+    // and `errors` arrive later on `done`.
     await page.route("**/api/admin/companies/*/cfdi/jobs", (route) =>
       route.fulfill({
         json: started
@@ -42,12 +44,7 @@ test.describe("cfdi download (mocked API)", () => {
                 chunk_start: "2026-01-01T00:00:00",
                 started_at: "2026-06-18",
                 status: {
-                  status: "done",
-                  imported: 3,
-                  transactions_created: 2,
-                  transactions_updated: 1,
-                  transactions_skipped: 0,
-                  errors: [],
+                  status: "running",
                 },
               },
             ]
@@ -55,13 +52,13 @@ test.describe("cfdi download (mocked API)", () => {
       }),
     );
 
-    await page.goto("/v2/cfdi");
+    await page.goto("/v3/cfdi");
     await expect(page.getByText("Descargar del SAT")).toBeVisible();
 
     await page.getByRole("button", { name: /Descargar CFDIs|Descargando/ }).click();
 
     await expect(page.getByText("Ene 2026")).toBeVisible();
-    await expect(page.getByText("✓ Listo")).toBeVisible();
+    await expect(page.getByText("● Descargando")).toBeVisible();
     expect(started.download_type).toBe("both");
     expect(started.sat_config_id).toBe("s1");
   });
@@ -71,7 +68,7 @@ test.describe("cfdi download (mocked API)", () => {
     await page.route("**/api/admin/cfdis/data", (r) =>
       r.fulfill({ json: { company_rfcs: [], items: [] } }),
     );
-    await page.goto("/v2/cfdi");
+    await page.goto("/v3/cfdi");
     await expect(page.getByRole("heading", { name: "CFDIs" })).toBeVisible();
     await expect(page.getByText("Descargar del SAT")).toHaveCount(0);
   });

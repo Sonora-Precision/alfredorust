@@ -142,8 +142,6 @@ export default function Cfdi(): JSX.Element {
     },
   }))
 
-  const busy = createMemo(() => (jobsQuery.data ?? []).some((j) => isActiveStatus(j.status.status)))
-
   const downloadMutation = createMutation(() => ({
     mutationFn: () =>
       fiscalApi.startCfdiDownload(companyId(), {
@@ -161,6 +159,10 @@ export default function Cfdi(): JSX.Element {
       setDlError(humanizeError(err, 'No se pudo iniciar la descarga'))
     },
   }))
+
+  const busy = createMemo(
+    () => downloadMutation.isPending || (jobsQuery.data ?? []).some((j) => isActiveStatus(j.status.status)),
+  )
 
   const startDownload = (ev: SubmitEvent) => {
     ev.preventDefault()
@@ -265,18 +267,18 @@ export default function Cfdi(): JSX.Element {
                   <TableBody>
                     {(jobsQuery.data ?? []).map((j) => {
                       const s = j.status
-                      const errCount = s.errors.length + (s.error ? 1 : 0)
-                      const errTitle = [...(s.error ? [s.error] : []), ...s.errors].join('\n')
+                      const errors = s.status === 'done' ? s.errors : s.status === 'failed' ? [s.error] : []
+                      const errTitle = errors.join('\n')
                       return (
                         <TableRow>
                           <TableCell>{j.label ?? j.chunk_start ?? ''}</TableCell>
                           <TableCell>{jobStatusBadge(s.status)}</TableCell>
-                          <TableCell>{s.imported}</TableCell>
-                          <TableCell>{s.transactions_created}</TableCell>
-                          <TableCell>{s.transactions_updated}</TableCell>
-                          <TableCell>{s.transactions_skipped}</TableCell>
+                          <TableCell>{s.status === 'done' ? s.imported : 0}</TableCell>
+                          <TableCell>{s.status === 'done' ? s.transactions_created : 0}</TableCell>
+                          <TableCell>{s.status === 'done' ? s.transactions_updated : 0}</TableCell>
+                          <TableCell>{s.status === 'done' ? s.transactions_skipped : 0}</TableCell>
                           <TableCell>
-                            <span title={errTitle}>{errCount}</span>
+                            <span title={errTitle}>{errors.length}</span>
                           </TableCell>
                         </TableRow>
                       )
