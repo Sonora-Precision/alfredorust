@@ -101,7 +101,7 @@ cd solid && npm install && npm run dev     # Vite dev en proxy a Axum :8090
 - [x] D1 · `nest_service("/v3", ServeDir::new("solid/dist").fallback(index.html))` en `src/main.rs` (env override `SOLID_DIST`, default `solid/dist`). `cargo check` limpio. `/v2` intacto.
 - [x] D2 · CI (`.github/workflows/deploy.yml`): Node 22 + `npm ci && npm run build` en `solid/` + rsync de `solid/dist` al server. **Aún NO pusheado** (push a `main` dispara deploy a prod — pedir OK antes).
 - [ ] D3 · Verificación de paridad `/v2` vs `/v3` (visual + e2e adaptados de `e2e/`). Requiere backend con `.env` real (no está en el repo) + login TOTP contra un tenant.
-- [ ] D4 · Cutover: apuntar path principal a Solid; retirar `/v2` cuando el usuario apruebe.
+- [x] D4 (parcial) · **`/v2` retirado del serving (main.rs) y del build/deploy (CI)** — `frontend/` (Leptos) se queda en el repo pero ya no se sirve ni se compila; el deploy es más rápido. `/v3` es la única SPA. **Deploy endurecido:** swap atómico del binario (scp a `.new` + `mv`) para no corromper el proceso vivo (fix del SIGILL). Pendiente: e2e/ aún apunta a `/v2` (actualizar a `/v3`); mover `/v3` a `/` si se quiere (opcional).
 
 **Nota:** `.env` no está en el repo (gitignored). Para correr/verificar en local el usuario usa su `.env`. `solid/dist/index.html` referencia `/v3/assets/...` correctamente.
 

@@ -683,20 +683,13 @@ async fn main() {
             session::require_session,
         ));
 
-    // SPA static assets (Leptos CSR build), mounted under `/v2` on every tenant.
-    // `nest_service` strips the `/v2` prefix, so ServeDir sees `/`, `/accounts`,
-    // `/output-*.css`, etc.; its `.fallback(index.html)` covers client-side deep
-    // links like `/v2/accounts`. The SPA is NOT a global fallback, so unmatched
-    // root paths 404 again (pre-SPA behavior). API/auth routes are unchanged; the
-    // SPA calls absolute `/api/...` paths (not `/v2/api`).
-    let spa_dir = std::env::var("SPA_DIST").unwrap_or_else(|_| "frontend/dist".to_string());
-    let spa_index = format!("{spa_dir}/index.html");
-    let spa_service = ServeDir::new(&spa_dir).fallback(ServeFile::new(spa_index));
-
-    // New SolidJS SPA (Vite build), mounted under `/v3` alongside the Leptos `/v2`
-    // during the migration. Same contract as `/v2`: `nest_service` strips `/v3`,
-    // `.fallback(index.html)` covers client-side deep links, and the SPA calls
-    // absolute `/api/...` paths (not `/v3/api`). `/v2` stays intact until cutover.
+    // SolidJS SPA (Vite build), mounted under `/v3` on every tenant.
+    // `nest_service` strips the `/v3` prefix, so ServeDir sees `/`, `/accounts`,
+    // etc.; its `.fallback(index.html)` covers client-side deep links like
+    // `/v3/accounts`. The SPA calls absolute `/api/...` paths (not `/v3/api`).
+    // The old Leptos SPA (`frontend/`, previously served at `/v2`) has been
+    // retired: it is no longer served or built. Its source stays in the repo,
+    // but nothing mounts it (`SPA_DIST`/`frontend/dist` are unused now).
     let spa3_dir = std::env::var("SOLID_DIST").unwrap_or_else(|_| "solid/dist".to_string());
     let spa3_index = format!("{spa3_dir}/index.html");
     let spa3_service = ServeDir::new(&spa3_dir).fallback(ServeFile::new(spa3_index));
@@ -706,7 +699,6 @@ async fn main() {
         .route("/login", post(routes::login))
         .merge(protected)
         .merge(test_gated)
-        .nest_service("/v2", spa_service)
         .nest_service("/v3", spa3_service)
         .with_state(state);
 

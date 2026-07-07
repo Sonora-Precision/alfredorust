@@ -28,27 +28,14 @@ jobs:
           RUSTFLAGS: "-C target-cpu=x86-64"
         run: cargo build --release
 
-      # --- SPA (Leptos /v2) build ---------------------------------------
-      - name: Add wasm target
-        run: rustup target add wasm32-unknown-unknown
-
-      - name: Setup Node (Tailwind + Vite)
+      # --- SPA (SolidJS /v3) build ---------------------------------------
+      # The old Leptos /v2 SPA is retired: no wasm target, no Trunk, no
+      # frontend/ build here anymore (source kept in the repo, just not shipped).
+      - name: Setup Node (Vite)
         uses: actions/setup-node@v4
         with:
           node-version: "22"
 
-      - name: Install Trunk
-        uses: jetli/trunk-action@v0.5.0
-        with:
-          version: latest
-
-      - name: Build SPA (frontend/dist)
-        run: |
-          cd frontend
-          npm install
-          trunk build --release
-
-      # --- SPA (SolidJS /v3) build ---------------------------------------
       - name: Build Solid SPA (solid/dist)
         run: |
           cd solid
@@ -65,18 +52,17 @@ jobs:
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           ssh-keygen -y -f ~/.ssh/deploy_key > /dev/null  # validate key
+          # Ship the binary to a temp name, then atomically swap it into place.
+          # Overwriting the running executable in-place corrupts its mapped code
+          # pages (→ SIGILL/core-dump); `mv` keeps the live process's inode until
+          # the restart below picks up the new file.
           scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
             target/release/alfredodev \
-            $SSH_USER@$SSH_HOST:/home/$SSH_USER/alfredorust/alfredodev
-          # Ship the SPA build (hashed assets); --delete prunes stale files.
+            $SSH_USER@$SSH_HOST:/home/$SSH_USER/alfredorust/alfredodev.new
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
             $SSH_USER@$SSH_HOST \
-            "mkdir -p /home/$SSH_USER/alfredorust/frontend/dist"
-          rsync -az --delete \
-            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
-            frontend/dist/ \
-            $SSH_USER@$SSH_HOST:/home/$SSH_USER/alfredorust/frontend/dist/
-          # Ship the SolidJS SPA build (/v3), same pattern as /v2.
+            "chmod +x /home/$SSH_USER/alfredorust/alfredodev.new && mv -f /home/$SSH_USER/alfredorust/alfredodev.new /home/$SSH_USER/alfredorust/alfredodev"
+          # Ship the SolidJS SPA build (/v3); --delete prunes stale hashed assets.
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
             $SSH_USER@$SSH_HOST \
             "mkdir -p /home/$SSH_USER/alfredorust/solid/dist"
