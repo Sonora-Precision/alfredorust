@@ -693,12 +693,21 @@ async fn main() {
     let spa_index = format!("{spa_dir}/index.html");
     let spa_service = ServeDir::new(&spa_dir).fallback(ServeFile::new(spa_index));
 
+    // New SolidJS SPA (Vite build), mounted under `/v3` alongside the Leptos `/v2`
+    // during the migration. Same contract as `/v2`: `nest_service` strips `/v3`,
+    // `.fallback(index.html)` covers client-side deep links, and the SPA calls
+    // absolute `/api/...` paths (not `/v3/api`). `/v2` stays intact until cutover.
+    let spa3_dir = std::env::var("SOLID_DIST").unwrap_or_else(|_| "solid/dist".to_string());
+    let spa3_index = format!("{spa3_dir}/index.html");
+    let spa3_service = ServeDir::new(&spa3_dir).fallback(ServeFile::new(spa3_index));
+
     let app = Router::new()
         .route("/", get(routes::home))
         .route("/login", post(routes::login))
         .merge(protected)
         .merge(test_gated)
         .nest_service("/v2", spa_service)
+        .nest_service("/v3", spa3_service)
         .with_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 8090));

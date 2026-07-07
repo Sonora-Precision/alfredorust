@@ -1,0 +1,20 @@
+// Ported 1:1 from frontend/src/app.rs's `AuthedApp` layout shell: fixed-width
+// Sidebar + flexible right column (Topbar + routed <main>). `min-w-0` is
+// deliberate on both the content column and <main> to stop flex-item overflow
+// from wide table content.
+import type { JSX, ParentProps } from 'solid-js'
+
+import { Sidebar } from './Sidebar'
+import { Topbar } from './Topbar'
+
+export function AppShell(props: ParentProps): JSX.Element {
+  return (
+    <div class="flex min-h-screen">
+      <Sidebar />
+      <div class="flex min-w-0 flex-1 flex-col">
+        <Topbar />
+        <main class="min-w-0 flex-1 p-6">{props.children}</main>
+      </div>
+    </div>
+  )
+}

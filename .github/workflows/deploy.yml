@@ -32,10 +32,10 @@ jobs:
       - name: Add wasm target
         run: rustup target add wasm32-unknown-unknown
 
-      - name: Setup Node (Tailwind)
+      - name: Setup Node (Tailwind + Vite)
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
 
       - name: Install Trunk
         uses: jetli/trunk-action@v0.5.0
@@ -47,6 +47,13 @@ jobs:
           cd frontend
           npm install
           trunk build --release
+
+      # --- SPA (SolidJS /v3) build ---------------------------------------
+      - name: Build Solid SPA (solid/dist)
+        run: |
+          cd solid
+          npm ci
+          npm run build
 
       - name: Deploy to server
         env:
@@ -69,6 +76,14 @@ jobs:
             -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
             frontend/dist/ \
             $SSH_USER@$SSH_HOST:/home/$SSH_USER/alfredorust/frontend/dist/
+          # Ship the SolidJS SPA build (/v3), same pattern as /v2.
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            $SSH_USER@$SSH_HOST \
+            "mkdir -p /home/$SSH_USER/alfredorust/solid/dist"
+          rsync -az --delete \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+            solid/dist/ \
+            $SSH_USER@$SSH_HOST:/home/$SSH_USER/alfredorust/solid/dist/
           # Ship the committed Playwright UI report (generated locally, not in
           # CI) so it's served at /test/reports/playwright on the test tenant.
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
