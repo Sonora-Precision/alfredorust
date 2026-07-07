@@ -20,7 +20,10 @@ function show(tone: ToastTone, title: string, description?: string): void {
     <KToast
       toastId={props.toastId}
       class={cn(
-        'flex w-full items-start gap-2 rounded-md border bg-card p-3 text-sm text-card-foreground shadow-sm ring-1 ring-border',
+        // toast-item drives the slide+fade keyframes in index.css, keyed off
+        // Kobalte's data-opened/data-closed presence tracking (same
+        // animationend-only mechanism as Modal — see index.css comment).
+        'toast-item flex w-full items-start gap-2 rounded-md border bg-card p-3 text-sm text-card-foreground shadow-sm ring-1 ring-border',
         TONE_CLASSES[tone],
       )}
     >

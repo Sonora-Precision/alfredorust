@@ -9,6 +9,7 @@
 // "TransactionsPage".
 import { createQuery } from '@tanstack/solid-query'
 import { Landmark, Scale, TrendingDown, TrendingUp, Wallet } from 'lucide-solid'
+import { Motion } from 'solid-motionone'
 import { type JSX, Show, createMemo } from 'solid-js'
 
 import { Donut } from '../components/charts/Donut'
@@ -18,6 +19,7 @@ import { Spinner } from '../components/ui/Spinner'
 import * as financeApi from '../lib/api/finance'
 import { money } from '../lib/format'
 import { switchCompanyHref } from '../lib/tenant'
+import { createCountUp, prefersReducedMotion } from '../lib/motion'
 import { useAuth } from '../lib/auth/AuthContext'
 
 interface KpiCardProps {
@@ -25,6 +27,8 @@ interface KpiCardProps {
   value: string
   icon: (props: { class?: string }) => JSX.Element
   tone: 'success' | 'danger' | 'primary' | 'neutral'
+  /** Stagger offset (seconds) so the 4 KPI cards read left-to-right on mount. */
+  delay?: number
 }
 
 const TONE_CLASSES: Record<KpiCardProps['tone'], string> = {
@@ -35,18 +39,25 @@ const TONE_CLASSES: Record<KpiCardProps['tone'], string> = {
 }
 
 function KpiCard(props: KpiCardProps): JSX.Element {
+  const reduced = prefersReducedMotion()
   return (
-    <Card>
-      <CardContent class="flex items-center gap-4 p-5">
-        <div class={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${TONE_CLASSES[props.tone]}`}>
-          <props.icon class="h-5 w-5" />
-        </div>
-        <div class="min-w-0">
-          <p class="truncate text-sm text-muted-foreground">{props.label}</p>
-          <p class="truncate text-xl font-semibold tabular-nums text-foreground">{props.value}</p>
-        </div>
-      </CardContent>
-    </Card>
+    <Motion.div
+      initial={reduced ? false : { opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: reduced ? 0 : 0.32, delay: reduced ? 0 : (props.delay ?? 0), easing: 'ease-out' }}
+    >
+      <Card>
+        <CardContent class="flex items-center gap-4 p-5">
+          <div class={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${TONE_CLASSES[props.tone]}`}>
+            <props.icon class="h-5 w-5" />
+          </div>
+          <div class="min-w-0">
+            <p class="truncate text-sm text-muted-foreground">{props.label}</p>
+            <p class="truncate text-xl font-semibold tabular-nums text-foreground">{props.value}</p>
+          </div>
+        </CardContent>
+      </Card>
+    </Motion.div>
   )
 }
 
@@ -77,6 +88,13 @@ export default function Dashboard(): JSX.Element {
   })
 
   const activeAccounts = createMemo(() => (accountsQuery.data ?? []).filter((a) => a.is_active).length)
+
+  // Count-up tweens for the KPI row — reinforces "a number changed" on load
+  // and on any later refetch, doubling as a subtle correctness signal.
+  const incomeCountUp = createCountUp(() => totals().income)
+  const expenseCountUp = createCountUp(() => totals().expense)
+  const netCountUp = createCountUp(() => totals().net)
+  const activeAccountsCountUp = createCountUp(() => activeAccounts())
 
   const monthly = createMemo(() => {
     const buckets = new Map<string, { income: number; expense: number }>()
@@ -113,12 +131,25 @@ export default function Dashboard(): JSX.Element {
           </div>
         }
       >
-        {/* KPI row */}
+        {/* KPI row — cards stagger in on mount, values count up via
+            createCountUp (both gated on prefersReducedMotion()). */}
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <KpiCard label="Ingresos" value={money(totals().income)} icon={TrendingUp} tone="success" />
-          <KpiCard label="Egresos" value={money(totals().expense)} icon={TrendingDown} tone="danger" />
-          <KpiCard label="Neto" value={money(totals().net)} icon={Scale} tone={totals().net >= 0 ? 'primary' : 'danger'} />
-          <KpiCard label="Cuentas activas" value={String(activeAccounts())} icon={Wallet} tone="neutral" />
+          <KpiCard label="Ingresos" value={money(incomeCountUp())} icon={TrendingUp} tone="success" delay={0} />
+          <KpiCard label="Egresos" value={money(expenseCountUp())} icon={TrendingDown} tone="danger" delay={0.06} />
+          <KpiCard
+            label="Neto"
+            value={money(netCountUp())}
+            icon={Scale}
+            tone={totals().net >= 0 ? 'primary' : 'danger'}
+            delay={0.12}
+          />
+          <KpiCard
+            label="Cuentas activas"
+            value={String(Math.round(activeAccountsCountUp()))}
+            icon={Wallet}
+            tone="neutral"
+            delay={0.18}
+          />
         </div>
 
         {/* Charts */}

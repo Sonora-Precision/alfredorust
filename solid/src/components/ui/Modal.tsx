@@ -17,11 +17,15 @@ export function Modal(props: ModalProps): JSX.Element {
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay class="fixed inset-0 z-40 bg-background/80 backdrop-blur-sm" />
+        {/* modal-overlay/modal-content classes drive the fade/scale keyframes
+            in index.css, keyed off Kobalte's own data-expanded/data-closed
+            presence tracking (see the comment there for why these must be
+            @keyframes, not plain CSS transitions). */}
+        <Dialog.Overlay class="modal-overlay fixed inset-0 z-40 bg-background/80 backdrop-blur-sm" />
         <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
           <Dialog.Content
             class={cn(
-              'w-full max-w-lg rounded-xl border border-border bg-card text-card-foreground shadow-sm',
+              'modal-content w-full max-w-lg rounded-xl border border-border bg-card text-card-foreground shadow-sm',
               props.class,
             )}
           >

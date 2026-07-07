@@ -13,8 +13,10 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   ghost: 'bg-transparent text-foreground hover:bg-muted',
 }
 
+// transition-colors (hover) + transform (press) — both compositor-only, CSS
+// handles it so there's no JS gesture-recognition cost per button.
 const BUTTON_BASE =
-  'inline-flex items-center justify-center rounded-md px-3 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-ring disabled:pointer-events-none disabled:opacity-50'
+  'inline-flex items-center justify-center rounded-md px-3 py-2 text-sm font-medium transition-[color,background-color,transform] duration-150 active:scale-[0.97] focus:outline-none focus:ring-2 focus:ring-ring disabled:pointer-events-none disabled:opacity-50'
 
 interface ButtonProps
   extends ParentProps,

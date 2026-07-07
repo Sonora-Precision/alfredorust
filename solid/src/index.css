@@ -46,3 +46,88 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* ---------------------------------------------------------------------- *
+ * Animations (Fase C — see docs/solid-migration/animation-strategy.md)
+ *
+ * transform/opacity only, kept short and functional (confirm/orient, never
+ * decorate) per CLAUDE.md + the strategy doc's performance guidance.
+ * ---------------------------------------------------------------------- */
+
+/* Route/page cross-fade — AppShell wraps the routed <main> content in
+   <Transition name="page" mode="outin">. solid-transition-group listens for
+   `transitionend`, so a plain CSS transition (not @keyframes) is enough. */
+.page-enter-active,
+.page-exit-active {
+  transition: opacity 0.16s ease-out;
+}
+.page-enter,
+.page-exit-to {
+  opacity: 0;
+}
+
+/* Modal (components/ui/Modal.tsx) — Kobalte's Dialog keeps the overlay/
+   content mounted while `data-closed` is set (via its own presence
+   tracking), but that presence tracking only listens for `animationend`,
+   not `transitionend` — so these MUST be @keyframes animations, not plain
+   CSS transitions, or the exit never gets observed and the dialog just
+   vanishes instantly. */
+@keyframes modal-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes modal-overlay-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes modal-content-in {
+  from { opacity: 0; transform: scale(0.96) translateY(4px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes modal-content-out {
+  from { opacity: 1; transform: scale(1) translateY(0); }
+  to { opacity: 0; transform: scale(0.96) translateY(4px); }
+}
+.modal-overlay[data-expanded] { animation: modal-overlay-in 0.15s ease-out; }
+.modal-overlay[data-closed] { animation: modal-overlay-out 0.15s ease-in; }
+.modal-content[data-expanded] { animation: modal-content-in 0.18s ease-out; }
+.modal-content[data-closed] { animation: modal-content-out 0.15s ease-in; }
+
+/* Toast (components/ui/Toast.tsx) — same animationend-only presence
+   mechanism as Dialog, driven by Kobalte's `data-opened`/`data-closed`. */
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes toast-out {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(16px); }
+}
+.toast-item[data-opened] { animation: toast-in 0.2s ease-out; }
+.toast-item[data-closed] { animation: toast-out 0.18s ease-in; }
+
+/* Table row enter/exit fade — see components/ui/Table.tsx (TableBody). */
+.row-enter-active,
+.row-exit-active {
+  transition: opacity 0.15s ease-out;
+}
+.row-enter,
+.row-exit-to {
+  opacity: 0;
+}
+
+/* Reduced motion: force every transition/animation above (and anything else
+   in the app) to resolve near-instantly rather than removing it outright —
+   libraries that gate DOM unmount on `transitionend`/`animationend` (Kobalte
+   Dialog/Toast presence, solid-transition-group) still fire that event, so
+   they don't get stuck showing an element that should have unmounted. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
