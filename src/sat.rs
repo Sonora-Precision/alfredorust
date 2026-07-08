@@ -21,7 +21,7 @@ const REQUEST_URL: &str =
 const VERIFY_URL: &str =
     "https://cfdidescargamasivasolicitud.clouda.sat.gob.mx/VerificaSolicitudDescargaService.svc";
 const DOWNLOAD_URL: &str = "https://cfdidescargamasiva.clouda.sat.gob.mx/DescargaMasivaService.svc";
-const SAT_HTTP_TIMEOUT_SECONDS: u64 = 150;
+const SAT_HTTP_TIMEOUT_SECONDS: u64 = 300;
 
 const NS_SOAP: &str = "http://schemas.xmlsoap.org/soap/envelope/";
 const NS_WSSE: &str =
@@ -314,7 +314,7 @@ fn build_config(company_slug: &str, request: CfdiDownloadRequest) -> Result<SatC
         end,
         output_dir: PathBuf::from(output_dir),
         poll_seconds: request.poll_seconds.unwrap_or(5).max(1),
-        // Each attempt can now block up to ~150s waiting on a slow SAT, so keep
+        // Each attempt can now block up to ~300s waiting on a slow SAT, so keep
         // the attempt count modest; a ready solicitud succeeds on the first try.
         max_attempts: request.max_attempts.unwrap_or(15).max(1),
         download_type: request.download_type,
@@ -894,8 +894,8 @@ mod tests {
     #[test]
     fn sat_http_timeout_is_not_aggressive_for_slow_verify() {
         assert!(
-            SAT_HTTP_TIMEOUT_SECONDS >= 150,
-            "SAT verify can take 77-88s in production; keep timeout >=150s"
+            SAT_HTTP_TIMEOUT_SECONDS >= 300,
+            "SAT verify can take several minutes in production; keep timeout >=300s"
         );
     }
 
