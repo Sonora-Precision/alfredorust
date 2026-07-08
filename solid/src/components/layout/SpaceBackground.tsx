@@ -110,8 +110,10 @@ export function SpaceBackground() {
       // asteroids keep their own CSS float (not touched here). The loop eases
       // toward the cursor and then SLEEPS once settled, so it costs nothing when
       // the pointer is idle (and stays asleep on touch devices with no hover).
+      // Parallax ONLY the bright/large star layer (s3) — a few stars follow the
+      // cursor subtly; the other two layers drift slowly on their own via CSS.
       const layers: Array<{ el: HTMLElement; depth: number }> = []
-      root.querySelectorAll<HTMLElement>('.stars').forEach((el, i) => layers.push({ el, depth: 10 + i * 12 }))
+      root.querySelectorAll<HTMLElement>('.stars.s3').forEach((el) => layers.push({ el, depth: 24 }))
       const sky = root.querySelector<HTMLElement>('.sky')
       let tx = 0
       let ty = 0

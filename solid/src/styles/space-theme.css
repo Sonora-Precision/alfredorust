@@ -150,7 +150,7 @@
     radial-gradient(3.4px 3.4px at 380px 220px, hsl(330 80% 84%), transparent),
     radial-gradient(3px 3px at 90px 190px, hsl(var(--foreground)), transparent),
     radial-gradient(2.8px 2.8px at 260px 250px, hsl(48 90% 82%), transparent);
-  background-size: 420px 300px; opacity: 1; /* drift is JS-owned in SpaceBackground (single transform writer) */
+  background-size: 420px 300px; opacity: 1; animation: drift 300s linear infinite; /* slow autonomous drift (base + s2) */
 }
 [data-theme='light'] #space .stars {
   background-image:
@@ -162,9 +162,11 @@
     radial-gradient(3px 3px at 90px 190px, hsl(40 90% 50%), transparent),
     radial-gradient(2.8px 2.8px at 260px 250px, hsl(48 90% 52%), transparent);
 }
-#space .stars.s2 { background-size: 640px 480px; opacity: .85; animation-duration: 360s; animation-direction: reverse; }
+#space .stars.s2 { background-size: 640px 480px; opacity: .85; animation-duration: 460s; animation-direction: reverse; }
+/* s3 = the few big/bright stars: JS parallax owns its transform, so no CSS
+   animation here (avoids the two-owners "robotic" conflict). */
 #space .stars.s3 {
-  background-size: 260px 190px; opacity: 1; animation-duration: 140s;
+  background-size: 260px 190px; opacity: 1; animation: none;
   background-image:
     radial-gradient(6px 6px at 40px 50px, hsl(var(--foreground)), transparent),
     radial-gradient(5.6px 5.6px at 160px 130px, hsl(199 89% 85%), transparent),

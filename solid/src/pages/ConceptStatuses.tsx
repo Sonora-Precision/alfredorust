@@ -379,8 +379,8 @@ export default function ConceptStatuses(): JSX.Element {
       <Show when={drag() && floatingItem()}>
         <Portal>
           <div
-            class="card pointer-events-none fixed z-[70] flex items-center gap-3 rounded-xl px-4 py-3 shadow-2xl"
-            style={`left:${drag()!.left}px; top:${drag()!.y - drag()!.offset}px; width:${drag()!.width}px`}
+            class="bg-glass pointer-events-none fixed z-[70] flex items-center gap-3 rounded-xl border border-border px-4 py-3 shadow-2xl"
+            style={`position:fixed; left:${drag()!.left}px; top:${drag()!.y - drag()!.offset}px; width:${drag()!.width}px`}
           >
             <GripVertical class="h-5 w-5 text-muted-foreground" />
             <Show when={floatingItem()!.color}>
