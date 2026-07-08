@@ -1,11 +1,12 @@
-// Estados de concepto — reorderable card list (drag to change order). Position
-// is implicit (list order); "Inicial"/"Terminal" are DERIVED from position
-// (first = inicial, last = terminal) and persisted automatically on reorder.
-// "Activo" and "Cancelado" are independent per-status toggles. Admin-gated
-// create/edit/delete; staff see a read-only list.
+// Estados de concepto — reorderable card list. Drag a card (grip handle) to
+// change the flow order: a floating clone follows the pointer and a dashed gap
+// marks where it will land. Position is implicit (list order); Inicial/Terminal
+// are DERIVED from position (first/last) and persisted on drop. Activo and
+// Cancelado are independent per-card toggles. Admin-gated; staff read-only.
 import { createMutation, createQuery, useQueryClient } from '@tanstack/solid-query'
 import { GripVertical, ListChecks, Pencil, Plus, Trash2 } from 'lucide-solid'
 import { type JSX, For, Show, createEffect, createSignal } from 'solid-js'
+import { Portal } from 'solid-js/web'
 
 import { Badge, boolBadgeTone } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
@@ -23,6 +24,15 @@ import { useAuth } from '../lib/auth/AuthContext'
 
 const emptyForm = () => ({ name: '', color: '', isActive: true, isCancelled: false })
 
+interface DragState {
+  id: string
+  y: number // current pointer clientY
+  offset: number // pointer offset inside the grabbed card
+  height: number
+  width: number
+  left: number
+}
+
 export default function ConceptStatuses(): JSX.Element {
   const auth = useAuth()
   const isAdmin = () => auth.isAdmin()
@@ -33,49 +43,55 @@ export default function ConceptStatuses(): JSX.Element {
     queryFn: operationsApi.listConceptStatuses,
   }))
 
-  // Local ordered copy — the source of truth for the list UI (so drag reorders
-  // feel instant). Synced from the server whenever we're not mid-drag.
+  // Local ordered copy — source of truth for the list UI so drag feels instant.
   const [items, setItems] = createSignal<ConceptStatusFull[]>([])
-  const [dragId, setDragId] = createSignal<string | null>(null)
+  const [drag, setDrag] = createSignal<DragState | null>(null)
+  const draggingId = () => drag()?.id ?? null
   let listRef: HTMLDivElement | undefined
-  // Set after create/delete so the next load re-derives positions + first/last
-  // flags (e.g. the old last item stops being "terminal" once a new one is added).
-  let normalizeAfterLoad = false
+  let normalizeAfterLoad = false // after create/delete: re-derive first/last
 
   createEffect(() => {
     const data = statusesQuery.data
-    if (!data || dragId() !== null) return
+    if (!data || draggingId() !== null) return
     const sorted = [...data].sort((a, b) => a.position - b.position)
     setItems(sorted)
     if (normalizeAfterLoad) {
       normalizeAfterLoad = false
-      void persist(sorted)
+      void commitOrder(sorted)
     }
   })
 
-  /** Write position + derived is_initial/is_terminal for any row that drifted. */
-  async function persist(list: ConceptStatusFull[]): Promise<void> {
-    let wrote = false
-    for (let i = 0; i < list.length; i++) {
-      const s = list[i]
-      const isInitial = i === 0
-      const isTerminal = i === list.length - 1
-      if (s.position !== i || s.is_initial !== isInitial || s.is_terminal !== isTerminal) {
-        wrote = true
-        // Sequential (not parallel): the backend renumbers positions, so
-        // concurrent writes could race.
+  /** Persist a new order: normalize position + first/last flags, update the
+   * cache optimistically (so the list can't snap back), then write the changed
+   * rows to the server (re-syncing from the server only on error). */
+  async function commitOrder(order: ConceptStatusFull[]): Promise<void> {
+    const n = order.length
+    const normalized = order.map((s, i) => ({ ...s, position: i, is_initial: i === 0, is_terminal: i === n - 1 }))
+    setItems(normalized)
+    qc.setQueryData<ConceptStatusFull[]>(['concept-statuses'], normalized)
+    const changed = normalized.filter((s, i) => {
+      const orig = order[i]
+      return orig.position !== i || orig.is_initial !== s.is_initial || orig.is_terminal !== s.is_terminal
+    })
+    if (changed.length === 0) return
+    try {
+      for (const s of changed) {
+        // Sequential (not parallel): the backend renumbers positions.
         await operationsApi.updateConceptStatus(s.id, {
           name: s.name,
-          position: i,
+          position: s.position,
           color: s.color ?? null,
-          is_initial: isInitial,
-          is_terminal: isTerminal,
+          is_initial: s.is_initial,
+          is_terminal: s.is_terminal,
           is_cancelled: s.is_cancelled,
           is_active: s.is_active,
         })
       }
+      toast.success('Orden actualizado')
+    } catch (e) {
+      toast.error('No se pudo guardar el orden', humanizeError(e, ''))
+      void qc.invalidateQueries({ queryKey: ['concept-statuses'] })
     }
-    if (wrote) void qc.invalidateQueries({ queryKey: ['concept-statuses'] })
   }
 
   const toggleFlag = async (s: ConceptStatusFull, key: 'is_active' | 'is_cancelled', val: boolean): Promise<void> => {
@@ -97,26 +113,31 @@ export default function ConceptStatuses(): JSX.Element {
     }
   }
 
-  // --- drag to reorder (pointer-based → works with mouse AND touch) ---------
+  // --- drag: floating clone + gap placeholder (pointer = mouse AND touch) ----
   const onDragStart = (e: PointerEvent, id: string): void => {
     if (!isAdmin()) return
     e.preventDefault()
-    setDragId(id)
+    const card = (e.currentTarget as HTMLElement).closest('[data-cs]') as HTMLElement | null
+    if (!card) return
+    const r = card.getBoundingClientRect()
+    setDrag({ id, y: e.clientY, offset: e.clientY - r.top, height: r.height, width: r.width, left: r.left })
     const move = (ev: PointerEvent) => onDragMove(ev)
     const up = (): void => {
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
-      const dropped = dragId() !== null
-      setDragId(null)
-      if (dropped) void persist(items())
+      const order = items()
+      const had = drag() !== null
+      setDrag(null)
+      if (had) void commitOrder(order)
     }
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
   }
 
   const onDragMove = (e: PointerEvent): void => {
-    const id = dragId()
-    if (!id || !listRef) return
+    const d = drag()
+    if (!d || !listRef) return
+    setDrag({ ...d, y: e.clientY })
     const cards = Array.from(listRef.querySelectorAll<HTMLElement>('[data-cs]'))
     const y = e.clientY
     let target = cards.length - 1
@@ -128,7 +149,7 @@ export default function ConceptStatuses(): JSX.Element {
       }
     }
     const cur = items()
-    const from = cur.findIndex((s) => s.id === id)
+    const from = cur.findIndex((s) => s.id === d.id)
     if (from === -1 || from === target) return
     const next = cur.slice()
     const [moved] = next.splice(from, 1)
@@ -164,7 +185,7 @@ export default function ConceptStatuses(): JSX.Element {
       return id ? operationsApi.updateConceptStatus(id, payload) : operationsApi.createConceptStatus(payload)
     },
     onSuccess: () => {
-      if (!editingId()) normalizeAfterLoad = true // new item appended → re-derive first/last
+      if (!editingId()) normalizeAfterLoad = true
       void qc.invalidateQueries({ queryKey: ['concept-statuses'] })
       toast.success(editingId() ? 'Estado actualizado' : 'Estado creado')
       closeModal()
@@ -184,8 +205,6 @@ export default function ConceptStatuses(): JSX.Element {
     const id = editingId()
     const existing = id ? items().find((s) => s.id === id) : undefined
     const count = items().length
-    // Position + Inicial/Terminal come from list order, not the form: keep the
-    // edited row's values; a new row goes to the end (and becomes terminal).
     saveMutation.mutate({
       name: f.name.trim(),
       color: color === '' ? null : color,
@@ -202,7 +221,7 @@ export default function ConceptStatuses(): JSX.Element {
   const deleteMutation = createMutation(() => ({
     mutationFn: (id: string) => operationsApi.deleteConceptStatus(id),
     onSuccess: () => {
-      normalizeAfterLoad = true // removing a row can shift first/last
+      normalizeAfterLoad = true
       void qc.invalidateQueries({ queryKey: ['concept-statuses'] })
       toast.success('Estado eliminado')
       setDeleteTarget(null)
@@ -212,6 +231,11 @@ export default function ConceptStatuses(): JSX.Element {
       setDeleteTarget(null)
     },
   }))
+
+  const floatingItem = () => {
+    const d = drag()
+    return d ? items().find((s) => s.id === d.id) : undefined
+  }
 
   return (
     <div class="space-y-6">
@@ -261,70 +285,85 @@ export default function ConceptStatuses(): JSX.Element {
                 </CardContent>
               }
             >
-              <div ref={listRef} class="divide-y divide-border/60">
+              <div ref={listRef} class="divide-y divide-border/60" classList={{ 'select-none': !!drag() }}>
                 <For each={items()}>
                   {(s, i) => (
-                    <div
-                      data-cs
-                      class="flex items-center gap-3 px-4 py-3 transition"
-                      classList={{ 'bg-muted/40': dragId() === s.id }}
-                    >
-                      <Show when={isAdmin()}>
-                        <button
-                          type="button"
-                          class="shrink-0 cursor-grab text-muted-foreground hover:text-foreground active:cursor-grabbing"
-                          style="touch-action:none"
-                          aria-label="Arrastrar para reordenar"
-                          onPointerDown={(e) => onDragStart(e, s.id)}
-                        >
-                          <GripVertical class="h-5 w-5" />
-                        </button>
-                      </Show>
-                      <Show when={s.color}>
-                        <span class="h-3 w-3 shrink-0 rounded-full" style={`background:${s.color}`} />
-                      </Show>
-                      <div class="min-w-0 flex-1">
-                        <div class="flex flex-wrap items-center gap-2">
-                          <span class="font-medium text-foreground">{s.name}</span>
-                          <Show when={i() === 0}>
-                            <Badge tone="info">Inicial</Badge>
-                          </Show>
-                          <Show when={i() === items().length - 1}>
-                            <Badge tone="neutral">Terminal</Badge>
-                          </Show>
-                        </div>
-                      </div>
+                    <div data-cs>
                       <Show
-                        when={isAdmin()}
+                        when={draggingId() === s.id}
                         fallback={
-                          <div class="flex items-center gap-1.5">
-                            <Badge tone={boolBadgeTone(s.is_active)}>{s.is_active ? 'Activo' : 'Inactivo'}</Badge>
-                            <Show when={s.is_cancelled}>
-                              <Badge tone="danger">Cancelado</Badge>
+                          <div class="flex items-center gap-3 px-4 py-3">
+                            <Show when={isAdmin()}>
+                              <button
+                                type="button"
+                                class="shrink-0 cursor-grab text-muted-foreground hover:text-foreground active:cursor-grabbing"
+                                style="touch-action:none"
+                                aria-label="Arrastrar para reordenar"
+                                onPointerDown={(e) => onDragStart(e, s.id)}
+                              >
+                                <GripVertical class="h-5 w-5" />
+                              </button>
+                            </Show>
+                            <Show when={s.color}>
+                              <span class="h-3 w-3 shrink-0 rounded-full" style={`background:${s.color}`} />
+                            </Show>
+                            <div class="min-w-0 flex-1">
+                              <div class="flex flex-wrap items-center gap-2">
+                                <span class="font-medium text-foreground">{s.name}</span>
+                                <Show when={i() === 0}>
+                                  <Badge tone="info">Inicial</Badge>
+                                </Show>
+                                <Show when={i() === items().length - 1}>
+                                  <Badge tone="neutral">Terminal</Badge>
+                                </Show>
+                              </div>
+                            </div>
+                            <Show
+                              when={isAdmin()}
+                              fallback={
+                                <div class="flex items-center gap-1.5">
+                                  <Badge tone={boolBadgeTone(s.is_active)}>{s.is_active ? 'Activo' : 'Inactivo'}</Badge>
+                                  <Show when={s.is_cancelled}>
+                                    <Badge tone="danger">Cancelado</Badge>
+                                  </Show>
+                                </div>
+                              }
+                            >
+                              <div class="flex items-center gap-4">
+                                <Checkbox
+                                  checked={s.is_active}
+                                  onChange={(v) => void toggleFlag(s, 'is_active', v)}
+                                  label="Activo"
+                                />
+                                <Checkbox
+                                  checked={s.is_cancelled}
+                                  onChange={(v) => void toggleFlag(s, 'is_cancelled', v)}
+                                  label="Cancelado"
+                                />
+                                <div class="flex gap-1">
+                                  <Button variant="ghost" onClick={() => openEdit(s)} aria-label="Editar">
+                                    <Pencil class="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    class="text-destructive hover:bg-destructive/10"
+                                    onClick={() => setDeleteTarget(s)}
+                                    aria-label="Eliminar"
+                                  >
+                                    <Trash2 class="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              </div>
                             </Show>
                           </div>
                         }
                       >
-                        <div class="flex items-center gap-4">
-                          <Checkbox checked={s.is_active} onChange={(v) => void toggleFlag(s, 'is_active', v)} label="Activo" />
-                          <Checkbox
-                            checked={s.is_cancelled}
-                            onChange={(v) => void toggleFlag(s, 'is_cancelled', v)}
-                            label="Cancelado"
+                        {/* Gap placeholder where the dragged card will land */}
+                        <div class="p-2">
+                          <div
+                            class="rounded-lg border-2 border-dashed border-primary/40 bg-primary/5"
+                            style={`height:${Math.max(0, (drag()?.height ?? 56) - 16)}px`}
                           />
-                          <div class="flex gap-1">
-                            <Button variant="ghost" onClick={() => openEdit(s)} aria-label="Editar">
-                              <Pencil class="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              class="text-destructive hover:bg-destructive/10"
-                              onClick={() => setDeleteTarget(s)}
-                              aria-label="Eliminar"
-                            >
-                              <Trash2 class="h-4 w-4" />
-                            </Button>
-                          </div>
                         </div>
                       </Show>
                     </div>
@@ -335,6 +374,22 @@ export default function ConceptStatuses(): JSX.Element {
           </Show>
         </Show>
       </Card>
+
+      {/* Floating clone that follows the pointer while dragging */}
+      <Show when={drag() && floatingItem()}>
+        <Portal>
+          <div
+            class="card pointer-events-none fixed z-[70] flex items-center gap-3 rounded-xl px-4 py-3 shadow-2xl"
+            style={`left:${drag()!.left}px; top:${drag()!.y - drag()!.offset}px; width:${drag()!.width}px`}
+          >
+            <GripVertical class="h-5 w-5 text-muted-foreground" />
+            <Show when={floatingItem()!.color}>
+              <span class="h-3 w-3 shrink-0 rounded-full" style={`background:${floatingItem()!.color}`} />
+            </Show>
+            <span class="font-medium text-foreground">{floatingItem()!.name}</span>
+          </div>
+        </Portal>
+      </Show>
 
       {/* Create / edit modal */}
       <Modal open={modalOpen()} onOpenChange={setModalOpen} title={editingId() ? 'Editar estado' : 'Nuevo estado'}>
@@ -355,9 +410,7 @@ export default function ConceptStatuses(): JSX.Element {
               label="Cancelado"
             />
           </div>
-          <p class="text-xs text-muted-foreground">
-            La posición (inicial/terminal) se define arrastrando en la lista.
-          </p>
+          <p class="text-xs text-muted-foreground">La posición (inicial/terminal) se define arrastrando en la lista.</p>
 
           <Show when={formError()}>
             <p class="text-sm text-destructive">{formError()}</p>
