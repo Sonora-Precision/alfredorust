@@ -104,15 +104,38 @@ export function SpaceBackground() {
         if (magnetic) magnetic.style.transform = ''
       }) as EventListener)
 
-      // Parallax layers (cursor + scroll), eased in a single rAF loop
+      // Parallax on the STAR layers only. A single rAF owns their transform, so
+      // it never fights a CSS keyframe animation on the same property — that
+      // double-ownership is what made the motion look "robotic". Planets and
+      // asteroids keep their own CSS float (not touched here). The loop eases
+      // toward the cursor and then SLEEPS once settled, so it costs nothing when
+      // the pointer is idle (and stays asleep on touch devices with no hover).
       const layers: Array<{ el: HTMLElement; depth: number }> = []
       root.querySelectorAll<HTMLElement>('.stars').forEach((el, i) => layers.push({ el, depth: 10 + i * 12 }))
-      root.querySelectorAll<HTMLElement>('.floaty').forEach((el, i) => layers.push({ el, depth: 20 + i * 12 }))
       const sky = root.querySelector<HTMLElement>('.sky')
       let tx = 0
       let ty = 0
       let cx = 0
       let cy = 0
+      let running = false
+      const tick = () => {
+        cx += (tx - cx) * 0.08
+        cy += (ty - cy) * 0.08
+        for (const l of layers) {
+          l.el.style.transform = `translate3d(${(-cx * l.depth).toFixed(2)}px, ${(-cy * l.depth).toFixed(2)}px, 0)`
+        }
+        if (Math.abs(tx - cx) < 0.0004 && Math.abs(ty - cy) < 0.0004) {
+          running = false // settled → stop scheduling frames until the next input
+          return
+        }
+        rafId = requestAnimationFrame(tick)
+      }
+      const wake = () => {
+        if (!running) {
+          running = true
+          rafId = requestAnimationFrame(tick)
+        }
+      }
       bind(window, 'pointermove', ((e: PointerEvent) => {
         tx = (e.clientX / window.innerWidth - 0.5) * 2
         ty = (e.clientY / window.innerHeight - 0.5) * 2
@@ -121,6 +144,7 @@ export function SpaceBackground() {
           glow.style.left = `${e.clientX}px`
           glow.style.top = `${e.clientY}px`
         }
+        wake()
       }) as EventListener)
       bind(window, 'pointerleave', (() => {
         if (glow) glow.style.opacity = '0'
@@ -133,15 +157,6 @@ export function SpaceBackground() {
         }) as EventListener,
         { passive: true },
       )
-      const tick = () => {
-        cx += (tx - cx) * 0.06
-        cy += (ty - cy) * 0.06
-        for (const l of layers) {
-          l.el.style.transform = `translate3d(${(-cx * l.depth).toFixed(1)}px, ${(-cy * l.depth).toFixed(1)}px, 0)`
-        }
-        rafId = requestAnimationFrame(tick)
-      }
-      rafId = requestAnimationFrame(tick)
     }
 
     onCleanup(() => {

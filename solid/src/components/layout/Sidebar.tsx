@@ -31,8 +31,11 @@ export function Sidebar(): JSX.Element {
   const navAuth: NavAuth = { role: () => auth.role(), hasPermission: (p) => auth.hasPermission(p) }
 
   const [manualOpen, setManualOpen] = createSignal<Set<string>>(new Set())
-  const isActive = (href: string) =>
-    href === '/' ? location.pathname === '/' : location.pathname.startsWith(href)
+  // Path without the router base (/v3), so active detection works whether or not
+  // useLocation() includes it — this is what auto-opens the active group and
+  // highlights the current item.
+  const path = () => location.pathname.replace(/^\/v3(?=\/|$)/, '') || '/'
+  const isActive = (href: string) => (href === '/' ? path() === '/' : path().startsWith(href))
   const groupOpen = (group: NavGroupDef, children: { href: string }[]) =>
     manualOpen().has(group.id) || children.some((c) => isActive(c.href))
   const toggleGroup = (id: string) =>
@@ -68,9 +71,8 @@ export function Sidebar(): JSX.Element {
                   <Show when={canSeeSolo(entry as NavSolo, navAuth)}>
                     <A
                       href={(entry as NavSolo).href}
-                      end={(entry as NavSolo).href === '/'}
                       class="sb-item"
-                      activeClass="active"
+                      classList={{ active: isActive((entry as NavSolo).href) }}
                       onClick={() => setMobileNavOpen(false)}
                     >
                       <span class="sb-icon">{icon(entry)}</span>
@@ -101,7 +103,7 @@ export function Sidebar(): JSX.Element {
                               <A
                                 href={child.href}
                                 class="sb-item"
-                                activeClass="active"
+                                classList={{ active: isActive(child.href) }}
                                 onClick={() => setMobileNavOpen(false)}
                               >
                                 <span class="sb-label">{child.label}</span>
