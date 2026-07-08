@@ -43,7 +43,7 @@ pub async fn sat_cfdi_download(
             for package in &result.packages {
                 match fs::read(&package.path).await {
                     Ok(zip_bytes) => {
-                        match cfdi::import_zip(&state.cfdis, &slug, &zip_bytes).await {
+                        match cfdi::import_zip(&state.cfdis, &slug, &zip_bytes, None).await {
                             Ok(imported) => {
                                 eprintln!(
                                     "[cfdi] imported {} CFDIs from {}",

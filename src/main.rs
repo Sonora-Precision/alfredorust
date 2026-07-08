@@ -22,6 +22,7 @@ use utoipa_swagger_ui::SwaggerUi;
 use crate::openapi::ApiDoc;
 
 mod cfdi;
+mod cron;
 pub mod filters;
 mod models;
 mod openapi;
@@ -693,6 +694,10 @@ async fn main() {
     let spa3_dir = std::env::var("SOLID_DIST").unwrap_or_else(|_| "solid/dist".to_string());
     let spa3_index = format!("{spa3_dir}/index.html");
     let spa3_service = ServeDir::new(&spa3_dir).fallback(ServeFile::new(spa3_index));
+
+    // Daily in-process CFDI download cron (05:00 Mexico time) for all companies
+    // with a SAT config. Shares the same Arc<AppState> as the router.
+    tokio::spawn(crate::cron::run_daily_cfdi_cron(state.clone()));
 
     let app = Router::new()
         .route("/", get(routes::home))

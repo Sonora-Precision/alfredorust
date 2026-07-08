@@ -172,31 +172,36 @@ async fn cfdi_job_endpoints_scope_to_company_and_admin() {
     let staff_token = create_session(&state, &staff.username).await.unwrap();
     let host_a = "cfdi-jobs-a.miapp.local";
 
-    {
-        let mut jobs = state.jobs.lock().await;
-        jobs.insert(
-            "job-a".into(),
-            CfdiJob {
-                job_id: "job-a".into(),
-                company_id: company_a.to_hex(),
-                label: "2026-01".into(),
-                chunk_start: "2026-01-01".into(),
-                started_at: "2026-01-15".into(),
-                status: CfdiJobStatus::Queued,
-            },
-        );
-        jobs.insert(
-            "job-b".into(),
-            CfdiJob {
-                job_id: "job-b".into(),
-                company_id: company_b.to_hex(),
-                label: "2026-02".into(),
-                chunk_start: "2026-02-01".into(),
-                started_at: "2026-02-15".into(),
-                status: CfdiJobStatus::Running,
-            },
-        );
-    }
+    insert_cfdi_job(
+        &state,
+        &CfdiJob {
+            job_id: "job-a".into(),
+            company_id: company_a.to_hex(),
+            label: "2026-01".into(),
+            chunk_start: "2026-01-01".into(),
+            started_at: "2026-01-15".into(),
+            status: CfdiJobStatus::Queued,
+            source: "manual".into(),
+            created_at: DateTime::now(),
+        },
+    )
+    .await
+    .unwrap();
+    insert_cfdi_job(
+        &state,
+        &CfdiJob {
+            job_id: "job-b".into(),
+            company_id: company_b.to_hex(),
+            label: "2026-02".into(),
+            chunk_start: "2026-02-01".into(),
+            started_at: "2026-02-15".into(),
+            status: CfdiJobStatus::Running,
+            source: "manual".into(),
+            created_at: DateTime::now(),
+        },
+    )
+    .await
+    .unwrap();
 
     let app = build_app(shared.clone());
     let (status, body) = get_with_cookie(
@@ -222,6 +227,10 @@ async fn cfdi_job_endpoints_scope_to_company_and_admin() {
     let job: serde_json::Value = serde_json::from_str(&body).expect("job must be JSON");
     assert_eq!(job["job_id"], "job-a");
 
+    // job-b belongs to company_b. Fetching it through company_a's URL now returns
+    // 404 (not 403): jobs are queried scoped by company_id, so another company's
+    // job simply doesn't exist in this scope — which also avoids leaking its
+    // existence across tenants. The spec only requires the request be rejected.
     let app = build_app(shared.clone());
     let (status, _body) = get_with_cookie(
         app,
@@ -230,7 +239,7 @@ async fn cfdi_job_endpoints_scope_to_company_and_admin() {
         &admin_token,
     )
     .await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(status, StatusCode::NOT_FOUND);
 
     let app = build_app(shared);
     let (status, _body) = get_with_cookie(
@@ -309,7 +318,10 @@ async fn cfdi_download_rejects_malformed_dates_before_starting_jobs() {
         "expected a format error, got: {body}"
     );
     assert!(
-        state.jobs.lock().await.is_empty(),
+        list_cfdi_jobs(&state, &company.to_hex())
+            .await
+            .unwrap()
+            .is_empty(),
         "invalid input must not create SAT jobs"
     );
 

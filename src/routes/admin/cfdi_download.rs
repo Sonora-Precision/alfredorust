@@ -20,8 +20,9 @@ use crate::{
     session::SessionUser,
     state::{
         AppState, CfdiJob, CfdiJobStatus, create_or_update_planned_entry_from_cfdi,
-        get_or_create_category, get_or_create_contact_by_rfc, get_or_create_sat_account,
-        get_sat_config, pay_planned_entry,
+        get_cfdi_job, get_company_by_id, get_or_create_category, get_or_create_contact_by_rfc,
+        get_or_create_sat_account, get_sat_config, insert_cfdi_job, list_cfdi_jobs,
+        pay_planned_entry, set_cfdi_job_status,
     },
 };
 
@@ -188,58 +189,104 @@ async fn start_cfdi_download(
         _ => vec![DownloadType::Issued],
     };
 
-    let chunks = match monthly_chunks(&form.start, &form.end) {
+    // Validate the range up front so the HTTP path can still return 400 with the
+    // same message on bad dates; the actual chunking happens inside
+    // `spawn_cfdi_download_jobs` (which re-runs `monthly_chunks`).
+    if let Err(message) = monthly_chunks(&form.start, &form.end) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": message })),
+        )
+            .into_response();
+    }
+
+    // Max 3 concurrent SAT requests; shared across all monthly jobs.
+    let semaphore = Arc::new(Semaphore::new(3));
+
+    let started = spawn_cfdi_download_jobs(
+        state,
+        company_id,
+        company_object_id,
+        &config,
+        &form.start,
+        &form.end,
+        dl_types,
+        form.auto_create_payments,
+        "manual",
+        semaphore,
+    )
+    .await;
+
+    (StatusCode::ACCEPTED, Json(StartedJobs { jobs: started })).into_response()
+}
+
+/// Chunk a date range into months and spawn one persisted background download
+/// job per chunk. Shared by the HTTP handlers (`source = "manual"`) and the
+/// daily cron (`source = "cron"`). The `semaphore` caps concurrent SAT requests
+/// and is shared across every job the caller spawns in one pass.
+///
+/// Errors are non-fatal: a `monthly_chunks` failure or a failed job insert is
+/// logged and skipped so a single bad company never aborts a cron pass.
+#[allow(clippy::too_many_arguments)]
+pub async fn spawn_cfdi_download_jobs(
+    state: std::sync::Arc<AppState>,
+    company_id: String,
+    company_object_id: bson::oid::ObjectId,
+    config: &crate::models::SatConfig,
+    start: &str,
+    end: &str,
+    dl_types: Vec<DownloadType>,
+    auto_create_payments: bool,
+    source: &str,
+    semaphore: std::sync::Arc<tokio::sync::Semaphore>,
+) -> Vec<StartedJobInfo> {
+    let chunks = match monthly_chunks(start, end) {
         Ok(chunks) => chunks,
         Err(message) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({ "error": message })),
-            )
-                .into_response();
+            eprintln!("[cfdi] monthly_chunks error for {company_id}: {message}");
+            return Vec::new();
         }
     };
     let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
     let mut started = Vec::new();
 
-    // Max 3 concurrent SAT requests; shared across all monthly jobs.
-    let semaphore = Arc::new(Semaphore::new(3));
-
     for (label, chunk_start, chunk_end) in chunks {
         let job_id = Uuid::new_v4().to_string();
 
-        state.jobs.lock().await.insert(
-            job_id.clone(),
-            CfdiJob {
-                job_id: job_id.clone(),
-                company_id: company_id.clone(),
-                label: label.clone(),
-                chunk_start: chunk_start.clone(),
-                started_at: today.clone(),
-                status: CfdiJobStatus::Queued,
-            },
-        );
+        let job = CfdiJob {
+            job_id: job_id.clone(),
+            company_id: company_id.clone(),
+            label: label.clone(),
+            chunk_start: chunk_start.clone(),
+            started_at: today.clone(),
+            status: CfdiJobStatus::Queued,
+            source: source.to_string(),
+            created_at: bson::DateTime::now(),
+        };
+        if let Err(e) = insert_cfdi_job(&state, &job).await {
+            eprintln!("[cfdi] failed to persist job {job_id}: {e}");
+            continue;
+        }
 
         let state_bg = state.clone();
         let job_id_bg = job_id.clone();
         let company_id_bg = company_id.clone();
-        let company_oid_bg = company_object_id.clone();
+        let company_oid_bg = company_object_id;
         let dl_types_bg = dl_types.clone();
         let cer = config.cer_path.clone();
         let key = config.key_path.clone();
         let pwd = config.key_password.clone();
         let rfc = config.rfc.clone();
         let sem = semaphore.clone();
-        let auto_create_payments = form.auto_create_payments;
 
         tokio::spawn(async move {
             let _permit = sem.acquire().await.unwrap();
 
             // Mark as actively running now that we have a semaphore slot.
+            if let Err(e) =
+                set_cfdi_job_status(&state_bg, &job_id_bg, &CfdiJobStatus::Running).await
             {
-                let mut jobs = state_bg.jobs.lock().await;
-                if let Some(job) = jobs.get_mut(&job_id_bg) {
-                    job.status = CfdiJobStatus::Running;
-                }
+                eprintln!("[cfdi] failed to mark job {job_id_bg} running: {e}");
             }
 
             let result = run_download(
@@ -278,16 +325,15 @@ async fn start_cfdi_download(
                 result
             };
 
-            let mut jobs = state_bg.jobs.lock().await;
-            if let Some(job) = jobs.get_mut(&job_id_bg) {
-                job.status = result;
+            if let Err(e) = set_cfdi_job_status(&state_bg, &job_id_bg, &result).await {
+                eprintln!("[cfdi] failed to persist job {job_id_bg} status: {e}");
             }
         });
 
         started.push(StartedJobInfo { job_id, label });
     }
 
-    (StatusCode::ACCEPTED, Json(StartedJobs { jobs: started })).into_response()
+    started
 }
 
 // ── GET: list all jobs for a company ───────────────────────────────────────
@@ -318,13 +364,14 @@ pub async fn company_cfdi_jobs_list(
         return status.into_response();
     }
 
-    let jobs = state.jobs.lock().await;
-    let mut result: Vec<&CfdiJob> = jobs
-        .values()
-        .filter(|j| j.company_id == company_id)
-        .collect();
-    result.sort_by(|a, b| a.chunk_start.cmp(&b.chunk_start));
-    (StatusCode::OK, Json(result)).into_response()
+    match list_cfdi_jobs(&state, &company_id).await {
+        Ok(jobs) => (StatusCode::OK, Json(jobs)).into_response(),
+        Err(_) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error":"Error de base de datos"})),
+        )
+            .into_response(),
+    }
 }
 
 // ── GET: single job status ─────────────────────────────────────────────────
@@ -358,15 +405,16 @@ pub async fn company_cfdi_job_status(
         return status.into_response();
     }
 
-    let jobs = state.jobs.lock().await;
-    match jobs.get(&job_id) {
-        Some(job) if job.company_id == _company_id => {
-            (StatusCode::OK, Json(job.clone())).into_response()
-        }
-        Some(_) => StatusCode::FORBIDDEN.into_response(),
-        None => (
+    match get_cfdi_job(&state, &_company_id, &job_id).await {
+        Ok(Some(job)) => (StatusCode::OK, Json(job)).into_response(),
+        Ok(None) => (
             StatusCode::NOT_FOUND,
             Json(serde_json::json!({"error":"job no encontrado"})),
+        )
+            .into_response(),
+        Err(_) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error":"Error de base de datos"})),
         )
             .into_response(),
     }
@@ -390,7 +438,28 @@ async fn run_download(
     let mut all_imported: Vec<(DownloadType, crate::cfdi::ImportedCfdi)> = Vec::new();
     let mut errors = Vec::new();
 
+    // Root of the on-disk source-of-truth XML store, plus this company's slug
+    // (fall back to the company id hex if the company can't be resolved).
+    let store_root = std::path::PathBuf::from(
+        std::env::var("CFDI_STORE_DIR").unwrap_or_else(|_| "data/cfdi_store".to_string()),
+    );
+    let slug = match get_company_by_id(state, company_object_id).await {
+        Ok(Some(c)) if !c.slug.is_empty() => c.slug,
+        _ => company_id.to_string(),
+    };
+
     for dl_type in dl_types {
+        let direction = match dl_type {
+            DownloadType::Issued => "emitido",
+            DownloadType::Received => "recibido",
+        };
+        let store_target = cfdi::CfdiStoreTarget {
+            root: store_root.clone(),
+            slug: slug.clone(),
+            rfc: rfc.clone(),
+            direction,
+        };
+
         let request = CfdiDownloadRequest {
             cer_path: Some(cer_path.clone()),
             key_path: Some(key_path.clone()),
@@ -416,7 +485,9 @@ async fn run_download(
         for package in &download_result.packages {
             match fs::read(&package.path).await {
                 Ok(zip_bytes) => {
-                    match cfdi::import_zip(&state.cfdis, company_id, &zip_bytes).await {
+                    match cfdi::import_zip(&state.cfdis, company_id, &zip_bytes, Some(&store_target))
+                        .await
+                    {
                         Ok(imported) => {
                             eprintln!(
                                 "[cfdi] imported {} from {}",
@@ -754,7 +825,52 @@ fn is_definitive_sat_error(error: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{CfdiJobStatus, should_retry};
+    use super::{CfdiJob, CfdiJobStatus, should_retry};
+
+    #[test]
+    fn cfdi_job_survives_bson_round_trip() {
+        // Proves the internally-tagged status enum + its counts survive a full
+        // BSON document round-trip (what Mongo persistence relies on).
+        let job = CfdiJob {
+            job_id: "job-1".to_string(),
+            company_id: "company-1".to_string(),
+            label: "Ene 2024".to_string(),
+            chunk_start: "2024-01-01T00:00:00".to_string(),
+            started_at: "2024-01-01".to_string(),
+            status: CfdiJobStatus::Done {
+                imported: 7,
+                transactions_created: 3,
+                transactions_updated: 2,
+                transactions_skipped: 1,
+                errors: vec!["boom".to_string()],
+            },
+            source: "manual".to_string(),
+            created_at: bson::DateTime::now(),
+        };
+
+        let doc = bson::to_document(&job).expect("serialize to bson document");
+        let back: CfdiJob = bson::from_document(doc).expect("deserialize from bson document");
+
+        assert_eq!(back.job_id, job.job_id);
+        assert_eq!(back.company_id, job.company_id);
+        assert_eq!(back.source, "manual");
+        match back.status {
+            CfdiJobStatus::Done {
+                imported,
+                transactions_created,
+                transactions_updated,
+                transactions_skipped,
+                errors,
+            } => {
+                assert_eq!(imported, 7);
+                assert_eq!(transactions_created, 3);
+                assert_eq!(transactions_updated, 2);
+                assert_eq!(transactions_skipped, 1);
+                assert_eq!(errors, vec!["boom".to_string()]);
+            }
+            other => panic!("expected Done, got {other:?}"),
+        }
+    }
 
     #[test]
     fn retry_skips_definitive_sat_rejections() {

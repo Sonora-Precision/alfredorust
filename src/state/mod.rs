@@ -2,9 +2,8 @@
 
 use anyhow::Result;
 use mongodb::{Client, Collection};
-use serde::Serialize;
-use std::{collections::HashMap, env, sync::Arc};
-use tokio::sync::Mutex;
+use serde::{Deserialize, Serialize};
+use std::env;
 
 use crate::models::{
     Account, Category, Company, ConceptStatus, Contact, Forecast, PlannedEntry, Project,
@@ -13,7 +12,7 @@ use crate::models::{
 };
 use bson::Document;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "lowercase")]
 pub enum CfdiJobStatus {
     Queued,
@@ -30,7 +29,7 @@ pub enum CfdiJobStatus {
     },
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CfdiJob {
     pub job_id: String,
     pub company_id: String,
@@ -38,10 +37,12 @@ pub struct CfdiJob {
     pub chunk_start: String,
     pub started_at: String,
     pub status: CfdiJobStatus,
+    /// "manual" (HTTP request) or "cron" (daily scheduled pass).
+    pub source: String,
+    pub created_at: bson::DateTime,
 }
 
-pub type JobStore = Arc<Mutex<HashMap<String, CfdiJob>>>;
-
+mod cfdi_jobs;
 mod companies;
 mod finance;
 mod orders;
@@ -54,6 +55,7 @@ mod sat_configs;
 mod seed;
 mod users;
 
+pub use cfdi_jobs::*;
 pub use companies::*;
 pub use finance::*;
 pub use orders::*;
@@ -70,7 +72,7 @@ pub const PLANNED_MONTHS_AHEAD: u32 = 24;
 
 #[derive(Clone)]
 pub struct AppState {
-    pub jobs: JobStore,
+    pub cfdi_jobs: Collection<CfdiJob>,
     pub users: Collection<User>,
     pub user_companies: Collection<UserCompany>,
     pub companies: Collection<Company>,
@@ -138,7 +140,7 @@ pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppStat
     }
 
     Ok(AppState {
-        jobs: Arc::new(Mutex::new(HashMap::new())),
+        cfdi_jobs: db.collection::<CfdiJob>("cfdi_jobs"),
         users: db.collection::<User>("users"),
         user_companies: db.collection::<UserCompany>("user_companies"),
         companies: db.collection::<Company>("company"),

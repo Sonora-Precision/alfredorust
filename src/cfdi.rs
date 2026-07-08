@@ -24,11 +24,64 @@ pub struct ImportedCfdi {
     pub folio: String,
 }
 
+/// Where to persist raw CFDI XML on disk, as a source-of-truth store deduped by
+/// UUID. Files land at `{root}/{slug}/{rfc}/{direction}/{year}/{uuid}.xml`.
+pub struct CfdiStoreTarget {
+    pub root: std::path::PathBuf,
+    pub slug: String,
+    pub rfc: String,
+    /// "emitido" or "recibido".
+    pub direction: &'static str,
+}
+
+/// Keep only path-safe characters (ASCII alphanumeric, `-`, `_`) in a path
+/// segment so a hostile slug/rfc/uuid cannot escape the store directory.
+fn sanitize_segment(s: &str) -> String {
+    s.chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .collect()
+}
+
+/// Write one CFDI's raw XML to the on-disk store, deduped by UUID. Best-effort:
+/// any IO error is logged and swallowed so it never fails the import.
+fn store_raw_xml(target: &CfdiStoreTarget, cfdi: &ImportedCfdi, xml: &str) {
+    let slug = sanitize_segment(&target.slug);
+    let rfc = sanitize_segment(&target.rfc);
+    let year = if cfdi.fecha.len() >= 4 {
+        sanitize_segment(&cfdi.fecha[..4])
+    } else {
+        "unknown".to_string()
+    };
+    let uuid = sanitize_segment(&cfdi.uuid);
+
+    let dir = target
+        .root
+        .join(&slug)
+        .join(&rfc)
+        .join(target.direction)
+        .join(&year);
+    let path = dir.join(format!("{uuid}.xml"));
+
+    if path.exists() {
+        return;
+    }
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        eprintln!("[cfdi] store: failed to create {}: {e}", dir.display());
+        return;
+    }
+    if let Err(e) = std::fs::write(&path, xml) {
+        eprintln!("[cfdi] store: failed to write {}: {e}", path.display());
+    }
+}
+
 /// Extract and import all CFDI XML files from a ZIP. Returns imported CFDIs.
+/// When `store` is `Some`, each successfully-imported CFDI's raw XML is also
+/// persisted to the on-disk store (best-effort, deduped by UUID).
 pub async fn import_zip(
     collection: &Collection<bson::Document>,
     company_id: &str,
     zip_bytes: &[u8],
+    store: Option<&CfdiStoreTarget>,
 ) -> Result<Vec<ImportedCfdi>> {
     let cursor = std::io::Cursor::new(zip_bytes);
     let mut archive = ZipArchive::new(cursor).context("Opening ZIP")?;
@@ -50,7 +103,12 @@ pub async fn import_zip(
     let mut imported = Vec::new();
     for (name, xml) in xml_files {
         match import_xml(collection, company_id, &xml).await {
-            Ok(cfdi) => imported.push(cfdi),
+            Ok(cfdi) => {
+                if let Some(target) = store {
+                    store_raw_xml(target, &cfdi, &xml);
+                }
+                imported.push(cfdi);
+            }
             Err(e) => eprintln!("[cfdi] skip {name}: {e}"),
         }
     }
