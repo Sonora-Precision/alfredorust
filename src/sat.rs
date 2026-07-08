@@ -248,11 +248,13 @@ pub async fn download_cfdis(
 ) -> Result<CfdiDownloadResponse, SatError> {
     let cfg = build_config(company_slug, request)?;
     let fiel = Fiel::load(&cfg.cer_path, &cfg.key_path, &cfg.key_password).await?;
-    // Short per-request timeout: the SAT verification service frequently hangs,
-    // so we want to cut a stalled request quickly and retry (see
-    // `poll_until_finished`) instead of blocking for a full minute each time.
+    // Generous per-request timeout: the SAT verification service is often
+    // extremely slow — measured ~80s to answer a single VerificaSolicitudDescarga
+    // when overloaded. A short timeout guarantees failure (it cancels the request
+    // before the SAT replies). When the SAT is healthy it still returns in a
+    // couple of seconds, so a long timeout only ever helps.
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
+        .timeout(std::time::Duration::from_secs(150))
         .build()
         .map_err(|err| SatError::Http(format!("no pude crear cliente HTTP: {err}")))?;
 
@@ -311,7 +313,9 @@ fn build_config(company_slug: &str, request: CfdiDownloadRequest) -> Result<SatC
         end,
         output_dir: PathBuf::from(output_dir),
         poll_seconds: request.poll_seconds.unwrap_or(5).max(1),
-        max_attempts: request.max_attempts.unwrap_or(45).max(1),
+        // Each attempt can now block up to ~150s waiting on a slow SAT, so keep
+        // the attempt count modest; a ready solicitud succeeds on the first try.
+        max_attempts: request.max_attempts.unwrap_or(15).max(1),
         download_type: request.download_type,
         request_type: request.request_type,
     })
