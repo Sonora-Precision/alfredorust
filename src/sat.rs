@@ -313,7 +313,11 @@ fn build_config(company_slug: &str, request: CfdiDownloadRequest) -> Result<SatC
         start,
         end,
         output_dir: PathBuf::from(output_dir),
-        poll_seconds: request.poll_seconds.unwrap_or(5).max(1),
+        poll_seconds: request
+            .poll_seconds
+            .or_else(|| env_u64("CFDI_SAT_POLL_SECONDS"))
+            .unwrap_or(120)
+            .max(1),
         // Each attempt can now block up to ~300s waiting on a slow SAT, so keep
         // the attempt count modest; a ready solicitud succeeds on the first try.
         max_attempts: request
@@ -334,6 +338,10 @@ fn value_or_env(value: Option<String>, name: &str) -> Result<String, SatError> {
 }
 
 fn env_u32(name: &str) -> Option<u32> {
+    env::var(name).ok()?.parse().ok()
+}
+
+fn env_u64(name: &str) -> Option<u64> {
     env::var(name).ok()?.parse().ok()
 }
 
@@ -914,6 +922,15 @@ mod tests {
         assert_eq!(env_u32("CFDI_SAT_MAX_ATTEMPTS"), Some(2));
         // SAFETY: cleanup for the same process-local test env mutation above.
         unsafe { env::remove_var("CFDI_SAT_MAX_ATTEMPTS") };
+    }
+
+    #[test]
+    fn cfdi_sat_poll_seconds_env_is_supported() {
+        // SAFETY: this unit test only mutates process env for this single read.
+        unsafe { env::set_var("CFDI_SAT_POLL_SECONDS", "120") };
+        assert_eq!(env_u64("CFDI_SAT_POLL_SECONDS"), Some(120));
+        // SAFETY: cleanup for the same process-local test env mutation above.
+        unsafe { env::remove_var("CFDI_SAT_POLL_SECONDS") };
     }
 
     #[test]

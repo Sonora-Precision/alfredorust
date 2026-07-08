@@ -32,7 +32,7 @@ async fn main() -> anyhow::Result<()> {
 
     if args.len() < 5 {
         eprintln!(
-            "Usage:\n  {} list\n  {} run <sat_config_id> <start YYYY-MM-DD> <end YYYY-MM-DD> [issued|received] [max_attempts]",
+            "Usage:\n  {} list\n  {} run <sat_config_id> <start YYYY-MM-DD> <end YYYY-MM-DD> [issued|received] [max_attempts] [poll_seconds]",
             args[0], args[0]
         );
         std::process::exit(2);
@@ -46,6 +46,7 @@ async fn main() -> anyhow::Result<()> {
         _ => DownloadType::Issued,
     };
     let max_attempts = args.get(6).and_then(|value| value.parse::<u32>().ok());
+    let poll_seconds = args.get(7).and_then(|value| value.parse::<u64>().ok());
 
     let cfg = get_sat_config(&state, &sat_config_id)
         .await?
@@ -56,7 +57,7 @@ async fn main() -> anyhow::Result<()> {
         .join(Utc::now().format("%Y%m%d%H%M%S").to_string());
 
     println!(
-        "SAT probe start company_id={} sat_config_id={} rfc={} type={} start={} end={} max_attempts={}",
+        "SAT probe start company_id={} sat_config_id={} rfc={} type={} start={} end={} max_attempts={} poll_seconds={}",
         cfg.company_id,
         sat_config_id.to_hex(),
         cfg.rfc,
@@ -68,6 +69,12 @@ async fn main() -> anyhow::Result<()> {
                 .ok()
                 .and_then(|value| value.parse().ok())
                 .unwrap_or(15)
+        }),
+        poll_seconds.unwrap_or_else(|| {
+            env::var("CFDI_SAT_POLL_SECONDS")
+                .ok()
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(120)
         })
     );
 
@@ -83,7 +90,7 @@ async fn main() -> anyhow::Result<()> {
             start: Some(start),
             end: Some(end),
             output_dir: Some(output_dir.to_string_lossy().to_string()),
-            poll_seconds: Some(5),
+            poll_seconds,
             max_attempts,
         },
     )
