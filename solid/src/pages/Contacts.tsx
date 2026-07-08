@@ -16,6 +16,7 @@ import { Button } from '../components/ui/Button'
 import { Card, CardContent } from '../components/ui/Card'
 import { Modal } from '../components/ui/Modal'
 import { Input } from '../components/ui/Input'
+import { PageHeader } from '../components/ui/PageHeader'
 import { Select } from '../components/ui/Select'
 import { Spinner } from '../components/ui/Spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeadCell, TableRow } from '../components/ui/Table'
@@ -146,21 +147,22 @@ export default function Contacts(): JSX.Element {
 
   return (
     <div class="space-y-6">
-      <div class="flex items-center justify-between">
-        <div>
-          <h1 class="text-xl font-semibold text-foreground">Contactos</h1>
-          <p class="mt-1 text-sm text-muted-foreground">
-            <Show when={contactsQuery.data} fallback="Clientes, proveedores y contactos de servicio.">
-              {contactsQuery.data!.length} contacto{contactsQuery.data!.length === 1 ? '' : 's'}
-            </Show>
-          </p>
-        </div>
-        <Show when={isAdmin()}>
-          <Button onClick={openCreate}>Nuevo contacto</Button>
-        </Show>
-      </div>
+      <PageHeader
+        title="Contactos"
+        breadcrumb={['Finanzas', 'Contactos']}
+        subtitle={
+          contactsQuery.data
+            ? `${contactsQuery.data.length} contacto${contactsQuery.data.length === 1 ? '' : 's'}`
+            : 'Clientes, proveedores y contactos de servicio.'
+        }
+        actions={
+          <Show when={isAdmin()}>
+            <Button onClick={openCreate}>Nuevo contacto</Button>
+          </Show>
+        }
+      />
 
-      <Card>
+      <Card glass>
         <Show when={!contactsQuery.isLoading} fallback={
           <CardContent class="flex items-center justify-center gap-2 py-16 text-muted-foreground">
             <Spinner />

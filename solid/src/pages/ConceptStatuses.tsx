@@ -12,6 +12,7 @@ import { Card, CardContent } from '../components/ui/Card'
 import { Checkbox } from '../components/ui/Checkbox'
 import { Input } from '../components/ui/Input'
 import { Modal } from '../components/ui/Modal'
+import { PageHeader } from '../components/ui/PageHeader'
 import { Spinner } from '../components/ui/Spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeadCell, TableRow } from '../components/ui/Table'
 import { toast } from '../components/ui/Toast'
@@ -123,24 +124,25 @@ export default function ConceptStatuses(): JSX.Element {
 
   return (
     <div class="space-y-6">
-      <div class="flex items-center justify-between">
-        <div>
-          <h1 class="text-xl font-semibold text-foreground">Estados de concepto</h1>
-          <p class="mt-1 text-sm text-muted-foreground">
-            <Show when={statusesQuery.data} fallback="Flujo de estados de los conceptos de proyecto.">
-              {statusesQuery.data!.length} estado{statusesQuery.data!.length === 1 ? '' : 's'}
-            </Show>
-          </p>
-        </div>
-        <Show when={isAdmin()}>
-          <Button onClick={openCreate}>
-            <Plus class="mr-1.5 h-4 w-4" />
-            Nuevo estado
-          </Button>
+      <PageHeader
+        title="Estados de concepto"
+        breadcrumb={['Operaciones', 'Estados de concepto']}
+        actions={
+          <Show when={isAdmin()}>
+            <Button onClick={openCreate}>
+              <Plus class="mr-1.5 h-4 w-4" />
+              Nuevo estado
+            </Button>
+          </Show>
+        }
+      />
+      <p class="-mt-4 text-sm text-muted-foreground">
+        <Show when={statusesQuery.data} fallback="Flujo de estados de los conceptos de proyecto.">
+          {statusesQuery.data!.length} estado{statusesQuery.data!.length === 1 ? '' : 's'}
         </Show>
-      </div>
+      </p>
 
-      <Card>
+      <Card glass>
         <Show when={!statusesQuery.isLoading} fallback={
           <CardContent class="flex items-center justify-center gap-2 py-16 text-muted-foreground">
             <Spinner />
@@ -185,7 +187,7 @@ export default function ConceptStatuses(): JSX.Element {
                 <TableBody>
                   {(statusesQuery.data ?? []).map((s) => (
                     <TableRow>
-                      <TableCell class="text-muted-foreground">{s.position}</TableCell>
+                      <TableCell class="tnum text-muted-foreground">{s.position}</TableCell>
                       <TableCell class="font-medium text-foreground">{s.name}</TableCell>
                       <TableCell>{s.is_initial ? 'Sí' : ''}</TableCell>
                       <TableCell>{s.is_terminal ? 'Sí' : ''}</TableCell>

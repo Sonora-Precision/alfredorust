@@ -13,6 +13,7 @@ import { type JSX, Show, createEffect, createSignal } from 'solid-js'
 import { Button } from '../components/ui/Button'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
 import { Input } from '../components/ui/Input'
+import { PageHeader } from '../components/ui/PageHeader'
 import { toast } from '../components/ui/Toast'
 import * as adminApi from '../lib/api/admin'
 import { humanizeError } from '../lib/api/client'
@@ -72,12 +73,9 @@ export default function Account(): JSX.Element {
 
   return (
     <div class="space-y-6">
-      <div>
-        <h1 class="text-xl font-semibold text-foreground">Mi cuenta</h1>
-        <p class="mt-1 text-sm text-muted-foreground">Actualiza los datos asociados a tu usuario.</p>
-      </div>
+      <PageHeader title="Mi cuenta" subtitle="Actualiza los datos asociados a tu usuario." />
 
-      <Card class="max-w-lg">
+      <Card glass class="max-w-lg">
         <CardHeader>
           <CardTitle>Perfil</CardTitle>
         </CardHeader>

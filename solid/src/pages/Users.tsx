@@ -18,6 +18,7 @@ import { Card, CardContent } from '../components/ui/Card'
 import { Checkbox } from '../components/ui/Checkbox'
 import { Input } from '../components/ui/Input'
 import { Modal } from '../components/ui/Modal'
+import { PageHeader } from '../components/ui/PageHeader'
 import { Select } from '../components/ui/Select'
 import { Spinner } from '../components/ui/Spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeadCell, TableRow } from '../components/ui/Table'
@@ -238,22 +239,23 @@ export default function Users(): JSX.Element {
 
   return (
     <div class="space-y-6">
-      <div class="flex items-center justify-between">
-        <div>
-          <h1 class="text-xl font-semibold text-foreground">Usuarios</h1>
-          <p class="mt-1 text-sm text-muted-foreground">
-            <Show when={usersQuery.data} fallback="Usuarios y sus membresías por compañía.">
-              {usersQuery.data!.length} usuario{usersQuery.data!.length === 1 ? '' : 's'}
-            </Show>
-          </p>
-        </div>
-        <Button onClick={openCreate}>
-          <Plus class="mr-1.5 h-4 w-4" />
-          Nuevo usuario
-        </Button>
-      </div>
+      <PageHeader
+        title="Usuarios"
+        breadcrumb={['Administración', 'Usuarios']}
+        subtitle={
+          usersQuery.data
+            ? `${usersQuery.data.length} usuario${usersQuery.data.length === 1 ? '' : 's'}`
+            : 'Usuarios y sus membresías por compañía.'
+        }
+        actions={
+          <Button onClick={openCreate}>
+            <Plus class="mr-1.5 h-4 w-4" />
+            Nuevo usuario
+          </Button>
+        }
+      />
 
-      <Card>
+      <Card glass>
         <Show when={!usersQuery.isLoading} fallback={
           <CardContent class="flex items-center justify-center gap-2 py-16 text-muted-foreground">
             <Spinner />

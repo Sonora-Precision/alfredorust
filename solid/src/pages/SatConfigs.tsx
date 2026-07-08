@@ -18,6 +18,7 @@ import { type JSX, Show, createSignal } from 'solid-js'
 import { Button } from '../components/ui/Button'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
 import { Input } from '../components/ui/Input'
+import { PageHeader } from '../components/ui/PageHeader'
 import { Spinner } from '../components/ui/Spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeadCell, TableRow } from '../components/ui/Table'
 import { toast } from '../components/ui/Toast'
@@ -110,14 +111,13 @@ export default function SatConfigs(): JSX.Element {
 
   return (
     <div class="space-y-6">
-      <div>
-        <h1 class="text-xl font-semibold text-foreground">Configuraciones SAT</h1>
-        <p class="text-sm text-muted-foreground">
-          Firmas (CSD) de la compañía actual para timbrado y descarga de CFDIs.
-        </p>
-      </div>
+      <PageHeader
+        title="Config. SAT"
+        breadcrumb={['Fiscal', 'Config. SAT']}
+        subtitle="Firmas (CSD) de la compañía actual para timbrado y descarga de CFDIs."
+      />
 
-      <Card class="max-w-2xl">
+      <Card glass class="max-w-2xl">
         <CardHeader>
           <CardTitle>Agregar configuración</CardTitle>
         </CardHeader>
@@ -156,7 +156,7 @@ export default function SatConfigs(): JSX.Element {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card glass>
         <Show
           when={!configsQuery.isLoading}
           fallback={
@@ -197,7 +197,7 @@ export default function SatConfigs(): JSX.Element {
                     <TableRow>
                       <TableCell class="font-medium text-foreground">{s.rfc}</TableCell>
                       <TableCell class="text-muted-foreground">{s.label ?? ''}</TableCell>
-                      <TableCell class="text-muted-foreground">{rfc3339ToDate(s.created_at)}</TableCell>
+                      <TableCell class="tnum text-muted-foreground">{rfc3339ToDate(s.created_at)}</TableCell>
                       <TableCell class="text-right">
                         <Button
                           variant="ghost"

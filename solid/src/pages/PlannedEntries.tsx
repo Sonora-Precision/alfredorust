@@ -15,6 +15,7 @@ import { Button } from '../components/ui/Button'
 import { Card, CardContent } from '../components/ui/Card'
 import { Input } from '../components/ui/Input'
 import { Modal } from '../components/ui/Modal'
+import { PageHeader } from '../components/ui/PageHeader'
 import { Select } from '../components/ui/Select'
 import { Spinner } from '../components/ui/Spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeadCell, TableRow } from '../components/ui/Table'
@@ -282,22 +283,23 @@ export default function PlannedEntries(): JSX.Element {
 
   return (
     <div class="space-y-6">
-      <div class="flex items-center justify-between">
-        <div>
-          <h1 class="text-xl font-semibold text-foreground">Entradas planificadas</h1>
-          <p class="mt-1 text-sm text-muted-foreground">
-            <Show when={entriesQuery.data} fallback="Compromisos de ingreso/egreso esperados.">
-              {entriesQuery.data!.length} entrada{entriesQuery.data!.length === 1 ? '' : 's'}
-            </Show>
-          </p>
-        </div>
-        <Show when={isAdmin()}>
-          <Button onClick={openCreate}>
-            <Plus class="mr-1.5 h-4 w-4" />
-            Nueva entrada
-          </Button>
+      <PageHeader
+        title="Entradas planificadas"
+        breadcrumb={['Finanzas', 'Entradas planificadas']}
+        actions={
+          <Show when={isAdmin()}>
+            <Button onClick={openCreate}>
+              <Plus class="mr-1.5 h-4 w-4" />
+              Nueva entrada
+            </Button>
+          </Show>
+        }
+      />
+      <p class="-mt-4 text-sm text-muted-foreground">
+        <Show when={entriesQuery.data} fallback="Compromisos de ingreso/egreso esperados.">
+          {entriesQuery.data!.length} entrada{entriesQuery.data!.length === 1 ? '' : 's'}
         </Show>
-      </div>
+      </p>
 
       {/* Bulk-pay bar: appears while rows are selected. */}
       <Show when={isAdmin() && selected().size > 0}>
@@ -310,7 +312,7 @@ export default function PlannedEntries(): JSX.Element {
         </div>
       </Show>
 
-      <Card>
+      <Card glass>
         <Show when={!entriesQuery.isLoading} fallback={
           <CardContent class="flex items-center justify-center gap-2 py-16 text-muted-foreground">
             <Spinner />
@@ -372,8 +374,8 @@ export default function PlannedEntries(): JSX.Element {
                       <TableCell>
                         <Badge tone={flowBadgeProps(e.flow_type).tone}>{flowBadgeProps(e.flow_type).label}</Badge>
                       </TableCell>
-                      <TableCell>{money(e.amount_estimated)}</TableCell>
-                      <TableCell class="text-muted-foreground">{e.due_date}</TableCell>
+                      <TableCell class="tnum">{money(e.amount_estimated)}</TableCell>
+                      <TableCell class="tnum text-muted-foreground">{e.due_date}</TableCell>
                       <TableCell>
                         <Badge tone={statusBadgeTone(statusLabel(e))}>{statusLabel(e)}</Badge>
                       </TableCell>

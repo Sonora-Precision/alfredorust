@@ -13,6 +13,7 @@ import { Button } from '../components/ui/Button'
 import { Card, CardContent } from '../components/ui/Card'
 import { Input } from '../components/ui/Input'
 import { Modal } from '../components/ui/Modal'
+import { PageHeader } from '../components/ui/PageHeader'
 import { Select } from '../components/ui/Select'
 import { Spinner } from '../components/ui/Spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeadCell, TableRow } from '../components/ui/Table'
@@ -174,24 +175,23 @@ export default function Projects(): JSX.Element {
 
   return (
     <div class="space-y-6">
-      <div class="flex items-center justify-between">
-        <div>
-          <h1 class="text-xl font-semibold text-foreground">Proyectos</h1>
-          <p class="mt-1 text-sm text-muted-foreground">
-            <Show when={projectsQuery.data} fallback="Seguimiento de proyectos y presupuestos.">
-              {totalCount()} proyecto{totalCount() === 1 ? '' : 's'}
-            </Show>
-          </p>
-        </div>
-        <Show when={isAdmin()}>
-          <Button onClick={openCreate}>
-            <Plus class="mr-1.5 h-4 w-4" />
-            Nuevo proyecto
-          </Button>
-        </Show>
-      </div>
+      <PageHeader
+        title="Proyectos"
+        breadcrumb={['Operaciones', 'Proyectos']}
+        subtitle={
+          projectsQuery.data ? `${totalCount()} proyecto${totalCount() === 1 ? '' : 's'}` : 'Seguimiento de proyectos y presupuestos.'
+        }
+        actions={
+          <Show when={isAdmin()}>
+            <Button onClick={openCreate}>
+              <Plus class="mr-1.5 h-4 w-4" />
+              Nuevo proyecto
+            </Button>
+          </Show>
+        }
+      />
 
-      <Card>
+      <Card glass>
         <Show when={!projectsQuery.isLoading} fallback={
           <CardContent class="flex items-center justify-center gap-2 py-16 text-muted-foreground">
             <Spinner />
@@ -247,11 +247,11 @@ export default function Projects(): JSX.Element {
                           <Badge tone={priorityBadgeTone(p.priority)}>{priorityLabel}</Badge>
                         </TableCell>
                         <Show when={canMoney()}>
-                          <TableCell class="text-muted-foreground">
+                          <TableCell class="tnum text-muted-foreground">
                             {p.total_budget != null ? money(p.total_budget) : ''}
                           </TableCell>
                         </Show>
-                        <TableCell class="text-muted-foreground">
+                        <TableCell class="tnum text-muted-foreground">
                           {p.scheduled_at ? rfc3339ToDate(p.scheduled_at) : ''}
                         </TableCell>
                         <TableCell class="text-right">

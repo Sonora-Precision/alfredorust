@@ -12,6 +12,7 @@ import { Button } from '../components/ui/Button'
 import { Card, CardContent } from '../components/ui/Card'
 import { Input } from '../components/ui/Input'
 import { Modal } from '../components/ui/Modal'
+import { PageHeader } from '../components/ui/PageHeader'
 import { Select } from '../components/ui/Select'
 import { Spinner } from '../components/ui/Spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeadCell, TableRow } from '../components/ui/Table'
@@ -208,24 +209,25 @@ export default function Orders(): JSX.Element {
 
   return (
     <div class="space-y-6">
-      <div class="flex items-center justify-between">
-        <div>
-          <h1 class="text-xl font-semibold text-foreground">Órdenes de servicio</h1>
-          <p class="mt-1 text-sm text-muted-foreground">
-            <Show when={ordersQuery.data} fallback="Órdenes de trabajo y su estado.">
-              {orderCount()} orden{orderCount() === 1 ? '' : 'es'}
-            </Show>
-          </p>
-        </div>
-        <Show when={isAdmin()}>
-          <Button onClick={openCreate}>
-            <Plus class="mr-1.5 h-4 w-4" />
-            Nueva orden
-          </Button>
+      <PageHeader
+        title="Órdenes"
+        breadcrumb={['Operaciones', 'Órdenes']}
+        actions={
+          <Show when={isAdmin()}>
+            <Button onClick={openCreate}>
+              <Plus class="mr-1.5 h-4 w-4" />
+              Nueva orden
+            </Button>
+          </Show>
+        }
+      />
+      <p class="-mt-4 text-sm text-muted-foreground">
+        <Show when={ordersQuery.data} fallback="Órdenes de trabajo y su estado.">
+          {orderCount()} orden{orderCount() === 1 ? '' : 'es'}
         </Show>
-      </div>
+      </p>
 
-      <Card>
+      <Card glass>
         <Show when={!ordersQuery.isLoading} fallback={
           <CardContent class="flex items-center justify-center gap-2 py-16 text-muted-foreground">
             <Spinner />
@@ -277,8 +279,8 @@ export default function Orders(): JSX.Element {
                         <TableCell>
                           <Badge tone={statusBadgeTone(label)}>{label}</Badge>
                         </TableCell>
-                        <TableCell>{money(o.amount)}</TableCell>
-                        <TableCell class="text-muted-foreground">
+                        <TableCell class="tnum">{money(o.amount)}</TableCell>
+                        <TableCell class="tnum text-muted-foreground">
                           {o.scheduled_at ? rfc3339ToDate(o.scheduled_at) : ''}
                         </TableCell>
                         <Show when={isAdmin()}>

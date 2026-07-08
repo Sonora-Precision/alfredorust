@@ -12,6 +12,7 @@ import { Card, CardContent } from '../components/ui/Card'
 import { Checkbox } from '../components/ui/Checkbox'
 import { Input } from '../components/ui/Input'
 import { Modal } from '../components/ui/Modal'
+import { PageHeader } from '../components/ui/PageHeader'
 import { Select } from '../components/ui/Select'
 import { Spinner } from '../components/ui/Spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeadCell, TableRow } from '../components/ui/Table'
@@ -142,25 +143,25 @@ export default function Accounts(): JSX.Element {
 
   return (
     <div class="space-y-6">
-      <div class="flex items-center justify-between">
-        <div>
-          <h1 class="text-xl font-semibold text-foreground">Cuentas</h1>
-          <p class="mt-1 text-sm text-muted-foreground">
-            <Show when={accountsQuery.data} fallback="Bancos, efectivo, tarjetas e inversiones.">
-              {accountsQuery.data!.length} cuenta{accountsQuery.data!.length === 1 ? '' : 's'} · {activeCount()} activa
-              {activeCount() === 1 ? '' : 's'}
-            </Show>
-          </p>
-        </div>
-        <Show when={isAdmin()}>
-          <Button onClick={openCreate}>
-            <Plus class="mr-1.5 h-4 w-4" />
-            Nueva cuenta
-          </Button>
-        </Show>
-      </div>
+      <PageHeader
+        title="Cuentas"
+        breadcrumb={['Finanzas', 'Cuentas']}
+        subtitle={
+          accountsQuery.data
+            ? `${accountsQuery.data.length} cuenta${accountsQuery.data.length === 1 ? '' : 's'} · ${activeCount()} activa${activeCount() === 1 ? '' : 's'}`
+            : 'Bancos, efectivo, tarjetas e inversiones.'
+        }
+        actions={
+          <Show when={isAdmin()}>
+            <Button onClick={openCreate}>
+              <Plus class="mr-1.5 h-4 w-4" />
+              Nueva cuenta
+            </Button>
+          </Show>
+        }
+      />
 
-      <Card>
+      <Card glass>
         <Show when={!accountsQuery.isLoading} fallback={
           <CardContent class="flex items-center justify-center gap-2 py-16 text-muted-foreground">
             <Spinner />

@@ -14,6 +14,7 @@ import { Card, CardContent } from '../components/ui/Card'
 import { Checkbox } from '../components/ui/Checkbox'
 import { Input } from '../components/ui/Input'
 import { Modal } from '../components/ui/Modal'
+import { PageHeader } from '../components/ui/PageHeader'
 import { Select } from '../components/ui/Select'
 import { Spinner } from '../components/ui/Spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeadCell, TableRow } from '../components/ui/Table'
@@ -169,21 +170,22 @@ export default function Resources(): JSX.Element {
 
   return (
     <div class="space-y-6">
-      <div class="flex items-center justify-between">
-        <div>
-          <h1 class="text-xl font-semibold text-foreground">Recursos</h1>
-          <p class="mt-1 text-sm text-muted-foreground">
-            <Show when={resourcesQuery.data} fallback="Maquinaria, vehículos, equipo y otros recursos facturables.">
-              {resourcesQuery.data!.length} recurso{resourcesQuery.data!.length === 1 ? '' : 's'}
-            </Show>
-          </p>
-        </div>
-        <Show when={isAdmin()}>
-          <Button onClick={openCreate}>Nuevo recurso</Button>
-        </Show>
-      </div>
+      <PageHeader
+        title="Recursos"
+        breadcrumb={['Operaciones', 'Recursos']}
+        subtitle={
+          resourcesQuery.data
+            ? `${resourcesQuery.data.length} recurso${resourcesQuery.data.length === 1 ? '' : 's'}`
+            : 'Maquinaria, vehículos, equipo y otros recursos facturables.'
+        }
+        actions={
+          <Show when={isAdmin()}>
+            <Button onClick={openCreate}>Nuevo recurso</Button>
+          </Show>
+        }
+      />
 
-      <Card>
+      <Card glass>
         <Show when={!resourcesQuery.isLoading} fallback={
           <CardContent class="flex items-center justify-center gap-2 py-16 text-muted-foreground">
             <Spinner />
@@ -233,9 +235,9 @@ export default function Resources(): JSX.Element {
                       <TableCell>
                         <Badge tone={typeBadgeTone}>{resourceTypeLabel(r)}</Badge>
                       </TableCell>
-                      <TableCell class="text-muted-foreground">{money(r.hourly_cost)}</TableCell>
+                      <TableCell class="tnum text-muted-foreground">{money(r.hourly_cost)}</TableCell>
                       <TableCell class="text-muted-foreground">{r.currency}</TableCell>
-                      <TableCell class="text-muted-foreground">{r.allowed_status_ids.length}</TableCell>
+                      <TableCell class="tnum text-muted-foreground">{r.allowed_status_ids.length}</TableCell>
                       <TableCell>
                         <Badge tone={boolBadgeTone(r.is_active)}>{r.is_active ? 'Sí' : 'No'}</Badge>
                       </TableCell>

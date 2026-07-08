@@ -15,6 +15,7 @@ import { Button } from '../components/ui/Button'
 import { Card, CardContent } from '../components/ui/Card'
 import { Input } from '../components/ui/Input'
 import { Modal } from '../components/ui/Modal'
+import { PageHeader } from '../components/ui/PageHeader'
 import { Select } from '../components/ui/Select'
 import { Spinner } from '../components/ui/Spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeadCell, TableRow } from '../components/ui/Table'
@@ -169,21 +170,22 @@ export default function ResourceLogs(): JSX.Element {
 
   return (
     <div class="space-y-6">
-      <div class="flex items-center justify-between">
-        <div>
-          <h1 class="text-xl font-semibold text-foreground">Registros de recursos</h1>
-          <p class="mt-1 text-sm text-muted-foreground">
-            <Show when={logsQuery.data} fallback="Entradas y salidas de uso de recursos por proyecto/fase.">
-              {logsQuery.data!.length} registro{logsQuery.data!.length === 1 ? '' : 's'}
-            </Show>
-          </p>
-        </div>
-        <Show when={isAdmin()}>
-          <Button onClick={openCreate}>Nuevo registro</Button>
-        </Show>
-      </div>
+      <PageHeader
+        title="Registros de recursos"
+        breadcrumb={['Operaciones', 'Registros de recursos']}
+        subtitle={
+          logsQuery.data
+            ? `${logsQuery.data.length} registro${logsQuery.data.length === 1 ? '' : 's'}`
+            : 'Entradas y salidas de uso de recursos por proyecto/fase.'
+        }
+        actions={
+          <Show when={isAdmin()}>
+            <Button onClick={openCreate}>Nuevo registro</Button>
+          </Show>
+        }
+      />
 
-      <Card>
+      <Card glass>
         <Show when={!logsQuery.isLoading} fallback={
           <CardContent class="flex items-center justify-center gap-2 py-16 text-muted-foreground">
             <Spinner />
@@ -235,11 +237,11 @@ export default function ResourceLogs(): JSX.Element {
                         <TableCell class="text-muted-foreground">{projectName(log.project_id)}</TableCell>
                         <TableCell>{log.phase ?? ''}</TableCell>
                         <TableCell>{log.resource_name ?? ''}</TableCell>
-                        <TableCell class="text-muted-foreground">{rfc3339ToLocalDt(log.started_at)}</TableCell>
-                        <TableCell class="text-muted-foreground">
+                        <TableCell class="tnum text-muted-foreground">{rfc3339ToLocalDt(log.started_at)}</TableCell>
+                        <TableCell class="tnum text-muted-foreground">
                           {log.ended_at ? rfc3339ToLocalDt(log.ended_at) : ''}
                         </TableCell>
-                        <TableCell>{log.duration_hours != null ? log.duration_hours.toFixed(2) : ''}</TableCell>
+                        <TableCell class="tnum">{log.duration_hours != null ? log.duration_hours.toFixed(2) : ''}</TableCell>
                         <TableCell>{log.operator_name ?? ''}</TableCell>
                         <Show when={isAdmin()}>
                           <TableCell class="text-right">

@@ -32,6 +32,7 @@ import { Button } from '../components/ui/Button'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
 import { Input } from '../components/ui/Input'
 import { Modal } from '../components/ui/Modal'
+import { PageHeader } from '../components/ui/PageHeader'
 import { Select } from '../components/ui/Select'
 import { Spinner } from '../components/ui/Spinner'
 import { toast } from '../components/ui/Toast'
@@ -407,7 +408,7 @@ export default function Tiempo(): JSX.Element {
     <Show
       when={canView()}
       fallback={
-        <Card>
+        <Card glass>
           <CardHeader>
             <CardTitle>Tiempo</CardTitle>
           </CardHeader>
@@ -418,20 +419,18 @@ export default function Tiempo(): JSX.Element {
       }
     >
       <div class="flex h-[calc(100vh-7rem)] w-full min-w-0 flex-col gap-4">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 class="text-xl font-semibold text-foreground">Tiempo</h1>
-            <p class="mt-1 text-sm text-muted-foreground">
-              Línea de tiempo horizontal con navegación infinita.
-            </p>
-          </div>
-          <Show when={timelineQuery.isFetching}>
-            <div class="flex items-center gap-2 text-sm text-muted-foreground">
-              <Spinner class="h-4 w-4" />
-              <span>Cargando…</span>
-            </div>
-          </Show>
-        </div>
+        <PageHeader
+          title="Tiempo"
+          subtitle="Línea de tiempo horizontal con navegación infinita."
+          actions={
+            <Show when={timelineQuery.isFetching}>
+              <div class="flex items-center gap-2 text-sm text-muted-foreground">
+                <Spinner class="h-4 w-4" />
+                <span>Cargando…</span>
+              </div>
+            </Show>
+          }
+        />
 
         <div class="flex flex-wrap items-center gap-3">
           <div class="inline-flex overflow-hidden rounded-md border border-border bg-card shadow-sm">

@@ -16,6 +16,7 @@ import { Button } from '../components/ui/Button'
 import { Card, CardContent } from '../components/ui/Card'
 import { Modal } from '../components/ui/Modal'
 import { Input } from '../components/ui/Input'
+import { PageHeader } from '../components/ui/PageHeader'
 import { Select } from '../components/ui/Select'
 import { Spinner } from '../components/ui/Spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeadCell, TableRow } from '../components/ui/Table'
@@ -137,21 +138,22 @@ export default function Categories(): JSX.Element {
 
   return (
     <div class="space-y-6">
-      <div class="flex items-center justify-between">
-        <div>
-          <h1 class="text-xl font-semibold text-foreground">Categorías</h1>
-          <p class="mt-1 text-sm text-muted-foreground">
-            <Show when={categoriesQuery.data} fallback="Categorías de ingreso y egreso.">
-              {categoriesQuery.data!.length} categoría{categoriesQuery.data!.length === 1 ? '' : 's'}
-            </Show>
-          </p>
-        </div>
-        <Show when={isAdmin()}>
-          <Button onClick={openCreate}>Nueva categoría</Button>
-        </Show>
-      </div>
+      <PageHeader
+        title="Categorías"
+        breadcrumb={['Finanzas', 'Categorías']}
+        subtitle={
+          categoriesQuery.data
+            ? `${categoriesQuery.data.length} categoría${categoriesQuery.data.length === 1 ? '' : 's'}`
+            : 'Categorías de ingreso y egreso.'
+        }
+        actions={
+          <Show when={isAdmin()}>
+            <Button onClick={openCreate}>Nueva categoría</Button>
+          </Show>
+        }
+      />
 
-      <Card>
+      <Card glass>
         <Show when={!categoriesQuery.isLoading} fallback={
           <CardContent class="flex items-center justify-center gap-2 py-16 text-muted-foreground">
             <Spinner />

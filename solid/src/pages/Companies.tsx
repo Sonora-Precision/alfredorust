@@ -15,6 +15,7 @@ import { Card, CardContent } from '../components/ui/Card'
 import { Checkbox } from '../components/ui/Checkbox'
 import { Input } from '../components/ui/Input'
 import { Modal } from '../components/ui/Modal'
+import { PageHeader } from '../components/ui/PageHeader'
 import { Spinner } from '../components/ui/Spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeadCell, TableRow } from '../components/ui/Table'
 import { toast } from '../components/ui/Toast'
@@ -175,22 +176,23 @@ export default function Companies(): JSX.Element {
 
   return (
     <div class="space-y-6">
-      <div class="flex items-center justify-between">
-        <div>
-          <h1 class="text-xl font-semibold text-foreground">Compañías</h1>
-          <p class="mt-1 text-sm text-muted-foreground">
-            <Show when={companiesQuery.data} fallback="Los tenants (subdominios) de la plataforma.">
-              {companiesQuery.data!.length} compañía{companiesQuery.data!.length === 1 ? '' : 's'}
-            </Show>
-          </p>
-        </div>
-        <Button onClick={openCreate}>
-          <Plus class="mr-1.5 h-4 w-4" />
-          Nueva compañía
-        </Button>
-      </div>
+      <PageHeader
+        title="Compañías"
+        breadcrumb={['Administración', 'Compañías']}
+        subtitle={
+          companiesQuery.data
+            ? `${companiesQuery.data.length} compañía${companiesQuery.data.length === 1 ? '' : 's'}`
+            : 'Los tenants (subdominios) de la plataforma.'
+        }
+        actions={
+          <Button onClick={openCreate}>
+            <Plus class="mr-1.5 h-4 w-4" />
+            Nueva compañía
+          </Button>
+        }
+      />
 
-      <Card>
+      <Card glass>
         <Show when={!companiesQuery.isLoading} fallback={
           <CardContent class="flex items-center justify-center gap-2 py-16 text-muted-foreground">
             <Spinner />

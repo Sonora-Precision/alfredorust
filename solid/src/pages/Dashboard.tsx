@@ -15,6 +15,7 @@ import { type JSX, Show, createMemo } from 'solid-js'
 import { Donut } from '../components/charts/Donut'
 import { LineArea } from '../components/charts/LineArea'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
+import { PageHeader } from '../components/ui/PageHeader'
 import { Spinner } from '../components/ui/Spinner'
 import * as financeApi from '../lib/api/finance'
 import { money } from '../lib/format'
@@ -46,7 +47,7 @@ function KpiCard(props: KpiCardProps): JSX.Element {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: reduced ? 0 : 0.32, delay: reduced ? 0 : (props.delay ?? 0), easing: 'ease-out' }}
     >
-      <Card>
+      <Card glass glow>
         <CardContent class="flex items-center gap-4 p-5">
           <div class={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${TONE_CLASSES[props.tone]}`}>
             <props.icon class="h-5 w-5" />
@@ -115,12 +116,7 @@ export default function Dashboard(): JSX.Element {
 
   return (
     <div class="space-y-6">
-      <div>
-        <h1 class="text-xl font-semibold text-foreground">Inicio</h1>
-        <p class="mt-1 text-sm text-muted-foreground">
-          Hola, <span class="font-medium text-foreground">{auth.user()}</span> — {auth.company()}
-        </p>
-      </div>
+      <PageHeader title="Inicio" subtitle={`Hola, ${auth.user()} — ${auth.company()}`} />
 
       <Show
         when={!isLoading()}
@@ -156,7 +152,7 @@ export default function Dashboard(): JSX.Element {
         <Show
           when={hasData()}
           fallback={
-            <Card>
+            <Card glass glow>
               <CardContent class="flex flex-col items-center gap-3 py-16 text-center">
                 <Landmark class="h-8 w-8 text-muted-foreground" />
                 <p class="text-sm text-muted-foreground">Sin movimientos todavía — el resumen aparecerá aquí.</p>
@@ -165,7 +161,7 @@ export default function Dashboard(): JSX.Element {
           }
         >
           <div class="grid gap-4 lg:grid-cols-3">
-            <Card class="lg:col-span-2">
+            <Card glass glow class="lg:col-span-2">
               <CardHeader>
                 <CardTitle class="text-base">Ingresos vs. egresos</CardTitle>
               </CardHeader>
@@ -173,7 +169,7 @@ export default function Dashboard(): JSX.Element {
                 <LineArea data={monthly()} class="h-full w-full text-muted-foreground" />
               </CardContent>
             </Card>
-            <Card>
+            <Card glass glow>
               <CardHeader>
                 <CardTitle class="text-base">Composición</CardTitle>
               </CardHeader>
@@ -196,7 +192,7 @@ export default function Dashboard(): JSX.Element {
       </Show>
 
       {/* Faithful core behavior of dashboard.rs: tenant-switch list. */}
-      <Card>
+      <Card glass>
         <CardHeader>
           <CardTitle class="text-base">Compañías</CardTitle>
         </CardHeader>

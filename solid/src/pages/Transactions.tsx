@@ -17,6 +17,7 @@ import { Card, CardContent } from '../components/ui/Card'
 import { Checkbox } from '../components/ui/Checkbox'
 import { Input } from '../components/ui/Input'
 import { Modal } from '../components/ui/Modal'
+import { PageHeader } from '../components/ui/PageHeader'
 import { Select } from '../components/ui/Select'
 import { Spinner } from '../components/ui/Spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeadCell, TableRow } from '../components/ui/Table'
@@ -214,41 +215,42 @@ export default function Transactions(): JSX.Element {
 
   return (
     <div class="space-y-6">
-      <div class="flex items-center justify-between">
-        <div>
-          <h1 class="text-xl font-semibold text-foreground">Movimientos</h1>
-          <p class="mt-1 text-sm text-muted-foreground">
-            <Show when={transactionsQuery.data} fallback="Ingresos, egresos y transferencias.">
-              {transactionsQuery.data!.length} movimiento{transactionsQuery.data!.length === 1 ? '' : 's'}
-            </Show>
-          </p>
-        </div>
-        <Show when={isAdmin()}>
-          <Button onClick={openCreate}>Nuevo movimiento</Button>
+      <PageHeader
+        title="Movimientos"
+        breadcrumb={['Finanzas', 'Movimientos']}
+        actions={
+          <Show when={isAdmin()}>
+            <Button onClick={openCreate}>Nuevo movimiento</Button>
+          </Show>
+        }
+      />
+      <p class="-mt-4 text-sm text-muted-foreground">
+        <Show when={transactionsQuery.data} fallback="Ingresos, egresos y transferencias.">
+          {transactionsQuery.data!.length} movimiento{transactionsQuery.data!.length === 1 ? '' : 's'}
         </Show>
-      </div>
+      </p>
 
       {/* Analytics block — only when the list is non-empty, mirrors tx_charts gating */}
       <Show when={(transactionsQuery.data?.length ?? 0) > 0}>
         <div class="space-y-4">
           <div class="grid gap-3 sm:grid-cols-3">
-            <Card>
+            <Card glass glow>
               <CardContent class="p-4">
                 <p class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Ingresos</p>
-                <p class="mt-1 text-2xl font-bold text-emerald-600 tabular-nums">{money(charts().totalIncome)}</p>
+                <p class="mt-1 text-2xl font-bold text-emerald-600 tnum">{money(charts().totalIncome)}</p>
               </CardContent>
             </Card>
-            <Card>
+            <Card glass glow>
               <CardContent class="p-4">
                 <p class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Egresos</p>
-                <p class="mt-1 text-2xl font-bold text-rose-600 tabular-nums">{money(charts().totalExpense)}</p>
+                <p class="mt-1 text-2xl font-bold text-rose-600 tnum">{money(charts().totalExpense)}</p>
               </CardContent>
             </Card>
-            <Card>
+            <Card glass glow>
               <CardContent class="p-4">
                 <p class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Neto</p>
                 <p
-                  class={`mt-1 text-2xl font-bold tabular-nums ${charts().net >= 0 ? 'text-sky-600' : 'text-rose-600'}`}
+                  class={`mt-1 text-2xl font-bold tnum ${charts().net >= 0 ? 'text-sky-600' : 'text-rose-600'}`}
                 >
                   {money(charts().net)}
                 </p>
@@ -257,7 +259,7 @@ export default function Transactions(): JSX.Element {
           </div>
 
           <div class="grid gap-3 lg:grid-cols-3">
-            <Card class="lg:col-span-2">
+            <Card glass class="lg:col-span-2">
               <CardContent class="p-4">
                 <p class="mb-2 text-xs font-semibold text-muted-foreground">Mensual (ingresos vs egresos)</p>
                 <div class="h-40">
@@ -265,7 +267,7 @@ export default function Transactions(): JSX.Element {
                 </div>
               </CardContent>
             </Card>
-            <Card>
+            <Card glass>
               <CardContent class="p-4">
                 <p class="mb-2 text-xs font-semibold text-muted-foreground">Distribución</p>
                 <div class="mx-auto h-40 w-40">
@@ -283,14 +285,14 @@ export default function Transactions(): JSX.Element {
             </Card>
           </div>
 
-          <Card>
+          <Card glass>
             <CardContent class="p-4">
               <p class="mb-2 text-xs font-semibold text-muted-foreground">Por categoría</p>
               {charts().catBars.map((c) => (
                 <div class="mb-2">
                   <div class="flex justify-between text-xs">
                     <span class="truncate text-muted-foreground">{c.name}</span>
-                    <span class="font-medium text-foreground">{money(c.total)}</span>
+                    <span class="font-medium text-foreground tnum">{money(c.total)}</span>
                   </div>
                   <div class="mt-1 flex h-1.5 overflow-hidden rounded bg-muted">
                     <div
@@ -311,7 +313,7 @@ export default function Transactions(): JSX.Element {
         </div>
       </Show>
 
-      <Card>
+      <Card glass>
         <Show when={!transactionsQuery.isLoading} fallback={
           <CardContent class="flex items-center justify-center gap-2 py-16 text-muted-foreground">
             <Spinner />
@@ -356,12 +358,12 @@ export default function Transactions(): JSX.Element {
                 <TableBody>
                   {(transactionsQuery.data ?? []).map((t) => (
                     <TableRow>
-                      <TableCell class="text-muted-foreground">{t.date}</TableCell>
+                      <TableCell class="tnum text-muted-foreground">{t.date}</TableCell>
                       <TableCell class="font-medium text-foreground">{t.description}</TableCell>
                       <TableCell>
                         <Badge tone={txTypeBadgeTone(t.tx_type) as BadgeTone}>{txLabel(t.tx_type)}</Badge>
                       </TableCell>
-                      <TableCell class="tabular-nums">{money(t.amount)}</TableCell>
+                      <TableCell class="tnum">{money(t.amount)}</TableCell>
                       <TableCell class="text-muted-foreground">{t.category ?? ''}</TableCell>
                       <Show when={isAdmin()}>
                         <TableCell class="text-right">

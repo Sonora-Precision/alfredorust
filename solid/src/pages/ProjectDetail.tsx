@@ -13,6 +13,7 @@ import { Button } from '../components/ui/Button'
 import { Card, CardContent } from '../components/ui/Card'
 import { Input } from '../components/ui/Input'
 import { Modal } from '../components/ui/Modal'
+import { PageHeader } from '../components/ui/PageHeader'
 import { Select } from '../components/ui/Select'
 import { Spinner } from '../components/ui/Spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeadCell, TableRow } from '../components/ui/Table'
@@ -166,14 +167,17 @@ export default function ProjectDetail(): JSX.Element {
       <A href="/projects" class="text-sm text-muted-foreground hover:underline">
         ← Proyectos
       </A>
-      <div class="flex items-center justify-between">
-        <h1 class="text-xl font-semibold text-foreground">{projectQuery.data?.title ?? ''}</h1>
-        <Show when={isAdmin()}>
-          <Button onClick={openCreate}>Agregar concepto</Button>
-        </Show>
-      </div>
+      <PageHeader
+        title={projectQuery.data?.title || 'Proyecto'}
+        breadcrumb={['Operaciones', 'Proyectos']}
+        actions={
+          <Show when={isAdmin()}>
+            <Button onClick={openCreate}>Agregar concepto</Button>
+          </Show>
+        }
+      />
 
-      <Card>
+      <Card glass>
         <Show when={!conceptsQuery.isLoading} fallback={
           <CardContent class="flex items-center justify-center gap-2 py-16 text-muted-foreground">
             <Spinner />
@@ -212,9 +216,9 @@ export default function ProjectDetail(): JSX.Element {
                 <TableBody>
                   {(conceptsQuery.data ?? []).map((c) => (
                     <TableRow>
-                      <TableCell class="text-muted-foreground">{c.position}</TableCell>
+                      <TableCell class="tnum text-muted-foreground">{c.position}</TableCell>
                       <TableCell class="font-medium text-foreground">{c.name}</TableCell>
-                      <TableCell>
+                      <TableCell class="tnum">
                         {money(c.quantity)} {c.unit ?? ''}
                       </TableCell>
                       <TableCell>
@@ -222,7 +226,7 @@ export default function ProjectDetail(): JSX.Element {
                           <Badge tone={statusBadgeTone(statusName(c.status_id))}>{statusName(c.status_id)}</Badge>
                         </Show>
                       </TableCell>
-                      <TableCell>{c.estimated_hours != null ? c.estimated_hours.toFixed(1) : ''}</TableCell>
+                      <TableCell class="tnum">{c.estimated_hours != null ? c.estimated_hours.toFixed(1) : ''}</TableCell>
                       <Show when={isAdmin()}>
                         <TableCell class="text-right">
                           <div class="flex justify-end gap-1">

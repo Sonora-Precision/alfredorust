@@ -11,6 +11,7 @@ import { Button } from '../components/ui/Button'
 import { Card, CardContent } from '../components/ui/Card'
 import { Input } from '../components/ui/Input'
 import { Modal } from '../components/ui/Modal'
+import { PageHeader } from '../components/ui/PageHeader'
 import { Spinner } from '../components/ui/Spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeadCell, TableRow } from '../components/ui/Table'
 import { toast } from '../components/ui/Toast'
@@ -166,24 +167,25 @@ export default function Forecasts(): JSX.Element {
 
   return (
     <div class="space-y-6">
-      <div class="flex items-center justify-between">
-        <div>
-          <h1 class="text-xl font-semibold text-foreground">Pronósticos</h1>
-          <p class="mt-1 text-sm text-muted-foreground">
-            <Show when={forecastsQuery.data} fallback="Escenarios de ingreso/egreso proyectados.">
-              {forecastsQuery.data!.length} pronóstico{forecastsQuery.data!.length === 1 ? '' : 's'}
-            </Show>
-          </p>
-        </div>
-        <Show when={isAdmin()}>
-          <Button onClick={openCreate}>
-            <Plus class="mr-1.5 h-4 w-4" />
-            Nuevo pronóstico
-          </Button>
-        </Show>
-      </div>
+      <PageHeader
+        title="Pronósticos"
+        breadcrumb={['Finanzas', 'Pronósticos']}
+        subtitle={
+          forecastsQuery.data
+            ? `${forecastsQuery.data.length} pronóstico${forecastsQuery.data.length === 1 ? '' : 's'}`
+            : 'Escenarios de ingreso/egreso proyectados.'
+        }
+        actions={
+          <Show when={isAdmin()}>
+            <Button onClick={openCreate}>
+              <Plus class="mr-1.5 h-4 w-4" />
+              Nuevo pronóstico
+            </Button>
+          </Show>
+        }
+      />
 
-      <Card>
+      <Card glass>
         <Show when={!forecastsQuery.isLoading} fallback={
           <CardContent class="flex items-center justify-center gap-2 py-16 text-muted-foreground">
             <Spinner />
@@ -228,10 +230,10 @@ export default function Forecasts(): JSX.Element {
                   {(forecastsQuery.data ?? []).map((f) => (
                     <TableRow>
                       <TableCell class="font-medium text-foreground">{f.scenario_name ?? ''}</TableCell>
-                      <TableCell class="text-muted-foreground">
+                      <TableCell class="tnum text-muted-foreground">
                         {f.start_date} → {f.end_date}
                       </TableCell>
-                      <TableCell>{money(f.projected_net)}</TableCell>
+                      <TableCell class="tnum">{money(f.projected_net)}</TableCell>
                       <TableCell class="text-muted-foreground">{f.currency}</TableCell>
                       <Show when={isAdmin()}>
                         <TableCell class="text-right">
