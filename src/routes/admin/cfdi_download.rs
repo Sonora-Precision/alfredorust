@@ -8,6 +8,7 @@ use axum::{
 };
 use bson::oid::ObjectId;
 use chrono::{Datelike, NaiveDate};
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use tokio::{fs, sync::Semaphore, time::sleep};
 use uuid::Uuid;
@@ -619,6 +620,12 @@ fn monthly_chunks(start_iso: &str, end_iso: &str) -> Result<Vec<(String, String,
         return Ok(vec![]);
     }
 
+    let now_naive = mexico_now.naive_utc();
+    // Latest timestamp we may send: a minute in the past, so we never hand the
+    // SAT a future FechaFinal (which it rejects).
+    let safe_max = now_naive - chrono::Duration::minutes(1);
+    let mut rng = rand::rng();
+
     let mut chunks = Vec::new();
     let mut month_cursor = NaiveDate::from_ymd_opt(start.year(), start.month(), 1).unwrap();
 
@@ -639,13 +646,36 @@ fn monthly_chunks(start_iso: &str, end_iso: &str) -> Result<Vec<(String, String,
             month_name_es(month_cursor.month()),
             month_cursor.year()
         );
-        // Use current Mexico City time for today's chunk so we don't send a future timestamp.
-        let end_time = if chunk_to == mexico_now.date_naive() {
-            format!("{}T{}", chunk_to, mexico_now.format("%H:%M:%S"))
+
+        // Randomize each chunk's boundaries so no two download runs ever submit
+        // an IDENTICAL period to the SAT. An identical (FechaInicial, FechaFinal,
+        // RFC) is exactly what triggers the `5002` "solicitudes de por vida"
+        // limit. We EXPAND the window outward by a random sub-hour amount (start
+        // earlier, end later), so the captured set is always a superset and no
+        // CFDI is ever missed; any overlap between adjacent chunks is harmless
+        // because CFDIs are imported keyed by UUID (upsert).
+        let start_jitter: i64 = rng.random_range(0..3600);
+        let end_jitter: i64 = rng.random_range(0..3600);
+
+        let chunk_start_dt =
+            chunk_from.and_hms_opt(0, 0, 0).unwrap() - chrono::Duration::seconds(start_jitter);
+
+        let base_end = if chunk_to >= mexico_now.date_naive() {
+            now_naive
         } else {
-            format!("{}T23:59:59", chunk_to)
+            chunk_to.and_hms_opt(23, 59, 59).unwrap()
         };
-        chunks.push((label, format!("{}T00:00:00", chunk_from), end_time));
+        let mut chunk_end_dt = base_end + chrono::Duration::seconds(end_jitter);
+        // Never send a future timestamp; keep the cap randomized too.
+        if chunk_end_dt > safe_max {
+            chunk_end_dt = safe_max - chrono::Duration::seconds(rng.random_range(0..600));
+        }
+
+        chunks.push((
+            label,
+            chunk_start_dt.format("%Y-%m-%dT%H:%M:%S").to_string(),
+            chunk_end_dt.format("%Y-%m-%dT%H:%M:%S").to_string(),
+        ));
 
         if month_last >= end {
             break;
@@ -707,8 +737,19 @@ fn should_retry(status: &CfdiJobStatus) -> bool {
     }
 }
 
+/// Errors that must NOT trigger the full-flow retry below. Either the rejection
+/// is definitive (`5002`), or a solicitud was ALREADY created for this chunk and
+/// re-running the whole flow would submit a DUPLICATE solicitud for the same
+/// period — wasting SAT request quota and pushing that period toward the `5002`
+/// "solicitudes de por vida" limit. Transient auth/verify/download failures are
+/// now retried *inside* `download_cfdis` (resilient poll), so the only failures
+/// that still surface here already imply a created solicitud.
 fn is_definitive_sat_error(error: &str) -> bool {
-    error.contains("solicitud SAT rechazada") || error.contains("5002")
+    error.contains("solicitud SAT rechazada")
+        || error.contains("5002")
+        || error.contains("no termino despues de") // poll exhausted: solicitud exists
+        || error.contains("estado terminal") // terminal SAT state: solicitud exists
+        || error.contains("no se pudo descargar el paquete") // finished, download failed
 }
 
 #[cfg(test)]
@@ -742,5 +783,24 @@ mod tests {
         };
 
         assert!(should_retry(&status));
+    }
+
+    #[test]
+    fn retry_skips_failures_that_already_created_a_solicitud() {
+        // A solicitud already exists for these; re-running would duplicate it.
+        for err in [
+            "Error SAT (received): la solicitud SAT no termino despues de 45 intentos (ultimo error transitorio: operation timed out)",
+            "Error SAT (issued): solicitud SAT en estado terminal 4:  Error",
+            "Error SAT (received): no se pudo descargar el paquete ABC tras 8 intentos: timeout",
+        ] {
+            let status = CfdiJobStatus::Done {
+                imported: 0,
+                transactions_created: 0,
+                transactions_updated: 0,
+                transactions_skipped: 0,
+                errors: vec![err.to_string()],
+            };
+            assert!(!should_retry(&status), "should not retry: {err}");
+        }
     }
 }

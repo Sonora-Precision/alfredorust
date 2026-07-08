@@ -248,8 +248,11 @@ pub async fn download_cfdis(
 ) -> Result<CfdiDownloadResponse, SatError> {
     let cfg = build_config(company_slug, request)?;
     let fiel = Fiel::load(&cfg.cer_path, &cfg.key_path, &cfg.key_password).await?;
+    // Short per-request timeout: the SAT verification service frequently hangs,
+    // so we want to cut a stalled request quickly and retry (see
+    // `poll_until_finished`) instead of blocking for a full minute each time.
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(60))
+        .timeout(std::time::Duration::from_secs(30))
         .build()
         .map_err(|err| SatError::Http(format!("no pude crear cliente HTTP: {err}")))?;
 
@@ -269,8 +272,7 @@ pub async fn download_cfdis(
 
     let mut packages = Vec::new();
     for package_id in &verify.paquetes {
-        let token = authenticate(&client, &fiel).await?;
-        let downloaded = download_package(&client, &fiel, &token, &cfg, package_id).await?;
+        let downloaded = download_package_with_retry(&client, &fiel, &cfg, package_id).await?;
         packages.push(downloaded);
     }
 
@@ -308,8 +310,8 @@ fn build_config(company_slug: &str, request: CfdiDownloadRequest) -> Result<SatC
         start,
         end,
         output_dir: PathBuf::from(output_dir),
-        poll_seconds: request.poll_seconds.unwrap_or(10).max(1),
-        max_attempts: request.max_attempts.unwrap_or(180).max(1),
+        poll_seconds: request.poll_seconds.unwrap_or(5).max(1),
+        max_attempts: request.max_attempts.unwrap_or(45).max(1),
         download_type: request.download_type,
         request_type: request.request_type,
     })
@@ -420,33 +422,73 @@ async fn poll_until_finished(
     cfg: &SatConfig,
     request_id: &str,
 ) -> Result<VerifyResult, SatError> {
-    for _ in 0..cfg.max_attempts {
-        let token = authenticate(client, fiel).await?;
-        let verify = verify_request(client, fiel, &token, &cfg.rfc, request_id).await?;
+    // The SAT verification service is frequently slow and drops/times out
+    // requests. A single failed attempt must NOT abort the whole download:
+    // re-verifying the same IdSolicitud spends no request quota, so we tolerate
+    // transient auth/verify failures and keep polling until the solicitud
+    // reaches a terminal state or we exhaust the attempts.
+    let mut last_transient = String::new();
+    for attempt in 0..cfg.max_attempts {
+        let verify = match verify_attempt(client, fiel, cfg, request_id).await {
+            Ok(verify) => verify,
+            Err(err) => {
+                last_transient = err.to_string();
+                eprintln!(
+                    "[cfdi] verificacion intento {}/{} fallo (transitorio): {last_transient}",
+                    attempt + 1,
+                    cfg.max_attempts
+                );
+                sleep(std::time::Duration::from_secs(cfg.poll_seconds)).await;
+                continue;
+            }
+        };
         match verify.estado_solicitud.as_deref() {
-            Some("1") | Some("2") => sleep(std::time::Duration::from_secs(cfg.poll_seconds)).await,
+            // 3 = Terminada (lista para descargar).
             Some("3") => return Ok(verify),
+            // 5 con 5004 = Terminada sin CFDIs (no encontrado): exito vacio.
             Some("5")
                 if verify.codigo_estado_solicitud.as_deref() == Some("5004")
                     || verify.cod_estatus.as_deref() == Some("5004") =>
             {
                 return Ok(verify);
             }
-            Some(other) => {
+            // 4 = Error, 5 (!=5004) = Rechazada, 6 = Vencida: estados terminales.
+            Some("4") | Some("5") | Some("6") => {
                 return Err(SatError::Sat(format!(
-                    "solicitud SAT no terminable, estado {other}: {} {}",
+                    "solicitud SAT en estado terminal {}: {} {}",
+                    verify.estado_solicitud.clone().unwrap_or_default(),
                     verify.codigo_estado_solicitud.clone().unwrap_or_default(),
                     verify.mensaje.clone().unwrap_or_default()
                 )));
             }
-            None => return Err(SatError::Parse("verificacion sin EstadoSolicitud".into())),
+            // 1 = Aceptada, 2 = En proceso, y cualquier otro/None (p.ej. "0"
+            // "Error no controlado" que el SAT devuelve de forma transitoria):
+            // esperar y reintentar en vez de abortar.
+            _ => sleep(std::time::Duration::from_secs(cfg.poll_seconds)).await,
         }
     }
 
     Err(SatError::Sat(format!(
-        "la solicitud SAT no termino despues de {} intentos",
-        cfg.max_attempts
+        "la solicitud SAT no termino despues de {} intentos{}",
+        cfg.max_attempts,
+        if last_transient.is_empty() {
+            String::new()
+        } else {
+            format!(" (ultimo error transitorio: {last_transient})")
+        }
     )))
+}
+
+/// One verification round: authenticate, then verify the request. Both calls can
+/// fail transiently (SAT timeouts/drops); the caller retries instead of aborting.
+async fn verify_attempt(
+    client: &reqwest::Client,
+    fiel: &Fiel,
+    cfg: &SatConfig,
+    request_id: &str,
+) -> Result<VerifyResult, SatError> {
+    let token = authenticate(client, fiel).await?;
+    verify_request(client, fiel, &token, &cfg.rfc, request_id).await
 }
 
 async fn verify_request(
@@ -477,6 +519,40 @@ async fn verify_request(
     )
     .await?;
     parse_verify_result(&response)
+}
+
+/// Download a package, retrying on transient SAT failures (timeouts/drops) so a
+/// single stalled request doesn't lose an already-finished solicitud.
+async fn download_package_with_retry(
+    client: &reqwest::Client,
+    fiel: &Fiel,
+    cfg: &SatConfig,
+    package_id: &str,
+) -> Result<DownloadedPackage, SatError> {
+    let attempts = cfg.max_attempts.min(8).max(3);
+    let mut last = String::new();
+    for i in 0..attempts {
+        let token = match authenticate(client, fiel).await {
+            Ok(token) => token,
+            Err(err) => {
+                last = err.to_string();
+                eprintln!("[cfdi] descarga auth intento {}/{attempts}: {last}", i + 1);
+                sleep(std::time::Duration::from_secs(cfg.poll_seconds)).await;
+                continue;
+            }
+        };
+        match download_package(client, fiel, &token, cfg, package_id).await {
+            Ok(pkg) => return Ok(pkg),
+            Err(err) => {
+                last = err.to_string();
+                eprintln!("[cfdi] descarga paquete intento {}/{attempts}: {last}", i + 1);
+                sleep(std::time::Duration::from_secs(cfg.poll_seconds)).await;
+            }
+        }
+    }
+    Err(SatError::Sat(format!(
+        "no se pudo descargar el paquete {package_id} tras {attempts} intentos: {last}"
+    )))
 }
 
 async fn download_package(
