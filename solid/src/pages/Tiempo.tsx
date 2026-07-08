@@ -463,7 +463,7 @@ export default function Tiempo(): JSX.Element {
           </Show>
         </div>
 
-        <div class="relative flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+        <div class="card relative flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden rounded-xl">
           {/* Legend */}
           <div class="flex flex-wrap items-center gap-4 border-b border-border px-4 py-2.5">
             <span class="flex items-center gap-2 text-xs font-semibold text-foreground">

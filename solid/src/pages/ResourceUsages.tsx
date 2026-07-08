@@ -17,14 +17,18 @@
 //   not per-cell PATCHes) — see GridSavePayload.
 // - Filtering (Fecha/Estado + "Filtrar") re-fetches and replaces the grid;
 //   unsaved local edits are discarded, matching current behavior.
+import { A } from '@solidjs/router'
 import { keepPreviousData, createMutation, createQuery, useQueryClient } from '@tanstack/solid-query'
 import { type JSX, For, Show, createEffect, createSignal } from 'solid-js'
 import { createStore, reconcile } from 'solid-js/store'
 
+import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
+import { Card } from '../components/ui/Card'
 import { Checkbox } from '../components/ui/Checkbox'
 import { Input } from '../components/ui/Input'
 import { Modal } from '../components/ui/Modal'
+import { PageHeader } from '../components/ui/PageHeader'
 import { Select } from '../components/ui/Select'
 import { Spinner } from '../components/ui/Spinner'
 import { toast } from '../components/ui/Toast'
@@ -162,45 +166,40 @@ export default function ResourceUsages(): JSX.Element {
 
   return (
     <div class="space-y-6">
-      <div class="rounded-3xl bg-slate-950 p-5 text-white shadow-sm md:p-6">
-        <p class="text-xs font-semibold uppercase tracking-[0.25em] text-emerald-300">Captura diaria</p>
-        <h1 class="mt-2 text-3xl font-semibold">Uso de recursos por hora</h1>
-        <p class="mt-2 max-w-3xl text-sm text-slate-300">
-          Filtra por estado, selecciona recursos en cada hora (toca para ciclar, mantén para abrir el menú). Horario
-          normal 7-22; las demás horas también se capturan.
-        </p>
-        <form onSubmit={applyFilters} class="mt-4 flex flex-wrap items-end gap-3">
+      <PageHeader
+        title="Uso de recursos"
+        subtitle="Toca una celda para ciclar el recurso; mantén presionado para el menú múltiple. Horario normal 7–22; las demás horas también se capturan."
+        breadcrumb={['Operaciones', 'Uso de recursos']}
+        actions={
+          <Show when={gridQuery.data?.can_edit} fallback={<Badge tone="neutral">Solo lectura</Badge>}>
+            <Button type="button" class="magnetic" disabled={saveMutation.isPending} onClick={() => saveMutation.mutate()}>
+              {saveMutation.isPending ? 'Guardando…' : 'Guardar captura'}
+            </Button>
+          </Show>
+        }
+      />
+
+      <Card glass class="p-4">
+        <form onSubmit={applyFilters} class="flex flex-wrap items-end gap-3">
           <div>
-            <label class="block text-xs font-semibold text-slate-300">Fecha</label>
-            <Input value={date()} onInput={setDate} type="date" class="bg-white text-foreground" />
+            <label class="block text-xs font-semibold text-muted-foreground">Fecha</label>
+            <Input value={date()} onInput={setDate} type="date" />
           </div>
           <div>
-            <label class="block text-xs font-semibold text-slate-300">Estado</label>
-            <Select value={statusFilter()} onChange={setStatusFilter} class="bg-white text-foreground">
+            <label class="block text-xs font-semibold text-muted-foreground">Estado</label>
+            <Select value={statusFilter()} onChange={setStatusFilter}>
               <option value="all">Todos</option>
               <For each={gridQuery.data?.statuses ?? []}>{(s) => <option value={s.id}>{s.name}</option>}</For>
             </Select>
           </div>
           <Button type="submit">Filtrar</Button>
-          <Show
-            when={gridQuery.data?.can_edit}
-            fallback={
-              <span class="rounded-full bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-500">
-                Solo lectura
-              </span>
-            }
-          >
-            <Button type="button" disabled={saveMutation.isPending} onClick={() => saveMutation.mutate()}>
-              {saveMutation.isPending ? 'Guardando…' : 'Guardar captura'}
-            </Button>
-          </Show>
         </form>
-      </div>
+      </Card>
 
       <Show
         when={!gridQuery.isFetching}
         fallback={
-          <div class="flex items-center justify-center gap-2 rounded-3xl border border-border bg-card py-16 text-muted-foreground">
+          <div class="card flex items-center justify-center gap-2 rounded-xl py-16 text-muted-foreground">
             <Spinner />
             <span>Cargando…</span>
           </div>
@@ -209,13 +208,11 @@ export default function ResourceUsages(): JSX.Element {
         <Show
           when={!gridQuery.isError}
           fallback={
-            <p class="rounded-3xl border border-border bg-card py-16 text-center text-sm text-destructive">
-              No se pudo cargar el grid.
-            </p>
+            <p class="card rounded-xl py-16 text-center text-sm text-destructive">No se pudo cargar el grid.</p>
           }
         >
           <Show when={gridQuery.data}>
-            <div class="overflow-x-auto rounded-3xl border border-border bg-card shadow-sm">
+            <div class="card overflow-x-auto rounded-xl">
               <table class="min-w-[1200px] table-fixed border-collapse text-sm">
                 <thead class="sticky top-0 z-20 bg-muted">
                   <tr>
@@ -256,21 +253,21 @@ export default function ResourceUsages(): JSX.Element {
                               colspan={25}
                               class="border-b border-border px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
                             >
-                              <a
-                                href={`/v2/projects/${row.project_id ?? ''}`}
+                              <A
+                                href={`/projects/${row.project_id ?? ''}`}
                                 class="text-sky-700 hover:text-sky-900 hover:underline"
                               >
                                 {row.project_title ?? ''}
-                              </a>
+                              </A>
                             </td>
                           </tr>
                         </Show>
                         <tr class="hover:bg-muted/60">
                           <th class="sticky left-0 z-10 border-b border-r border-border bg-card px-4 py-4 text-left align-middle">
                             <div class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                              <a href={`/v2/projects/${row.project_id ?? ''}`} class="hover:text-sky-700 hover:underline">
+                              <A href={`/projects/${row.project_id ?? ''}`} class="hover:text-sky-700 hover:underline">
                                 {row.project_title ?? ''}
-                              </a>
+                              </A>
                             </div>
                             <div class="mt-1 flex flex-wrap items-center gap-2">
                               <span class="font-semibold text-sky-900">{row.concept_name}</span>
