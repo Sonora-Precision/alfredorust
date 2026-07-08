@@ -697,8 +697,50 @@ fn should_retry(status: &CfdiJobStatus) -> bool {
     match status {
         CfdiJobStatus::Done {
             imported, errors, ..
-        } => *imported == 0 && !errors.is_empty(),
+        } => {
+            *imported == 0
+                && !errors.is_empty()
+                && !errors.iter().any(|error| is_definitive_sat_error(error))
+        }
         CfdiJobStatus::Failed { .. } => true,
         CfdiJobStatus::Running | CfdiJobStatus::Queued => false,
+    }
+}
+
+fn is_definitive_sat_error(error: &str) -> bool {
+    error.contains("solicitud SAT rechazada") || error.contains("5002")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CfdiJobStatus, should_retry};
+
+    #[test]
+    fn retry_skips_definitive_sat_rejections() {
+        let status = CfdiJobStatus::Done {
+            imported: 0,
+            transactions_created: 0,
+            transactions_updated: 0,
+            transactions_skipped: 0,
+            errors: vec![
+                "Error SAT (issued): solicitud SAT rechazada: 5002 Se han agotado las solicitudes de por vida"
+                    .to_string(),
+            ],
+        };
+
+        assert!(!should_retry(&status));
+    }
+
+    #[test]
+    fn retry_keeps_transient_complete_failures() {
+        let status = CfdiJobStatus::Done {
+            imported: 0,
+            transactions_created: 0,
+            transactions_updated: 0,
+            transactions_skipped: 0,
+            errors: vec!["Error SAT (issued): SAT HTTP 500 Internal Server Error".to_string()],
+        };
+
+        assert!(should_retry(&status));
     }
 }
