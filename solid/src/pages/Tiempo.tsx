@@ -327,13 +327,22 @@ export default function Tiempo(): JSX.Element {
 
   onMount(() => {
     if (!viewport) return
-    setViewportW(viewport.clientWidth)
-    const ro = new ResizeObserver(() => {
-      if (viewport) setViewportW(viewport.clientWidth)
-    })
+    let centeredOnToday = false
+    const measure = () => {
+      if (!viewport) return
+      setViewportW(viewport.clientWidth)
+      // Open centered on "today" as soon as the viewport has a real width — the
+      // page cross-fade can mount this at width 0, so a one-shot rAF wasn't
+      // reliable. Reuses the "Ir a hoy" (goToday) path.
+      if (!centeredOnToday && viewport.clientWidth > 0) {
+        centeredOnToday = true
+        goToday()
+      }
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
     ro.observe(viewport)
     onCleanup(() => ro.disconnect())
-    requestAnimationFrame(recenter)
   })
 
   // Re-center whenever the timeline is re-anchored (mode/anchor change).

@@ -2,12 +2,13 @@
 // ⌘K search, notifications, motion/theme toggles, tenant switcher and logout on
 // the right. Navigation itself lives in the Sidebar (+ command palette).
 import { useNavigate } from '@solidjs/router'
-import { Bell, LogOut, Menu, Search } from 'lucide-solid'
+import { Bell, ChevronDown, Menu, Search } from 'lucide-solid'
 import type { JSX } from 'solid-js'
 
 import { useAuth } from '../../lib/auth/AuthContext'
 import { setCmdkOpen, setMobileNavOpen } from '../../lib/layout'
 import { Badge, roleBadgeTone } from '../ui/Badge'
+import { Dropdown } from '../ui/Dropdown'
 import { CompanySwitcher } from './CompanySwitcher'
 import { MotionToggle } from './MotionToggle'
 import { ThemeToggle } from './ThemeToggle'
@@ -20,6 +21,8 @@ export function Topbar(): JSX.Element {
     await auth.logout()
     navigate('/login')
   }
+
+  const initials = () => (auth.user() ?? '?').trim().slice(0, 2).toUpperCase()
 
   return (
     <header class="sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur-xl">
@@ -63,15 +66,23 @@ export function Topbar(): JSX.Element {
           <MotionToggle />
           <ThemeToggle />
           <CompanySwitcher />
-          <button
-            type="button"
-            class="grid h-9 w-9 place-items-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground"
-            aria-label="Salir"
-            title="Salir"
-            onClick={doLogout}
+          <Dropdown
+            items={[
+              { label: 'Mi cuenta', onSelect: () => navigate('/account') },
+              { label: 'Salir', onSelect: doLogout, destructive: true },
+            ]}
           >
-            <LogOut class="h-[18px] w-[18px]" />
-          </button>
+            <button
+              type="button"
+              class="flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-muted-foreground transition hover:bg-muted hover:text-foreground"
+              aria-label="Cuenta"
+            >
+              <span class="grid h-7 w-7 place-items-center rounded-full bg-muted text-[11px] font-semibold text-foreground">
+                {initials()}
+              </span>
+              <ChevronDown class="h-4 w-4" />
+            </button>
+          </Dropdown>
         </div>
       </div>
     </header>
