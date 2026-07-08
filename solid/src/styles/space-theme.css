@@ -142,6 +142,10 @@
    frame and felt laggy; a subset twinkles for life instead. */
 #space #starfield { position: absolute; inset: 0; }
 [data-theme='light'] #space #starfield { opacity: 0.5; }
+/* A few stars drift smoothly like the satellite: each is a tiny element moving
+   via its own transform (GPU-composited, cheap), NOT the whole field. Uses
+   `alternate` so it eases out and back with no loop jump. Per-star --dx/--dy. */
+@keyframes starDrift { from { transform: translate(0, 0); } to { transform: translate(var(--dx, 0), var(--dy, 0)); } }
 
 /* Star layers — 3 depths for parallax. Sized generously: small dots
    nearly vanish under backdrop-filter blur, so keep them >= 2.5px. */

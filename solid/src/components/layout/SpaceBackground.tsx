@@ -26,19 +26,27 @@ function buildStars(): string {
   const pick = () => STAR_TINTS[Math.floor(rnd() * STAR_TINTS.length)]
   let html = ''
   for (let i = 0; i < STAR_COUNT; i++) {
-    const bright = rnd() < 0.12 // ~12% larger/brighter "hero" stars
-    const size = bright ? 3 + rnd() * 1.8 : 1.2 + rnd() * 1.8
-    const op = bright ? 0.85 + rnd() * 0.15 : 0.3 + rnd() * 0.55
-    const bloom = bright ? 6 + rnd() * 8 : 1.5 + rnd() * 4
+    const drift = rnd() < 0.16 // a few stars glide smoothly (their own transform, like the satellite)
+    const bright = !drift && rnd() < 0.1 // larger/brighter "hero" stars
+    const size = drift ? 2 + rnd() * 1.6 : bright ? 3 + rnd() * 1.8 : 1.2 + rnd() * 1.8
+    const op = drift ? 0.7 + rnd() * 0.3 : bright ? 0.85 + rnd() * 0.15 : 0.3 + rnd() * 0.55
+    const bloom = drift ? 4 + rnd() * 6 : bright ? 6 + rnd() * 8 : 1.5 + rnd() * 4
     const c = pick()
-    const twinkle = rnd() < 0.35
-    const dur = (2.6 + rnd() * 3.5).toFixed(1)
-    const delay = (rnd() * 4).toFixed(1)
-    const anim = twinkle ? `animation:twinkle ${dur}s ease-in-out ${delay}s infinite;` : ''
+    // A star does at most ONE transform animation (drift XOR twinkle) so the two
+    // never fight over `transform`.
+    let motion = ''
+    if (drift) {
+      const dx = ((rnd() * 2 - 1) * (30 + rnd() * 50)).toFixed(0)
+      const dy = ((rnd() * 2 - 1) * (20 + rnd() * 40)).toFixed(0)
+      const ddur = (16 + rnd() * 22).toFixed(1)
+      motion = `--dx:${dx}px;--dy:${dy}px;animation:starDrift ${ddur}s ease-in-out ${(rnd() * 6).toFixed(1)}s infinite alternate;`
+    } else if (rnd() < 0.4) {
+      motion = `animation:twinkle ${(2.6 + rnd() * 3.5).toFixed(1)}s ease-in-out ${(rnd() * 4).toFixed(1)}s infinite;`
+    }
     html +=
       `<span style="position:absolute;left:${(rnd() * 100).toFixed(2)}%;top:${(rnd() * 100).toFixed(2)}%;` +
       `width:${size.toFixed(1)}px;height:${size.toFixed(1)}px;border-radius:50%;` +
-      `background:rgba(${c},${op.toFixed(2)});box-shadow:0 0 ${bloom.toFixed(1)}px rgba(${c},${(op * 0.8).toFixed(2)});${anim}"></span>`
+      `background:rgba(${c},${op.toFixed(2)});box-shadow:0 0 ${bloom.toFixed(1)}px rgba(${c},${(op * 0.8).toFixed(2)});${motion}"></span>`
   }
   return html
 }
