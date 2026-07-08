@@ -10,11 +10,31 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2 # need the previous commit to diff changed paths
+
+      # Frontend-only pushes (only solid/** changed) skip the Rust build + binary
+      # swap + service restart: the Axum ServeDir serves /v3 straight from
+      # solid/dist on disk, so replacing those files is live immediately. Backend
+      # changes (or an unknown diff base) do the full build + restart.
+      - name: Detect changed areas
+        id: changes
+        run: |
+          BEFORE="${{ github.event.before }}"
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            echo "backend=true" >> "$GITHUB_OUTPUT"
+          elif git diff --name-only "$BEFORE" "${{ github.sha }}" | grep -qvE '^solid/'; then
+            echo "backend=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "backend=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Install Rust
+        if: steps.changes.outputs.backend == 'true'
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo
+        if: steps.changes.outputs.backend == 'true'
         uses: actions/cache@v4
         with:
           path: |
@@ -24,13 +44,12 @@ jobs:
           key: ${{ runner.os }}-cargo-x86-64-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build release
+        if: steps.changes.outputs.backend == 'true'
         env:
           RUSTFLAGS: "-C target-cpu=x86-64"
         run: cargo build --release
 
-      # --- SPA (SolidJS /v3) build ---------------------------------------
-      # The old Leptos /v2 SPA is retired: no wasm target, no Trunk, no
-      # frontend/ build here anymore (source kept in the repo, just not shipped).
+      # --- SPA (SolidJS /v3) build — always ------------------------------
       - name: Setup Node (Vite)
         uses: actions/setup-node@v4
         with:
@@ -47,41 +66,46 @@ jobs:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USER: ${{ secrets.SSH_USER }}
+          BACKEND: ${{ steps.changes.outputs.backend }}
         run: |
           mkdir -p ~/.ssh
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           ssh-keygen -y -f ~/.ssh/deploy_key > /dev/null  # validate key
-          # Ship the binary to a temp name, then atomically swap it into place.
-          # Overwriting the running executable in-place corrupts its mapped code
-          # pages (→ SIGILL/core-dump); `mv` keeps the live process's inode until
-          # the restart below picks up the new file.
-          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
-            target/release/alfredodev \
-            $SSH_USER@$SSH_HOST:/home/$SSH_USER/alfredorust/alfredodev.new
-          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
-            target/release/sat_probe \
-            $SSH_USER@$SSH_HOST:/home/$SSH_USER/alfredorust/sat_probe.new
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
-            $SSH_USER@$SSH_HOST \
-            "chmod +x /home/$SSH_USER/alfredorust/alfredodev.new /home/$SSH_USER/alfredorust/sat_probe.new && mv -f /home/$SSH_USER/alfredorust/alfredodev.new /home/$SSH_USER/alfredorust/alfredodev && mv -f /home/$SSH_USER/alfredorust/sat_probe.new /home/$SSH_USER/alfredorust/sat_probe"
+          SSH="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no"
+          RSYNC_E="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no"
+
+          if [ "$BACKEND" = "true" ]; then
+            # Ship the binary to a temp name, then atomically swap it into place.
+            # Overwriting the running executable in-place corrupts its mapped code
+            # pages (→ SIGILL/core-dump); `mv` keeps the live process's inode
+            # until the restart below picks up the new file.
+            scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+              target/release/alfredodev \
+              $SSH_USER@$SSH_HOST:/home/$SSH_USER/alfredorust/alfredodev.new
+            scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+              target/release/sat_probe \
+              $SSH_USER@$SSH_HOST:/home/$SSH_USER/alfredorust/sat_probe.new
+            $SSH $SSH_USER@$SSH_HOST \
+              "chmod +x /home/$SSH_USER/alfredorust/alfredodev.new /home/$SSH_USER/alfredorust/sat_probe.new && mv -f /home/$SSH_USER/alfredorust/alfredodev.new /home/$SSH_USER/alfredorust/alfredodev && mv -f /home/$SSH_USER/alfredorust/sat_probe.new /home/$SSH_USER/alfredorust/sat_probe"
+          fi
+
           # Ship the SolidJS SPA build (/v3); --delete prunes stale hashed assets.
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
-            $SSH_USER@$SSH_HOST \
+          # Served straight from disk by ServeDir, so no restart needed for this.
+          $SSH $SSH_USER@$SSH_HOST \
             "mkdir -p /home/$SSH_USER/alfredorust/solid/dist"
-          rsync -az --delete \
-            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+          rsync -az --delete -e "$RSYNC_E" \
             solid/dist/ \
             $SSH_USER@$SSH_HOST:/home/$SSH_USER/alfredorust/solid/dist/
-          # Ship the committed Playwright UI report (generated locally, not in
-          # CI) so it's served at /test/reports/playwright on the test tenant.
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
-            $SSH_USER@$SSH_HOST \
+
+          # Ship the committed Playwright UI report (generated locally, not in CI)
+          # so it's served at /test/reports/playwright on the test tenant.
+          $SSH $SSH_USER@$SSH_HOST \
             "mkdir -p /home/$SSH_USER/alfredorust/test-reports/playwright"
-          rsync -az --delete \
-            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+          rsync -az --delete -e "$RSYNC_E" \
             test-reports/playwright/ \
             $SSH_USER@$SSH_HOST:/home/$SSH_USER/alfredorust/test-reports/playwright/
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
-            $SSH_USER@$SSH_HOST \
-            "sudo systemctl restart alfredorust"
+
+          if [ "$BACKEND" = "true" ]; then
+            $SSH $SSH_USER@$SSH_HOST "sudo systemctl restart alfredorust"
+          fi
