@@ -316,7 +316,11 @@ fn build_config(company_slug: &str, request: CfdiDownloadRequest) -> Result<SatC
         poll_seconds: request.poll_seconds.unwrap_or(5).max(1),
         // Each attempt can now block up to ~300s waiting on a slow SAT, so keep
         // the attempt count modest; a ready solicitud succeeds on the first try.
-        max_attempts: request.max_attempts.unwrap_or(15).max(1),
+        max_attempts: request
+            .max_attempts
+            .or_else(|| env_u32("CFDI_SAT_MAX_ATTEMPTS"))
+            .unwrap_or(15)
+            .max(1),
         download_type: request.download_type,
         request_type: request.request_type,
     })
@@ -327,6 +331,10 @@ fn value_or_env(value: Option<String>, name: &str) -> Result<String, SatError> {
         Some(value) if !value.trim().is_empty() => Ok(value),
         _ => Err(SatError::BadRequest(format!("falta {name}"))),
     }
+}
+
+fn env_u32(name: &str) -> Option<u32> {
+    env::var(name).ok()?.parse().ok()
 }
 
 fn safe_path_segment(value: &str) -> String {
@@ -897,6 +905,15 @@ mod tests {
             SAT_HTTP_TIMEOUT_SECONDS >= 300,
             "SAT verify can take several minutes in production; keep timeout >=300s"
         );
+    }
+
+    #[test]
+    fn cfdi_sat_max_attempts_env_is_supported() {
+        // SAFETY: this unit test only mutates process env for this single read.
+        unsafe { env::set_var("CFDI_SAT_MAX_ATTEMPTS", "2") };
+        assert_eq!(env_u32("CFDI_SAT_MAX_ATTEMPTS"), Some(2));
+        // SAFETY: cleanup for the same process-local test env mutation above.
+        unsafe { env::remove_var("CFDI_SAT_MAX_ATTEMPTS") };
     }
 
     #[test]
