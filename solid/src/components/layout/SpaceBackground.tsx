@@ -59,29 +59,64 @@ export function SpaceBackground() {
     const starfield = root.querySelector('#starfield')
     if (starfield) starfield.innerHTML = buildStars()
 
+    // Launch a shooting star from (leftCss, topCss) at `angle`, with the given
+    // length/travel/duration. fill:forwards holds the final (invisible) frame so
+    // it can't flash back to its base style at the start position when it ends.
+    const launchShooter = (
+      leftCss: string,
+      topCss: string,
+      angle: number,
+      len: number,
+      dist: number,
+      dur: number,
+    ): void => {
+      const el = document.createElement('div')
+      el.className = 'shooter'
+      el.style.width = `${len}px`
+      el.style.left = leftCss
+      el.style.top = topCss
+      root.appendChild(el)
+      const anim = el.animate(
+        [
+          { opacity: 0, transform: `rotate(${angle}deg) translateX(0px) scaleX(.4)` },
+          { opacity: 1, transform: `rotate(${angle}deg) translateX(${dist * 0.35}px) scaleX(1)`, offset: 0.5 },
+          { opacity: 0, transform: `rotate(${angle}deg) translateX(${dist}px) scaleX(1)` },
+        ],
+        { duration: dur, easing: 'cubic-bezier(.3,0,.15,1)', fill: 'forwards' },
+      )
+      anim.onfinish = () => el.remove()
+      timers.push(window.setTimeout(() => el.remove(), dur + 250)) // safety net for cleanup
+    }
+
+    // Click on empty background → a shooting star from the click point in a
+    // random direction/size. Deliberate action, so it runs even under reduced
+    // motion; ignore clicks on interactive UI.
+    const INTERACTIVE =
+      'a, button, input, select, textarea, label, [role="button"], [role="tab"], [role="menuitem"], [role="dialog"], [contenteditable]'
+    bind(document, 'click', ((e: MouseEvent) => {
+      if ((e.target as Element | null)?.closest?.(INTERACTIVE)) return
+      launchShooter(
+        `${e.clientX}px`,
+        `${e.clientY}px`,
+        Math.random() * 360,
+        80 + Math.random() * 120,
+        300 + Math.random() * 380,
+        700 + Math.random() * 700,
+      )
+    }) as EventListener)
+
     if (!motionReduced()) {
-      // Shooting stars from four varied directions (native WAAPI, no dep).
+      // Ambient shooting stars from four varied directions.
       const spawnShooter = () => {
-        const el = document.createElement('div')
-        el.className = 'shooter'
         const dir = SHOOTER_DIRS[Math.floor(Math.random() * SHOOTER_DIRS.length)]
-        const angle = dir.angle + (Math.random() * 16 - 8)
-        const len = 90 + Math.random() * 90
-        const dist = 380 + Math.random() * 300
-        const dur = 850 + Math.random() * 550
-        el.style.width = `${len}px`
-        el.style.left = `${dir.x[0] + Math.random() * (dir.x[1] - dir.x[0])}vw`
-        el.style.top = `${dir.y[0] + Math.random() * (dir.y[1] - dir.y[0])}vh`
-        root.appendChild(el)
-        el.animate(
-          [
-            { opacity: 0, transform: `rotate(${angle}deg) translateX(0px) scaleX(.4)` },
-            { opacity: 1, transform: `rotate(${angle}deg) translateX(${dist * 0.35}px) scaleX(1)`, offset: 0.5 },
-            { opacity: 0, transform: `rotate(${angle}deg) translateX(${dist}px) scaleX(1)` },
-          ],
-          { duration: dur, easing: 'cubic-bezier(.3,0,.15,1)' },
+        launchShooter(
+          `${dir.x[0] + Math.random() * (dir.x[1] - dir.x[0])}vw`,
+          `${dir.y[0] + Math.random() * (dir.y[1] - dir.y[0])}vh`,
+          dir.angle + (Math.random() * 16 - 8),
+          90 + Math.random() * 90,
+          380 + Math.random() * 300,
+          850 + Math.random() * 550,
         )
-        timers.push(window.setTimeout(() => el.remove(), dur + 160))
       }
       const loopShooter = () => {
         spawnShooter()
