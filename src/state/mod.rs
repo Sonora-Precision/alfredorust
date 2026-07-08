@@ -139,7 +139,7 @@ pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppStat
         seed::seed_sample_finance(&db, company_ids.values().next().cloned()).await?;
     }
 
-    Ok(AppState {
+    let state = AppState {
         cfdi_jobs: db.collection::<CfdiJob>("cfdi_jobs"),
         users: db.collection::<User>("users"),
         user_companies: db.collection::<UserCompany>("user_companies"),
@@ -163,7 +163,14 @@ pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppStat
         resource_usages: db.collection::<ResourceUsage>("resource_usages"),
         resource_usage_allocations: db
             .collection::<ResourceUsageAllocation>("resource_usage_allocations"),
-    })
+    };
+
+    let interrupted = fail_interrupted_cfdi_jobs(&state).await?;
+    if interrupted > 0 {
+        eprintln!("[cfdi] marked {interrupted} interrupted download job(s) after startup");
+    }
+
+    Ok(state)
 }
 
 fn redact_mongo_uri(uri: &str) -> String {

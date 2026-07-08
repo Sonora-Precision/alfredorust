@@ -255,6 +255,80 @@ async fn cfdi_job_endpoints_scope_to_company_and_admin() {
 }
 
 #[tokio::test]
+async fn cfdi_startup_marks_active_jobs_as_interrupted() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+
+    let company = create_company(
+        &state,
+        "CFDI Interrupted Jobs",
+        "cfdi-interrupted-jobs",
+        "MXN",
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+
+    insert_cfdi_job(
+        &state,
+        &CfdiJob {
+            job_id: "job-running".into(),
+            company_id: company.to_hex(),
+            label: "Running".into(),
+            chunk_start: "2026-01-01".into(),
+            started_at: "2026-01-01".into(),
+            status: CfdiJobStatus::Running,
+            source: "manual".into(),
+            created_at: DateTime::now(),
+        },
+    )
+    .await
+    .unwrap();
+    insert_cfdi_job(
+        &state,
+        &CfdiJob {
+            job_id: "job-done".into(),
+            company_id: company.to_hex(),
+            label: "Done".into(),
+            chunk_start: "2026-01-02".into(),
+            started_at: "2026-01-02".into(),
+            status: CfdiJobStatus::Done {
+                imported: 1,
+                transactions_created: 1,
+                transactions_updated: 0,
+                transactions_skipped: 0,
+                errors: vec![],
+            },
+            source: "manual".into(),
+            created_at: DateTime::now(),
+        },
+    )
+    .await
+    .unwrap();
+
+    let changed = fail_interrupted_cfdi_jobs(&state).await.unwrap();
+    assert_eq!(changed, 1);
+
+    let jobs = list_cfdi_jobs(&state, &company.to_hex()).await.unwrap();
+    let running = jobs
+        .iter()
+        .find(|job| job.job_id == "job-running")
+        .expect("running job exists");
+    assert!(matches!(running.status, CfdiJobStatus::Failed { .. }));
+    let done = jobs
+        .iter()
+        .find(|job| job.job_id == "job-done")
+        .expect("done job exists");
+    assert!(matches!(done.status, CfdiJobStatus::Done { .. }));
+
+    common::teardown(Some(ctx)).await;
+}
+
+#[tokio::test]
 async fn cfdi_download_rejects_malformed_dates_before_starting_jobs() {
     let ctx = match common::setup_state().await {
         Some(c) => c,

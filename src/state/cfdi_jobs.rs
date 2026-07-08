@@ -30,6 +30,23 @@ pub async fn set_cfdi_job_status(
     Ok(())
 }
 
+/// Jobs marked active in Mongo after process startup no longer have an in-memory
+/// worker behind them. Mark them as interrupted so the UI does not show a stale
+/// "running" job forever after a deploy/restart.
+pub async fn fail_interrupted_cfdi_jobs(state: &AppState) -> Result<u64> {
+    let status_bson = bson::to_bson(&CfdiJobStatus::Failed {
+        error: "Descarga interrumpida por reinicio/despliegue del servidor. Inicia una nueva descarga para reintentar con el timeout actual.".to_string(),
+    })?;
+    let result = state
+        .cfdi_jobs
+        .update_many(
+            doc! { "status.status": { "$in": ["queued", "running"] } },
+            doc! { "$set": { "status": status_bson } },
+        )
+        .await?;
+    Ok(result.modified_count)
+}
+
 /// All jobs for a company, newest first.
 pub async fn list_cfdi_jobs(state: &AppState, company_id: &str) -> Result<Vec<CfdiJob>> {
     let cursor = state
