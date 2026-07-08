@@ -23,7 +23,7 @@ import { Badge, type BadgeTone } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
 import { Checkbox } from '../components/ui/Checkbox'
-import { Input } from '../components/ui/Input'
+import { DateField } from '../components/ui/DateField'
 import { Modal } from '../components/ui/Modal'
 import { Select } from '../components/ui/Select'
 import { Spinner } from '../components/ui/Spinner'
@@ -41,6 +41,81 @@ function todayStr(): string {
 function yearsAgoJan(years: number): string {
   return `${new Date().getFullYear() - years}-01-01`
 }
+
+// --- quick-range presets ----------------------------------------------------
+// All math is local-date based. `ymd` formats via get*() + padding, NOT
+// toISOString (which converts to UTC and can shift the day across the boundary
+// for anyone west of GMT). `new Date(y, m, d)` normalizes overflow/underflow,
+// so day -3 or month 12 roll into the correct neighbouring period for free.
+
+/** Local Date -> `YYYY-MM-DD`. */
+function ymd(d: Date): string {
+  const y = d.getFullYear()
+  const m = `${d.getMonth() + 1}`.padStart(2, '0')
+  const day = `${d.getDate()}`.padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+interface QuickRange {
+  label: string
+  start: string
+  end: string
+}
+
+/** Pure: given "today", produce the 8 preset ranges. `now` is injectable so the
+ * math is unit-checkable. */
+function buildQuickRanges(now: Date): QuickRange[] {
+  const y = now.getFullYear()
+  const m = now.getMonth() // 0..11
+  const d = now.getDate()
+  const today = ymd(now)
+
+  // Últimos N días: end today, start N days back. e.g. today 2026-07-08,
+  // 7 días -> start 2026-07-01, end 2026-07-08.
+  const lastDays = (n: number) => ymd(new Date(y, m, d - n))
+
+  // Calendar quarter (0..3) of the current month, first month = q*3.
+  const q = Math.floor(m / 3)
+  // Previous quarter, wrapping the year at Q1.
+  const prevQY = q === 0 ? y - 1 : y
+  const prevQ = q === 0 ? 3 : q - 1
+
+  // Semester: H1 = Jan..Jun (0), H2 = Jul..Dec (1).
+  const h = m < 6 ? 0 : 1
+  const prevHY = h === 0 ? y - 1 : y
+  const prevH = h === 0 ? 1 : 0
+
+  return [
+    { label: 'Últimos 7 días', start: lastDays(7), end: today },
+    { label: 'Últimos 14 días', start: lastDays(14), end: today },
+    // Mes actual: 1st of this month .. today.
+    { label: 'Mes actual', start: ymd(new Date(y, m, 1)), end: today },
+    // Mes anterior: 1st of prev month .. day 0 of this month (= last day prev).
+    { label: 'Mes anterior', start: ymd(new Date(y, m - 1, 1)), end: ymd(new Date(y, m, 0)) },
+    // Trimestre actual: 1st of quarter's first month .. today.
+    { label: 'Trimestre actual', start: ymd(new Date(y, q * 3, 1)), end: today },
+    // Trimestre anterior: full previous quarter (its last day = day 0 of the
+    // month after it: prevQ*3 + 3).
+    {
+      label: 'Trimestre anterior',
+      start: ymd(new Date(prevQY, prevQ * 3, 1)),
+      end: ymd(new Date(prevQY, prevQ * 3 + 3, 0)),
+    },
+    // Semestre actual: 1st of semester's first month (0 or 6) .. today.
+    { label: 'Semestre actual', start: ymd(new Date(y, h * 6, 1)), end: today },
+    // Semestre anterior: full previous semester.
+    {
+      label: 'Semestre anterior',
+      start: ymd(new Date(prevHY, prevH * 6, 1)),
+      end: ymd(new Date(prevHY, prevH * 6 + 6, 0)),
+    },
+  ]
+}
+
+/** Client-side table page size — the list endpoint returns up to 5000 rows and
+ * rendering them all freezes the page, so the table renders one slice at a time
+ * while KPIs/charts stay computed over the full set. */
+const PAGE_SIZE = 50
 
 const DOWNLOAD_TYPES: { value: CfdiDownloadType; label: string }[] = [
   { value: 'both', label: 'Emitidos y recibidos' },
@@ -198,6 +273,30 @@ export default function Cfdi(): JSX.Element {
   const analytics = createMemo(() => buildCfdiAnalytics(cfdisQuery.data?.items ?? []))
   const hasCfdis = () => (cfdisQuery.data?.items.length ?? 0) > 0
 
+  // Apply a quick-range preset to the form's date signals.
+  const applyRange = (r: QuickRange) => {
+    setStart(r.start)
+    setEnd(r.end)
+    setDlError(null)
+  }
+
+  // --- table pagination (KPIs/charts still use ALL items above) --------------
+  const [page, setPage] = createSignal(1)
+  const allCfdis = createMemo(() => cfdisQuery.data?.items ?? [])
+  const totalCfdis = createMemo(() => allCfdis().length)
+  const totalPages = createMemo(() => Math.max(1, Math.ceil(totalCfdis() / PAGE_SIZE)))
+  // Reset to page 1 whenever the underlying dataset size changes (fresh fetch).
+  // Keyed on length only — does not touch jobsQuery, so no polling interaction.
+  createEffect(() => {
+    totalCfdis()
+    setPage(1)
+  })
+  const pageItems = createMemo(() => {
+    const p = Math.min(page(), totalPages())
+    const from = (p - 1) * PAGE_SIZE
+    return allCfdis().slice(from, from + PAGE_SIZE)
+  })
+
   return (
     <div class="space-y-6">
       <h1 class="text-xl font-semibold text-foreground">CFDIs</h1>
@@ -247,13 +346,28 @@ export default function Cfdi(): JSX.Element {
                       ))}
                     </Select>
                   </div>
+                  <div class="space-y-1 sm:col-span-2">
+                    <span class="block text-sm font-medium text-foreground">Rangos rápidos</span>
+                    <div class="flex flex-wrap gap-1.5">
+                      {buildQuickRanges(new Date()).map((r) => (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          class="h-7 px-2 text-xs"
+                          onClick={() => applyRange(r)}
+                        >
+                          {r.label}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
                   <div class="space-y-1">
                     <label class="block text-sm font-medium text-foreground">Desde</label>
-                    <Input value={start()} onInput={setStart} type="date" />
+                    <DateField value={start()} onChange={setStart} label="Fecha inicial" />
                   </div>
                   <div class="space-y-1">
                     <label class="block text-sm font-medium text-foreground">Hasta</label>
-                    <Input value={end()} onInput={setEnd} type="date" />
+                    <DateField value={end()} onChange={setEnd} label="Fecha final" />
                   </div>
                   <div class="flex items-center sm:col-span-2">
                     <Checkbox checked={autoPay()} onChange={setAutoPay} label="Crear pagos automáticamente" />
@@ -441,7 +555,7 @@ export default function Cfdi(): JSX.Element {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {(cfdisQuery.data?.items ?? []).map((c) => (
+                  {pageItems().map((c) => (
                     <TableRow>
                       <TableCell class="font-medium text-foreground">{c.folio ?? ''}</TableCell>
                       <TableCell>{c.tipo ?? ''}</TableCell>
@@ -458,6 +572,32 @@ export default function Cfdi(): JSX.Element {
                   ))}
                 </TableBody>
               </Table>
+              <div class="flex flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-3 text-sm">
+                <span class="text-muted-foreground">{totalCfdis()} CFDIs</span>
+                <div class="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    class="h-8 px-2"
+                    disabled={page() <= 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  >
+                    ‹ Anterior
+                  </Button>
+                  <span class="text-muted-foreground">
+                    Página {Math.min(page(), totalPages())} de {totalPages()}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    class="h-8 px-2"
+                    disabled={page() >= totalPages()}
+                    onClick={() => setPage((p) => Math.min(totalPages(), p + 1))}
+                  >
+                    Siguiente ›
+                  </Button>
+                </div>
+              </div>
             </Show>
           </Show>
         </Show>
