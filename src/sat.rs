@@ -1,4 +1,4 @@
-use std::{env, fmt, path::PathBuf};
+use std::{env, fmt, path::PathBuf, time::Instant};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use chrono::{DateTime, Duration as ChronoDuration, SecondsFormat, Utc};
@@ -21,6 +21,7 @@ const REQUEST_URL: &str =
 const VERIFY_URL: &str =
     "https://cfdidescargamasivasolicitud.clouda.sat.gob.mx/VerificaSolicitudDescargaService.svc";
 const DOWNLOAD_URL: &str = "https://cfdidescargamasiva.clouda.sat.gob.mx/DescargaMasivaService.svc";
+const SAT_HTTP_TIMEOUT_SECONDS: u64 = 150;
 
 const NS_SOAP: &str = "http://schemas.xmlsoap.org/soap/envelope/";
 const NS_WSSE: &str =
@@ -254,7 +255,7 @@ pub async fn download_cfdis(
     // before the SAT replies). When the SAT is healthy it still returns in a
     // couple of seconds, so a long timeout only ever helps.
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(150))
+        .timeout(std::time::Duration::from_secs(SAT_HTTP_TIMEOUT_SECONDS))
         .build()
         .map_err(|err| SatError::Http(format!("no pude crear cliente HTTP: {err}")))?;
 
@@ -433,6 +434,12 @@ async fn poll_until_finished(
     // reaches a terminal state or we exhaust the attempts.
     let mut last_transient = String::new();
     for attempt in 0..cfg.max_attempts {
+        eprintln!(
+            "[cfdi] verify SAT inicio request_id={request_id} intento={}/{} timeout={}s",
+            attempt + 1,
+            cfg.max_attempts,
+            SAT_HTTP_TIMEOUT_SECONDS
+        );
         let verify = match verify_attempt(client, fiel, cfg, request_id).await {
             Ok(verify) => verify,
             Err(err) => {
@@ -448,16 +455,37 @@ async fn poll_until_finished(
         };
         match verify.estado_solicitud.as_deref() {
             // 3 = Terminada (lista para descargar).
-            Some("3") => return Ok(verify),
+            Some("3") => {
+                eprintln!(
+                    "[cfdi] verify SAT listo request_id={request_id} intento={} paquetes={} numero_cfdis={}",
+                    attempt + 1,
+                    verify.paquetes.len(),
+                    verify.numero_cfdis.as_deref().unwrap_or("")
+                );
+                return Ok(verify);
+            }
             // 5 con 5004 = Terminada sin CFDIs (no encontrado): exito vacio.
             Some("5")
                 if verify.codigo_estado_solicitud.as_deref() == Some("5004")
                     || verify.cod_estatus.as_deref() == Some("5004") =>
             {
+                eprintln!(
+                    "[cfdi] verify SAT listo sin CFDIs request_id={request_id} intento={} codigo={} mensaje={}",
+                    attempt + 1,
+                    verify.codigo_estado_solicitud.as_deref().unwrap_or(""),
+                    verify.mensaje.as_deref().unwrap_or("")
+                );
                 return Ok(verify);
             }
             // 4 = Error, 5 (!=5004) = Rechazada, 6 = Vencida: estados terminales.
             Some("4") | Some("5") | Some("6") => {
+                eprintln!(
+                    "[cfdi] verify SAT estado terminal request_id={request_id} intento={} estado={} codigo={} mensaje={}",
+                    attempt + 1,
+                    verify.estado_solicitud.as_deref().unwrap_or(""),
+                    verify.codigo_estado_solicitud.as_deref().unwrap_or(""),
+                    verify.mensaje.as_deref().unwrap_or("")
+                );
                 return Err(SatError::Sat(format!(
                     "solicitud SAT en estado terminal {}: {} {}",
                     verify.estado_solicitud.clone().unwrap_or_default(),
@@ -468,7 +496,17 @@ async fn poll_until_finished(
             // 1 = Aceptada, 2 = En proceso, y cualquier otro/None (p.ej. "0"
             // "Error no controlado" que el SAT devuelve de forma transitoria):
             // esperar y reintentar en vez de abortar.
-            _ => sleep(std::time::Duration::from_secs(cfg.poll_seconds)).await,
+            _ => {
+                eprintln!(
+                    "[cfdi] verify SAT aun en proceso request_id={request_id} intento={} estado={} codigo={} paquetes={} poll={}s",
+                    attempt + 1,
+                    verify.estado_solicitud.as_deref().unwrap_or(""),
+                    verify.codigo_estado_solicitud.as_deref().unwrap_or(""),
+                    verify.paquetes.len(),
+                    cfg.poll_seconds
+                );
+                sleep(std::time::Duration::from_secs(cfg.poll_seconds)).await;
+            }
         }
     }
 
@@ -502,6 +540,7 @@ async fn verify_request(
     rfc: &str,
     request_id: &str,
 ) -> Result<VerifyResult, SatError> {
+    let started = Instant::now();
     let solicitud_unsigned = format!(
         r#"<des:solicitud IdSolicitud="{request_id}" RfcSolicitante="{rfc}"></des:solicitud>"#
     );
@@ -514,15 +553,43 @@ async fn verify_request(
         r#"<des:VerificaSolicitudDescarga>{solicitud}</des:VerificaSolicitudDescarga>"#
     ));
 
-    let response = post_soap(
+    let response = match post_soap(
         client,
         VERIFY_URL,
         "http://DescargaMasivaTerceros.sat.gob.mx/IVerificaSolicitudDescargaService/VerificaSolicitudDescarga",
         Some(token),
         body,
     )
-    .await?;
-    parse_verify_result(&response)
+    .await
+    {
+        Ok(response) => response,
+        Err(err) => {
+            let elapsed = started.elapsed();
+            let kind = if is_http_timeout_error(&err) {
+                "timeout_http"
+            } else {
+                "error"
+            };
+            eprintln!(
+                "[cfdi] verify SAT fallo request_id={request_id} duracion_ms={} tipo={kind} error={err}",
+                elapsed.as_millis()
+            );
+            return Err(err);
+        }
+    };
+    let verify = parse_verify_result(&response)?;
+    let elapsed = started.elapsed();
+    eprintln!(
+        "[cfdi] verify SAT respuesta request_id={request_id} duracion_ms={} estado={} codigo={} cod_estatus={} paquetes={} numero_cfdis={} mensaje={}",
+        elapsed.as_millis(),
+        verify.estado_solicitud.as_deref().unwrap_or(""),
+        verify.codigo_estado_solicitud.as_deref().unwrap_or(""),
+        verify.cod_estatus.as_deref().unwrap_or(""),
+        verify.paquetes.len(),
+        verify.numero_cfdis.as_deref().unwrap_or(""),
+        verify.mensaje.as_deref().unwrap_or("")
+    );
+    Ok(verify)
 }
 
 /// Download a package, retrying on transient SAT failures (timeouts/drops) so a
@@ -549,7 +616,10 @@ async fn download_package_with_retry(
             Ok(pkg) => return Ok(pkg),
             Err(err) => {
                 last = err.to_string();
-                eprintln!("[cfdi] descarga paquete intento {}/{attempts}: {last}", i + 1);
+                eprintln!(
+                    "[cfdi] descarga paquete intento {}/{attempts}: {last}",
+                    i + 1
+                );
                 sleep(std::time::Duration::from_secs(cfg.poll_seconds)).await;
             }
         }
@@ -717,12 +787,25 @@ async fn post_soap(
         .body(body)
         .send()
         .await
-        .map_err(|err| SatError::Http(format!("fallo HTTP contra SAT: {err}")))?;
+        .map_err(|err| {
+            if err.is_timeout() {
+                SatError::Http(format!(
+                    "timeout HTTP SAT despues de {SAT_HTTP_TIMEOUT_SECONDS}s: {err}"
+                ))
+            } else {
+                SatError::Http(format!("fallo HTTP contra SAT: {err}"))
+            }
+        })?;
     let status = response.status();
-    let text = response
-        .text()
-        .await
-        .map_err(|err| SatError::Http(format!("no pude leer respuesta SAT: {err}")))?;
+    let text = response.text().await.map_err(|err| {
+        if err.is_timeout() {
+            SatError::Http(format!(
+                "timeout leyendo respuesta SAT despues de {SAT_HTTP_TIMEOUT_SECONDS}s: {err}"
+            ))
+        } else {
+            SatError::Http(format!("no pude leer respuesta SAT: {err}"))
+        }
+    })?;
 
     if !status.is_success() {
         let fault = first_text_by_name(&text, "faultstring").unwrap_or_else(|| text.clone());
@@ -730,6 +813,10 @@ async fn post_soap(
     }
 
     Ok(text)
+}
+
+fn is_http_timeout_error(err: &SatError) -> bool {
+    matches!(err, SatError::Http(msg) if msg.contains("timeout"))
 }
 
 fn parse_verify_result(xml: &str) -> Result<VerifyResult, SatError> {
@@ -802,6 +889,14 @@ mod tests {
     fn request_type_maps_to_sat_values() {
         assert_eq!(RequestType::Xml.sat_value(), "CFDI");
         assert_eq!(RequestType::Metadata.sat_value(), "Metadata");
+    }
+
+    #[test]
+    fn sat_http_timeout_is_not_aggressive_for_slow_verify() {
+        assert!(
+            SAT_HTTP_TIMEOUT_SECONDS >= 150,
+            "SAT verify can take 77-88s in production; keep timeout >=150s"
+        );
     }
 
     #[test]
