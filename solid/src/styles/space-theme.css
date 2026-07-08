@@ -16,8 +16,8 @@
 .card {
   position: relative;
   background: hsl(var(--card) / 0.55);
-  backdrop-filter: blur(12px) saturate(170%);
-  -webkit-backdrop-filter: blur(12px) saturate(170%);
+  backdrop-filter: blur(8px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px) saturate(150%);
   border: 1px solid hsl(var(--foreground) / 0.16);
   border-radius: var(--radius-xl, 16px);
   box-shadow: 0 1px 2px hsl(var(--shadow) / 0.05), 0 4px 12px hsl(var(--shadow) / 0.1);
@@ -46,8 +46,8 @@
 /* ---- Floating overlay glass (menus, modals, drawers, toasts) ---- */
 .bg-glass {
   background: hsl(var(--card) / 0.72);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
   border: 1px solid hsl(var(--foreground) / 0.14);
 }
 [data-theme='light'] .bg-glass {
@@ -116,7 +116,6 @@
     radial-gradient(1000px 800px at 50% 120%, hsl(199 89% 55% / .24), transparent 55%),
     radial-gradient(700px 500px at 30% 55%, hsl(330 80% 55% / .14), transparent 60%),
     hsl(var(--background));
-  animation: nebulaShift 34s ease-in-out infinite;
 }
 [data-theme='light'] #space .sky {
   background:
@@ -133,10 +132,16 @@
   position: absolute; top: -10%; left: -10%; right: -10%; height: 46%;
   background: linear-gradient(180deg, hsl(160 84% 45% / .16), hsl(199 89% 55% / .10) 45%, transparent 80%);
   filter: blur(40px); opacity: .55; mix-blend-mode: screen;
-  animation: auroraSway 16s ease-in-out infinite; transform-origin: center top;
 }
 [data-theme='light'] #space .aurora { display: none; }
 @keyframes auroraSway { 0%,100% { transform: translateX(-2%) scaleY(1); opacity: .5; } 50% { transform: translateX(3%) scaleY(1.08); opacity: .68; } }
+
+/* Randomized starfield — each star is generated in SpaceBackground.tsx with a
+   random position/size/brightness/bloom, so there's no visible tiling pattern.
+   Static (no drift): moving the field behind the frosted cards re-blurs every
+   frame and felt laggy; a subset twinkles for life instead. */
+#space #starfield { position: absolute; inset: 0; }
+[data-theme='light'] #space #starfield { opacity: 0.5; }
 
 /* Star layers — 3 depths for parallax. Sized generously: small dots
    nearly vanish under backdrop-filter blur, so keep them >= 2.5px. */
@@ -150,7 +155,7 @@
     radial-gradient(3.4px 3.4px at 380px 220px, hsl(330 80% 84%), transparent),
     radial-gradient(3px 3px at 90px 190px, hsl(var(--foreground)), transparent),
     radial-gradient(2.8px 2.8px at 260px 250px, hsl(48 90% 82%), transparent);
-  background-size: 420px 300px; opacity: 1; animation: drift 300s linear infinite; /* slow autonomous drift (base + s2) */
+  background-size: 420px 300px; opacity: 1; animation: drift 140s linear infinite; /* gentle drift, same direction for all layers */
 }
 [data-theme='light'] #space .stars {
   background-image:
@@ -162,11 +167,10 @@
     radial-gradient(3px 3px at 90px 190px, hsl(40 90% 50%), transparent),
     radial-gradient(2.8px 2.8px at 260px 250px, hsl(48 90% 52%), transparent);
 }
-#space .stars.s2 { background-size: 640px 480px; opacity: .85; animation-duration: 460s; animation-direction: reverse; }
-/* s3 = the few big/bright stars: JS parallax owns its transform, so no CSS
-   animation here (avoids the two-owners "robotic" conflict). */
+#space .stars.s2 { background-size: 640px 480px; opacity: .85; animation-duration: 200s; }
+/* s3 = big/bright stars — same drift direction, a touch faster for subtle depth. */
 #space .stars.s3 {
-  background-size: 260px 190px; opacity: 1; animation: none;
+  background-size: 260px 190px; opacity: 1; animation-duration: 95s;
   background-image:
     radial-gradient(6px 6px at 40px 50px, hsl(var(--foreground)), transparent),
     radial-gradient(5.6px 5.6px at 160px 130px, hsl(199 89% 85%), transparent),
