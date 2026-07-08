@@ -49,6 +49,21 @@ pub struct CfdiDownloadRequest {
     pub max_attempts: Option<u32>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct CfdiResumeRequest {
+    pub cer_path: Option<String>,
+    pub key_path: Option<String>,
+    pub key_password: Option<String>,
+    pub rfc: Option<String>,
+    #[serde(default = "default_download_type")]
+    pub download_type: DownloadType,
+    #[serde(default = "default_request_type")]
+    pub request_type: RequestType,
+    pub output_dir: Option<String>,
+    pub poll_seconds: Option<u64>,
+    pub max_attempts: Option<u32>,
+}
+
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum DownloadType {
@@ -290,6 +305,40 @@ pub async fn download_cfdis(
     })
 }
 
+pub async fn resume_cfdis(
+    company_slug: &str,
+    request_id: &str,
+    request: CfdiResumeRequest,
+) -> Result<CfdiDownloadResponse, SatError> {
+    let cfg = build_resume_config(company_slug, request)?;
+    let fiel = Fiel::load(&cfg.cer_path, &cfg.key_path, &cfg.key_password).await?;
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(SAT_HTTP_TIMEOUT_SECONDS))
+        .build()
+        .map_err(|err| SatError::Http(format!("no pude crear cliente HTTP: {err}")))?;
+
+    let verify = poll_until_finished(&client, &fiel, &cfg, request_id).await?;
+    fs::create_dir_all(&cfg.output_dir)
+        .await
+        .map_err(|err| SatError::Io(format!("no pude crear output_dir: {err}")))?;
+
+    let mut packages = Vec::new();
+    for package_id in &verify.paquetes {
+        let downloaded = download_package_with_retry(&client, &fiel, &cfg, package_id).await?;
+        packages.push(downloaded);
+    }
+
+    Ok(CfdiDownloadResponse {
+        request_id: request_id.to_string(),
+        rfc: cfg.rfc,
+        download_type: cfg.download_type,
+        request_type: cfg.request_type,
+        output_dir: cfg.output_dir.to_string_lossy().to_string(),
+        verify,
+        packages,
+    })
+}
+
 fn build_config(company_slug: &str, request: CfdiDownloadRequest) -> Result<SatConfig, SatError> {
     let rfc = value_or_env(request.rfc, "SAT_RFC")?.to_uppercase();
     let start = value_or_env(request.start, "SAT_START")?;
@@ -320,6 +369,45 @@ fn build_config(company_slug: &str, request: CfdiDownloadRequest) -> Result<SatC
             .max(1),
         // Each attempt can now block up to ~300s waiting on a slow SAT, so keep
         // the attempt count modest; a ready solicitud succeeds on the first try.
+        max_attempts: request
+            .max_attempts
+            .or_else(|| env_u32("CFDI_SAT_MAX_ATTEMPTS"))
+            .unwrap_or(15)
+            .max(1),
+        download_type: request.download_type,
+        request_type: request.request_type,
+    })
+}
+
+fn build_resume_config(
+    company_slug: &str,
+    request: CfdiResumeRequest,
+) -> Result<SatConfig, SatError> {
+    let rfc = value_or_env(request.rfc, "SAT_RFC")?.to_uppercase();
+    let output_dir = request.output_dir.unwrap_or_else(|| {
+        let stamp = Utc::now().format("%Y%m%d%H%M%S").to_string();
+        format!(
+            "data/cfdi_downloads/{}/{}/{}/{}",
+            safe_path_segment(company_slug),
+            rfc,
+            request.download_type.env_value(),
+            stamp
+        )
+    });
+
+    Ok(SatConfig {
+        cer_path: value_or_env(request.cer_path, "SAT_CER_PATH")?,
+        key_path: value_or_env(request.key_path, "SAT_KEY_PATH")?,
+        key_password: value_or_env(request.key_password, "SAT_KEY_PASSWORD")?,
+        rfc,
+        start: String::new(),
+        end: String::new(),
+        output_dir: PathBuf::from(output_dir),
+        poll_seconds: request
+            .poll_seconds
+            .or_else(|| env_u64("CFDI_SAT_POLL_SECONDS"))
+            .unwrap_or(120)
+            .max(1),
         max_attempts: request
             .max_attempts
             .or_else(|| env_u32("CFDI_SAT_MAX_ATTEMPTS"))
