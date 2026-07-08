@@ -22,6 +22,17 @@
     --ring: 217 91% 60%;
     --destructive: 0 72% 55%;
     --destructive-foreground: 0 0% 100%;
+
+    /* Semantic data colors (financial direction) — constant across themes. */
+    --data-emit: 160 84% 39%;
+    --data-received: 347 89% 61%;
+    --data-net: 199 89% 48%;
+
+    /* Typography + sidebar geometry (see styles/app-theme.css + space-theme.css). */
+    --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+    --sidebar-w: 248px;
+    --sidebar-w-collapsed: 68px;
   }
 
   :root[data-theme='light'] {
@@ -43,7 +54,8 @@
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04';
   }
 }
 
@@ -122,9 +134,9 @@
    Dialog/Toast presence, solid-transition-group) still fire that event, so
    they don't get stuck showing an element that should have unmounted. */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  html:not(.force-motion) *,
+  html:not(.force-motion) *::before,
+  html:not(.force-motion) *::after {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;

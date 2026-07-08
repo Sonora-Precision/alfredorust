@@ -33,7 +33,16 @@ export default {
           DEFAULT: 'hsl(var(--destructive) / <alpha-value>)',
           foreground: 'hsl(var(--destructive-foreground) / <alpha-value>)',
         },
+        // Financial-direction data colors (constant across themes).
+        'data-emit': 'hsl(var(--data-emit) / <alpha-value>)',
+        'data-received': 'hsl(var(--data-received) / <alpha-value>)',
+        'data-net': 'hsl(var(--data-net) / <alpha-value>)',
       },
+      fontFamily: {
+        sans: ['"IBM Plex Sans"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        mono: ['"IBM Plex Mono"', 'ui-monospace', 'monospace'],
+      },
+      borderRadius: { xl: '1rem' },
     },
   },
   plugins: [],

@@ -1,0 +1,262 @@
+/* Fiscalia "space glass" theme — UI utilities, animations, sidebar & command
+   palette. The starfield + glass surfaces live in ./space-theme.css; the color
+   tokens in ../index.css. Imported from src/main.tsx after index.css.
+   Reduced-motion is handled globally by the html:not(.force-motion) guard in
+   index.css, so the ⚡ MotionToggle can force full motion. */
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+/* Tabular data (money, dates, folios, UUIDs) — mono + tabular figures. */
+.tnum {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Focus ring (AA) + themed scrollbars. */
+:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 8px;
+  border: 2px solid hsl(var(--background));
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.5);
+}
+
+/* Entrance / state animations. */
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes popIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: hsl(var(--muted));
+}
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, hsl(var(--foreground) / 0.06), transparent);
+  animation: shimmer 1.4s infinite;
+}
+.pulse-dot {
+  animation: pulse-dot 1.4s ease-in-out infinite;
+}
+.fade-enter {
+  animation: fadeIn 0.2s ease;
+}
+.pop-enter {
+  animation: popIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.bar-grow {
+  transition:
+    height 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+    width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.row-hover:hover {
+  background: hsl(var(--muted) / 0.5);
+}
+.no-tap {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Magnetic hover for primary actions (offset applied from JS in SpaceBackground). */
+.magnetic {
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+
+/* Drawer (Kobalte Dialog presence → animationend keyframes, like Modal). */
+@keyframes drawer-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@keyframes drawer-out {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+.drawer-content[data-expanded] {
+  animation: drawer-in 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.drawer-content[data-closed] {
+  animation: drawer-out 0.2s ease-in;
+}
+
+/* ===================== SIDEBAR ===================== */
+#appSidebar {
+  width: var(--sidebar-w);
+  transition:
+    transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+    width 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+#appSidebar.collapsed {
+  width: var(--sidebar-w-collapsed);
+}
+.app-shell {
+  transition: padding-left 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  padding-left: var(--sidebar-w);
+}
+.app-shell.sidebar-collapsed {
+  padding-left: var(--sidebar-w-collapsed);
+}
+.sb-group-label {
+  padding: 6px 12px 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+  overflow: hidden;
+}
+.sb-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  margin: 1px 8px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+  overflow: hidden;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+  cursor: pointer;
+}
+.sb-item:hover {
+  background: hsl(var(--foreground) / 0.06);
+  color: hsl(var(--foreground));
+}
+.sb-item.active {
+  color: hsl(var(--foreground));
+  background: hsl(217 91% 60% / 0.14);
+}
+.sb-item.active::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 18px;
+  border-radius: 3px;
+  background: hsl(var(--primary));
+  box-shadow: 0 0 10px 2px hsl(var(--primary) / 0.7);
+}
+.sb-icon {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+}
+.sb-item.active .sb-icon {
+  color: hsl(var(--primary));
+  filter: drop-shadow(0 0 4px hsl(var(--primary) / 0.6));
+}
+.sb-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sb-chevron {
+  margin-left: auto;
+  transition: transform 0.2s ease;
+  color: hsl(var(--muted-foreground));
+}
+.sb-chevron.open {
+  transform: rotate(90deg);
+}
+.sb-children {
+  overflow: hidden;
+  max-height: 0;
+  transition: max-height 0.25s ease;
+}
+.sb-children.open {
+  max-height: 400px;
+}
+.sb-children .sb-item {
+  padding-left: 34px;
+  font-size: 12.5px;
+}
+#appSidebar.collapsed .sb-label,
+#appSidebar.collapsed .sb-group-label,
+#appSidebar.collapsed .sb-chevron {
+  display: none;
+}
+#appSidebar.collapsed .sb-item {
+  justify-content: center;
+  margin: 1px 10px;
+}
+#appSidebar.collapsed .sb-children {
+  display: none;
+}
+@media (max-width: 900px) {
+  #appSidebar {
+    transform: translateX(-100%);
+  }
+  #appSidebar.mobile-open {
+    transform: translateX(0);
+    width: var(--sidebar-w);
+  }
+  .app-shell,
+  .app-shell.sidebar-collapsed {
+    padding-left: 0;
+  }
+}
+
+/* ===================== COMMAND PALETTE ===================== */
+.cmdk-item[aria-selected='true'] {
+  background: hsl(217 91% 60% / 0.14);
+}
+.cmdk-item[aria-selected='true'] .cmdk-icon {
+  color: hsl(var(--primary));
+}

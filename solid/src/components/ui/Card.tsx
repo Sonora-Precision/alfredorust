@@ -9,11 +9,24 @@ interface DivProps extends ParentProps {
   class?: string
 }
 
-export function Card(props: DivProps): JSX.Element {
-  const [local, rest] = splitProps(props, ['class', 'children'])
+interface CardProps extends DivProps {
+  /** Frosted "space glass" surface (`.card`) instead of the opaque default. */
+  glass?: boolean
+  /** Cursor-following edge glow (only meaningful with `glass`). */
+  glow?: boolean
+}
+
+export function Card(props: CardProps): JSX.Element {
+  const [local, rest] = splitProps(props, ['class', 'children', 'glass', 'glow'])
   return (
     <div
-      class={cn('rounded-xl border border-border bg-card text-card-foreground shadow-sm', local.class)}
+      class={cn(
+        local.glass
+          ? 'card rounded-xl text-card-foreground'
+          : 'rounded-xl border border-border bg-card text-card-foreground shadow-sm',
+        local.glow && 'glow-edge',
+        local.class,
+      )}
       {...rest}
     >
       {local.children}

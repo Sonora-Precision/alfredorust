@@ -1,122 +1,142 @@
-// Ported 1:1 from frontend/src/app.rs's `Sidebar`: static links (Inicio,
-// Tiempo conditional, Mi cuenta) + permission-gated accordion groups
-// (Finanzas/Operaciones/Fiscal/Administración for admin; a reduced
-// Operaciones-only group for staff with specific permissions).
-import { A } from '@solidjs/router'
-import type { JSX } from 'solid-js'
-import { Show } from 'solid-js'
+// Fixed "space glass" sidebar: brand, permission-gated nav groups (from
+// lib/nav) with an active-item glow, collapse-to-icons, and an off-canvas
+// drawer on mobile. Collapse/mobile state is shared via lib/layout so the
+// AppShell content column can react to the width change.
+import { A, useLocation } from '@solidjs/router'
+import { ChevronRight, Landmark, PanelLeftClose, PanelLeftOpen } from 'lucide-solid'
+import { For, Show, createSignal, type JSX } from 'solid-js'
 
 import { useAuth } from '../../lib/auth/AuthContext'
-import { NavGroup } from './NavGroup'
+import { mobileNavOpen, setMobileNavOpen, toggleSidebarCollapsed, useSidebarCollapsed } from '../../lib/layout'
+import {
+  NAV,
+  canSeeSolo,
+  isGroup,
+  visibleChildren,
+  type NavAuth,
+  type NavEntry,
+  type NavGroupDef,
+  type NavSolo,
+} from '../../lib/nav'
 
-const LINK_CLASS =
-  'block rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground aria-[current=page]:bg-muted aria-[current=page]:text-foreground aria-[current=page]:font-semibold'
+function icon(entry: NavEntry): JSX.Element {
+  const Icon = entry.icon
+  return <Icon class="h-[18px] w-[18px]" />
+}
 
 export function Sidebar(): JSX.Element {
   const auth = useAuth()
-  const isAdmin = () => auth.role() === 'admin'
-  const canTimeline = () => isAdmin() || auth.hasPermission('view_timeline')
-  const canProjects = () => isAdmin() || auth.hasPermission('view_projects')
-  const canResourceUsage = () =>
-    isAdmin() ||
-    auth.hasPermission('edit_resource_usage_today') ||
-    auth.hasPermission('view_resource_usage_history')
+  const location = useLocation()
+  const collapsed = useSidebarCollapsed()
+  const navAuth: NavAuth = { role: () => auth.role(), hasPermission: (p) => auth.hasPermission(p) }
+
+  const [manualOpen, setManualOpen] = createSignal<Set<string>>(new Set())
+  const isActive = (href: string) =>
+    href === '/' ? location.pathname === '/' : location.pathname.startsWith(href)
+  const groupOpen = (group: NavGroupDef, children: { href: string }[]) =>
+    manualOpen().has(group.id) || children.some((c) => isActive(c.href))
+  const toggleGroup = (id: string) =>
+    setManualOpen((prev) => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
 
   return (
-    <aside class="w-56 shrink-0 border-r border-border bg-card p-3">
-      <p class="px-3 pb-3 text-sm font-semibold text-foreground">alfredodev</p>
-      <nav class="space-y-1">
-        <A href="/" end class={LINK_CLASS}>
-          Inicio
-        </A>
-        <Show when={canTimeline()}>
-          <A href="/tiempo" class={LINK_CLASS}>
-            Tiempo
-          </A>
-        </Show>
-        <A href="/account" class={LINK_CLASS}>
-          Mi cuenta
-        </A>
+    <>
+      <aside
+        id="appSidebar"
+        classList={{ collapsed: collapsed(), 'mobile-open': mobileNavOpen() }}
+        class="bg-glass fixed inset-y-0 left-0 z-30 flex flex-col border-r border-border"
+      >
+        <div class="flex h-16 shrink-0 items-center gap-2.5 px-3.5">
+          <div class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+            <Landmark class="h-5 w-5" />
+          </div>
+          <div class="sb-label leading-tight">
+            <div class="text-[13px] font-semibold">alfredodev</div>
+            <div class="text-[11px] text-muted-foreground">Gestión SAT</div>
+          </div>
+        </div>
 
-        {/* Staff see only the operations screens their permissions unlock. */}
-        <Show when={!isAdmin() && (canProjects() || canResourceUsage())}>
-          <NavGroup title="Operaciones">
-            <Show when={canProjects()}>
-              <A href="/projects" class={LINK_CLASS}>
-                Proyectos
-              </A>
-            </Show>
-            <Show when={canResourceUsage()}>
-              <A href="/resource-usages" class={LINK_CLASS}>
-                Uso de recursos (grid)
-              </A>
-            </Show>
-          </NavGroup>
-        </Show>
+        <nav class="flex-1 overflow-y-auto py-2" aria-label="Navegación principal">
+          <For each={NAV}>
+            {(entry) => (
+              <Show
+                when={isGroup(entry) ? entry : null}
+                fallback={
+                  <Show when={canSeeSolo(entry as NavSolo, navAuth)}>
+                    <A
+                      href={(entry as NavSolo).href}
+                      end={(entry as NavSolo).href === '/'}
+                      class="sb-item"
+                      activeClass="active"
+                      onClick={() => setMobileNavOpen(false)}
+                    >
+                      <span class="sb-icon">{icon(entry)}</span>
+                      <span class="sb-label">{entry.label}</span>
+                    </A>
+                  </Show>
+                }
+              >
+                {(group) => {
+                  const children = visibleChildren(group(), navAuth)
+                  return (
+                    <Show when={children.length}>
+                      <div>
+                        <div
+                          class="sb-item"
+                          role="button"
+                          tabindex="0"
+                          aria-expanded={groupOpen(group(), children)}
+                          onClick={() => toggleGroup(group().id)}
+                        >
+                          <span class="sb-icon">{icon(group())}</span>
+                          <span class="sb-label">{group().label}</span>
+                          <ChevronRight class="sb-chevron h-4 w-4" classList={{ open: groupOpen(group(), children) }} />
+                        </div>
+                        <div class="sb-children" classList={{ open: groupOpen(group(), children) }}>
+                          <For each={children}>
+                            {(child) => (
+                              <A
+                                href={child.href}
+                                class="sb-item"
+                                activeClass="active"
+                                onClick={() => setMobileNavOpen(false)}
+                              >
+                                <span class="sb-label">{child.label}</span>
+                              </A>
+                            )}
+                          </For>
+                        </div>
+                      </div>
+                    </Show>
+                  )
+                }}
+              </Show>
+            )}
+          </For>
+        </nav>
 
-        {/* Admins get the full menu. */}
-        <Show when={isAdmin()}>
-          <NavGroup title="Finanzas">
-            <A href="/accounts" class={LINK_CLASS}>
-              Cuentas
-            </A>
-            <A href="/categories" class={LINK_CLASS}>
-              Categorías
-            </A>
-            <A href="/contacts" class={LINK_CLASS}>
-              Contactos
-            </A>
-            <A href="/transactions" class={LINK_CLASS}>
-              Movimientos
-            </A>
-            <A href="/recurring-plans" class={LINK_CLASS}>
-              Planes recurrentes
-            </A>
-            <A href="/planned-entries" class={LINK_CLASS}>
-              Entradas planificadas
-            </A>
-            <A href="/forecasts" class={LINK_CLASS}>
-              Pronósticos
-            </A>
-          </NavGroup>
-          <NavGroup title="Operaciones">
-            <A href="/orders" class={LINK_CLASS}>
-              Órdenes
-            </A>
-            <A href="/projects" class={LINK_CLASS}>
-              Proyectos
-            </A>
-            <A href="/concept-statuses" class={LINK_CLASS}>
-              Estados de concepto
-            </A>
-            <A href="/resources" class={LINK_CLASS}>
-              Recursos
-            </A>
-            <A href="/resource-logs" class={LINK_CLASS}>
-              Registros de recursos
-            </A>
-            <A href="/resource-usages" class={LINK_CLASS}>
-              Uso de recursos (grid)
-            </A>
-          </NavGroup>
-          <NavGroup title="Fiscal">
-            <A href="/cfdi" class={LINK_CLASS}>
-              CFDIs
-            </A>
-            <A href="/sat-configs" class={LINK_CLASS}>
-              Config. SAT
-            </A>
-          </NavGroup>
-          <NavGroup title="Administración">
-            <A href="/companies" class={LINK_CLASS}>
-              Compañías
-            </A>
-            <A href="/users" class={LINK_CLASS}>
-              Usuarios
-            </A>
-          </NavGroup>
-        </Show>
-      </nav>
-    </aside>
+        <div class="border-t border-border p-2">
+          <button
+            type="button"
+            class="sb-item w-full"
+            onClick={toggleSidebarCollapsed}
+            aria-label={collapsed() ? 'Expandir menú' : 'Colapsar menú'}
+          >
+            <span class="sb-icon">
+              {collapsed() ? <PanelLeftOpen class="h-[18px] w-[18px]" /> : <PanelLeftClose class="h-[18px] w-[18px]" />}
+            </span>
+            <span class="sb-label">Colapsar</span>
+          </button>
+        </div>
+      </aside>
+
+      {/* Mobile scrim */}
+      <Show when={mobileNavOpen()}>
+        <div class="fixed inset-0 z-20 bg-black/40 md:hidden" onClick={() => setMobileNavOpen(false)} />
+      </Show>
+    </>
   )
 }

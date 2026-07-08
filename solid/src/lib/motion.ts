@@ -19,6 +19,45 @@ export function prefersReducedMotion(): boolean {
   return window.matchMedia(REDUCED_MOTION_QUERY).matches
 }
 
+// --- "force full motion" override (the ⚡ MotionToggle) --------------------
+// Persisted opt-out from the OS "reduce motion" preference; toggling it also
+// adds/removes `.force-motion` on <html>, which the reduced-motion @media block
+// in index.css (and space-theme.css) keys off to re-enable CSS animation.
+const FORCE_MOTION_KEY = 'alfredodev-motion-forced'
+
+function motionStore(): Storage | null {
+  try {
+    return window.localStorage
+  } catch {
+    return null
+  }
+}
+
+const [motionForced, setMotionForcedSignal] = createSignal(motionStore()?.getItem(FORCE_MOTION_KEY) === '1')
+
+if (typeof document !== 'undefined') {
+  document.documentElement.classList.toggle('force-motion', untrack(motionForced))
+}
+
+export function useMotionForced(): Accessor<boolean> {
+  return motionForced
+}
+
+export function setMotionForced(on: boolean): void {
+  motionStore()?.setItem(FORCE_MOTION_KEY, on ? '1' : '0')
+  if (typeof document !== 'undefined') document.documentElement.classList.toggle('force-motion', on)
+  setMotionForcedSignal(on)
+}
+
+/**
+ * Effective reduced-motion: honours the OS preference UNLESS the user forced
+ * full motion via the ⚡ toggle. JS-driven motion (SpaceBackground, count-up)
+ * should gate on this rather than prefersReducedMotion() directly.
+ */
+export function motionReduced(): boolean {
+  return prefersReducedMotion() && !motionForced()
+}
+
 const easeOutCubic = (t: number): number => 1 - (1 - t) ** 3
 
 /**
@@ -36,7 +75,7 @@ export function createCountUp(target: Accessor<number>, durationMs = 600): Acces
   createEffect(() => {
     const to = target()
 
-    if (prefersReducedMotion()) {
+    if (motionReduced()) {
       if (frame !== undefined) cancelAnimationFrame(frame)
       setValue(to)
       return

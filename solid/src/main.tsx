@@ -7,6 +7,8 @@ import App from './App.tsx'
 import { Toaster } from './components/ui/Toast'
 import { AuthProvider } from './lib/auth/AuthContext'
 import './index.css'
+import './styles/space-theme.css'
+import './styles/app-theme.css'
 
 const root = document.getElementById('root')
 
