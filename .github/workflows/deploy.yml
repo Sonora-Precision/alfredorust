@@ -59,9 +59,12 @@ jobs:
           scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
             target/release/alfredodev \
             $SSH_USER@$SSH_HOST:/home/$SSH_USER/alfredorust/alfredodev.new
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            target/release/sat_probe \
+            $SSH_USER@$SSH_HOST:/home/$SSH_USER/alfredorust/sat_probe.new
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
             $SSH_USER@$SSH_HOST \
-            "chmod +x /home/$SSH_USER/alfredorust/alfredodev.new && mv -f /home/$SSH_USER/alfredorust/alfredodev.new /home/$SSH_USER/alfredorust/alfredodev"
+            "chmod +x /home/$SSH_USER/alfredorust/alfredodev.new /home/$SSH_USER/alfredorust/sat_probe.new && mv -f /home/$SSH_USER/alfredorust/alfredodev.new /home/$SSH_USER/alfredorust/alfredodev && mv -f /home/$SSH_USER/alfredorust/sat_probe.new /home/$SSH_USER/alfredorust/sat_probe"
           # Ship the SolidJS SPA build (/v3); --delete prunes stale hashed assets.
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
             $SSH_USER@$SSH_HOST \
