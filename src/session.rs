@@ -5,7 +5,7 @@ use std::{env, sync::Arc};
 
 use axum::{
     extract::{FromRequestParts, Request, State},
-    http::{HeaderMap, StatusCode, header::COOKIE, request::Parts},
+    http::{HeaderMap, HeaderValue, StatusCode, header::COOKIE, request::Parts},
     middleware::Next,
     response::{IntoResponse, Response},
 };
@@ -92,6 +92,36 @@ pub async fn require_session(
 /// middleware inserts). Returns 404 elsewhere so the test-only surface (Swagger,
 /// test reports) is invisible on real tenants. The slug defaults to `test` and
 /// can be overridden with `TEST_TENANT_SLUG`.
+/// Content-Security-Policy for the app. `style-src 'unsafe-inline'` is required
+/// by the inlined `<style>` build output and Solid's inline `style={{…}}`
+/// attributes; `script-src 'self'` stays strict (no inline scripts). Fonts come
+/// from Google Fonts; QR images are blob:/data: URLs.
+const CSP: &str = "default-src 'self'; base-uri 'self'; object-src 'none'; \
+frame-ancestors 'none'; form-action 'self'; img-src 'self' data: blob:; \
+font-src 'self' https://fonts.gstatic.com; \
+style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; \
+script-src 'self'; connect-src 'self'";
+
+/// Baseline security headers on every response (SPA HTML, assets, API). Applied
+/// as an outer layer in main.rs. HSTS is handled at the Cloudflare edge (covers
+/// all hosts incl. the WordPress apex), so it's intentionally not set here.
+pub async fn security_headers(request: Request, next: Next) -> Response {
+    let mut response = next.run(request).await;
+    let h = response.headers_mut();
+    h.insert("x-content-type-options", HeaderValue::from_static("nosniff"));
+    h.insert("x-frame-options", HeaderValue::from_static("SAMEORIGIN"));
+    h.insert(
+        "referrer-policy",
+        HeaderValue::from_static("strict-origin-when-cross-origin"),
+    );
+    h.insert(
+        "permissions-policy",
+        HeaderValue::from_static("camera=(), microphone=(), geolocation=(), browsing-topics=()"),
+    );
+    h.insert("content-security-policy", HeaderValue::from_static(CSP));
+    response
+}
+
 pub async fn require_test_tenant(request: Request, next: Next) -> Result<Response, Response> {
     let expected = env::var("TEST_TENANT_SLUG").unwrap_or_else(|_| "test".to_string());
     let is_test = request

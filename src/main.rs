@@ -711,7 +711,11 @@ async fn main() {
         // SolidJS build, whose ServeDir `.fallback(index.html)` covers client-side
         // deep links (`/accounts`, `/cfdi`, …). The SPA is the primary front-end.
         .fallback_service(spa3_service)
-        .with_state(state);
+        .with_state(state)
+        // Baseline security headers on every response (CSP, frame options,
+        // nosniff, referrer + permissions policy). HSTS is set at the Cloudflare
+        // edge so it also covers the WordPress apex.
+        .layer(middleware::from_fn(session::security_headers));
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 8090));
     println!("Listening on http://{addr}");
