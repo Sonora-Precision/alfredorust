@@ -64,8 +64,10 @@ export default function Login(): JSX.Element {
           </div>
           <form class="space-y-4" onSubmit={submit}>
             <div class="space-y-1">
-              <label class="block text-sm font-medium text-foreground">Usuario</label>
+              <label for="login-username" class="block text-sm font-medium text-foreground">Usuario</label>
               <Input
+                id="login-username"
+                aria-label="Usuario"
                 value={username()}
                 onInput={setUsername}
                 autocomplete="username"
@@ -75,8 +77,10 @@ export default function Login(): JSX.Element {
             </div>
 
             <div class="space-y-1">
-              <label class="block text-sm font-medium text-foreground">Código (6 dígitos)</label>
+              <label for="login-code" class="block text-sm font-medium text-foreground">Código (6 dígitos)</label>
               <Input
+                id="login-code"
+                aria-label="Código de 6 dígitos"
                 value={code()}
                 onInput={setCode}
                 inputmode="numeric"

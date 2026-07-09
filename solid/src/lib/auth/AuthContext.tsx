@@ -30,6 +30,14 @@ export function AuthProvider(props: ParentProps): JSX.Element {
   const [status, setStatus] = createSignal<AuthStatus>('loading')
 
   const load = async () => {
+    // On the public /login page there's no session yet; skip the bootstrap
+    // /api/me call so its expected 401 doesn't get logged as a console error
+    // (Lighthouse "Browser errors were logged to the console").
+    if (typeof window !== 'undefined' && window.location.pathname === '/login') {
+      setMe(null)
+      setStatus('anon')
+      return
+    }
     try {
       const profile = await fetchMe()
       setMe(profile)

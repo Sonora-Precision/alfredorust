@@ -2,8 +2,9 @@
    palette. The starfield + glass surfaces live in ./space-theme.css; the color
    tokens in ../index.css. Imported from src/main.tsx after index.css.
    Reduced-motion is handled globally by the html:not(.force-motion) guard in
-   index.css, so the ⚡ MotionToggle can force full motion. */
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+   index.css, so the ⚡ MotionToggle can force full motion.
+   NOTE: the IBM Plex webfont is loaded via <link rel="stylesheet"> in
+   index.html (with preconnect) — NOT a render-blocking @import here. */
 
 /* Tabular data (money, dates, folios, UUIDs) — mono + tabular figures. */
 .tnum {
