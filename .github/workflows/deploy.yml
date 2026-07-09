@@ -6,12 +6,16 @@ on:
 
 jobs:
   build-and-deploy:
-    runs-on: ubuntu-latest
+    # Self-hosted runner on the 32-core "casa" box: persistent local target/ +
+    # rustup cache → incremental Rust builds (~1 min vs ~3-8 on GitHub-hosted).
+    # NOTE: casa must be online for deploys to run.
+    runs-on: [self-hosted, casa]
 
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2 # need the previous commit to diff changed paths
+          clean: false # keep target/ between runs (incremental builds on the persistent runner)
 
       # Frontend-only pushes (only solid/** changed) skip the Rust build + binary
       # swap + service restart: the Axum ServeDir serves /v3 straight from
@@ -33,15 +37,9 @@ jobs:
         if: steps.changes.outputs.backend == 'true'
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache cargo
-        if: steps.changes.outputs.backend == 'true'
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-x86-64-${{ hashFiles('**/Cargo.lock') }}
+      # No actions/cache step: the self-hosted runner keeps ~/.cargo + target/ on
+      # local disk between runs (see checkout clean:false), which is faster than
+      # restoring a GitHub-hosted cache built with different absolute paths.
 
       - name: Build release
         if: steps.changes.outputs.backend == 'true'
