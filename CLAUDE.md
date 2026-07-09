@@ -116,7 +116,7 @@ Domain `alfredorivera.dev` managed in Cloudflare. Relevant records:
 | A | `app` | `134.199.216.25` | Proxied |
 | A | `alfredorivera.dev` | `134.199.216.25` | Proxied |
 
-**SSL/TLS mode: Flexible** — Cloudflare handles HTTPS with browsers, sends HTTP to origin.
+**SSL/TLS mode: Full** — Cloudflare talks to the origin over HTTPS (nginx serves 443 for all hosts). Changed from Flexible on 2026-07-09: Flexible sent HTTP to origin, but the WordPress apex nginx force-redirects http→https, causing an infinite redirect loop once `Always Use HTTPS` was on. Full fixes the loop and encrypts the CF↔origin leg. Also set: `min_tls_version=1.2`, `always_use_https=on`, and a Cache Rule that caches `/assets/*` (immutable hashed SPA assets). **Do NOT switch back to Flexible** — it re-introduces the loop.
 The wildcard `*.alfredorivera.dev` DNS covers all company slugs (e.g. `research.alfredorivera.dev`).
 
 ### CI/CD (GitHub Actions)
