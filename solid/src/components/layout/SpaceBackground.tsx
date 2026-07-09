@@ -116,10 +116,19 @@ export function SpaceBackground() {
         el.style.transform = `translate3d(${(gpX * 1.8).toFixed(1)}px, ${(gpY * 1.8).toFixed(1)}px, 0)`
       })
     }
+    // Calibrate to the first reading so it works at any holding angle (an iPad
+    // is held much flatter than a phone) — parallax is relative to that.
+    let baseG: number | null = null
+    let baseB: number | null = null
     const onOrient = (e: DeviceOrientationEvent): void => {
       if (motionReduced()) return
-      const g = Math.max(-25, Math.min(25, e.gamma ?? 0)) // left-right tilt
-      const b = Math.max(-25, Math.min(25, (e.beta ?? 45) - 45)) // front-back (45° = upright hold)
+      if (e.gamma == null || e.beta == null) return
+      if (baseG === null) {
+        baseG = e.gamma
+        baseB = e.beta
+      }
+      const g = Math.max(-25, Math.min(25, e.gamma - baseG)) // left-right, from baseline
+      const b = Math.max(-25, Math.min(25, e.beta - (baseB ?? 0))) // front-back, from baseline
       gpX = (g / 25) * 16
       gpY = (b / 25) * 16
       if (!gpRaf) gpRaf = requestAnimationFrame(applyParallax)
@@ -128,14 +137,23 @@ export function SpaceBackground() {
       .DeviceOrientationEvent
     if (DOE) {
       if (typeof DOE.requestPermission === 'function') {
+        // iOS / iPadOS 13+: motion access needs Safari's "Motion & Orientation
+        // Access" enabled AND a user gesture. Ask on the first tap (click is the
+        // most reliable activation), and stop asking once granted.
+        let granted = false
         const ask = (): void => {
+          if (granted) return
           DOE.requestPermission?.()
             .then((s) => {
-              if (s === 'granted') bind(window, 'deviceorientation', onOrient as EventListener)
+              if (s === 'granted') {
+                granted = true
+                bind(window, 'deviceorientation', onOrient as EventListener)
+              }
             })
             .catch(() => {})
         }
-        bind(window, 'touchend', ask as EventListener, { once: true })
+        bind(window, 'click', ask as EventListener)
+        bind(window, 'touchend', ask as EventListener)
       } else {
         bind(window, 'deviceorientation', onOrient as EventListener)
       }

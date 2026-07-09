@@ -63,8 +63,9 @@ export function Sidebar(): JSX.Element {
           </div>
         </div>
 
-        {/* Tenant switcher — mobile only (the topbar hosts it on ≥md). */}
-        <div class="px-3.5 pb-2 md:hidden">
+        {/* Tenant switcher — shown in the drawer below 900px (the topbar hosts
+            it once the sidebar is fixed at ≥900px). */}
+        <div class="px-3.5 pb-2 min-[900px]:hidden">
           <CompanySwitcher />
         </div>
 

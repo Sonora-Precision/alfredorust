@@ -29,7 +29,7 @@ export function Topbar(): JSX.Element {
       <div class="mx-auto flex h-16 w-full max-w-[1400px] items-center gap-3 px-4 sm:px-6">
         <button
           type="button"
-          class="grid h-9 w-9 place-items-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground md:hidden"
+          class="grid h-9 w-9 place-items-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground min-[900px]:hidden"
           aria-label="Abrir menú"
           onClick={() => setMobileNavOpen(true)}
         >
@@ -57,7 +57,7 @@ export function Topbar(): JSX.Element {
           </button>
           <button
             type="button"
-            class="relative hidden h-9 w-9 place-items-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground md:grid"
+            class="relative hidden h-9 w-9 place-items-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground min-[900px]:grid"
             aria-label="Notificaciones"
           >
             <Bell class="h-[18px] w-[18px]" />
@@ -65,9 +65,10 @@ export function Topbar(): JSX.Element {
           </button>
           <EffectsToggle />
           <ThemeToggle />
-          {/* Tenant switcher is wide (176px) — on mobile it's moved into the ☰
-              nav drawer (see Sidebar) so the header doesn't overflow. */}
-          <div class="hidden md:block">
+          {/* Tenant switcher is wide (176px) — below 900px (where the sidebar
+              becomes an off-canvas drawer) it's moved into the ☰ nav drawer so
+              the header doesn't overflow. */}
+          <div class="hidden min-[900px]:block">
             <CompanySwitcher />
           </div>
           <Dropdown
