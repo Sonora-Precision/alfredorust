@@ -103,6 +103,47 @@ export function SpaceBackground() {
       cleanups.push(() => target.removeEventListener(type, handler, opts))
     }
 
+    // --- Gyroscope parallax (phones): tilt the device → the starfield and
+    // constellations shift by depth. rAF-throttled, subtle (±16px), skipped
+    // under motionReduced(). iOS 13+ needs a one-time gesture to grant motion.
+    let gpRaf = 0
+    let gpX = 0
+    let gpY = 0
+    const applyParallax = (): void => {
+      gpRaf = 0
+      if (starfieldEl) starfieldEl.style.transform = `translate3d(${gpX.toFixed(1)}px, ${gpY.toFixed(1)}px, 0)`
+      root.querySelectorAll<HTMLElement>('.constellation').forEach((el) => {
+        el.style.transform = `translate3d(${(gpX * 1.8).toFixed(1)}px, ${(gpY * 1.8).toFixed(1)}px, 0)`
+      })
+    }
+    const onOrient = (e: DeviceOrientationEvent): void => {
+      if (motionReduced()) return
+      const g = Math.max(-25, Math.min(25, e.gamma ?? 0)) // left-right tilt
+      const b = Math.max(-25, Math.min(25, (e.beta ?? 45) - 45)) // front-back (45° = upright hold)
+      gpX = (g / 25) * 16
+      gpY = (b / 25) * 16
+      if (!gpRaf) gpRaf = requestAnimationFrame(applyParallax)
+    }
+    const DOE = (window as unknown as { DeviceOrientationEvent?: { requestPermission?: () => Promise<string> } })
+      .DeviceOrientationEvent
+    if (DOE) {
+      if (typeof DOE.requestPermission === 'function') {
+        const ask = (): void => {
+          DOE.requestPermission?.()
+            .then((s) => {
+              if (s === 'granted') bind(window, 'deviceorientation', onOrient as EventListener)
+            })
+            .catch(() => {})
+        }
+        bind(window, 'touchend', ask as EventListener, { once: true })
+      } else {
+        bind(window, 'deviceorientation', onOrient as EventListener)
+      }
+    }
+    cleanups.push(() => {
+      if (gpRaf) cancelAnimationFrame(gpRaf)
+    })
+
 
     // Launch a shooting star from (leftCss, topCss) at `angle`, with the given
     // length/travel/duration. fill:forwards holds the final (invisible) frame so

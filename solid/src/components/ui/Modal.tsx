@@ -34,12 +34,12 @@ export function Modal(props: ModalProps): JSX.Element {
             <div class="fixed inset-0 z-50 flex justify-end">
               <Dialog.Content
                 class={cn(
-                  'drawer-content flex h-full w-full max-w-[520px] flex-col overflow-y-auto border-l border-border bg-card text-card-foreground shadow-2xl',
+                  'drawer-content bg-glass flex h-full w-full max-w-[520px] flex-col overflow-y-auto border-l border-border text-card-foreground shadow-2xl',
                   props.class,
                 )}
               >
                 <Show when={props.title}>
-                  <div class="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card/95 px-6 py-4 backdrop-blur">
+                  <div class="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-background/85 px-6 py-4 backdrop-blur">
                     <Dialog.Title class="text-lg font-semibold leading-none tracking-tight">
                       {props.title}
                     </Dialog.Title>
