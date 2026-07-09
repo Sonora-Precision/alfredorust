@@ -21,7 +21,22 @@ const SHOOTER_DIRS = [
 // Star tints per theme. Dark sky → light stars; light sky → darker warm/cool
 // specks (white stars would vanish on a near-white background).
 const DARK_TINTS = ['255,255,255', '180,210,255', '255,228,170', '210,185,255', '165,230,255']
-const LIGHT_TINTS = ['70,95,140', '40,110,200', '200,140,35', '120,90,190', '35,130,170']
+const LIGHT_TINTS = ['198,146,28', '176,120,18', '214,162,46', '160,110,28', '190,134,34'] // golden, for the light sky
+
+// Custom vector rocket (nose points up in the viewBox) with a flickering exhaust
+// flame trail — used in the light theme; rotated to the travel direction at launch.
+const ROCKET_SVG = `<svg viewBox="0 0 24 82" width="100%" height="100%" style="display:block;overflow:visible">
+  <g class="rk-flame">
+    <path d="M8.5 31 C 8 50, 11 70, 12 80 C 13 70, 16 50, 15.5 31 Z" fill="#ff6a00" opacity="0.8"/>
+    <path d="M9.6 31 C 9.4 47, 11.2 60, 12 70 C 12.8 60, 14.6 47, 14.4 31 Z" fill="#ffb020" opacity="0.95"/>
+    <path d="M10.6 31 C 10.6 43, 11.6 52, 12 60 C 12.4 52, 13.4 43, 13.4 31 Z" fill="#fff2b0"/>
+  </g>
+  <path d="M12 2 C 16 8, 16 20, 15 32 L 9 32 C 8 20, 8 8, 12 2 Z" fill="#e6edf7"/>
+  <path d="M12 2 C 15 8, 15 13, 14.6 15 L 9.4 15 C 9 13, 9 8, 12 2 Z" fill="#ef5a3a"/>
+  <path d="M9 26 L 4.6 34 L 9 31 Z" fill="#ef5a3a"/>
+  <path d="M15 26 L 19.4 34 L 15 31 Z" fill="#ef5a3a"/>
+  <circle cx="12" cy="19" r="2.3" fill="#8fd0ff" stroke="#2f6aa8" stroke-width="1"/>
+</svg>`
 const STAR_COUNT = 66
 const STAR_TRAVELERS = 7 // stars that visibly glide across, satellite-style
 
@@ -122,13 +137,14 @@ export function SpaceBackground() {
     // of shooting stars). The emoji nose points up-right, so rotate by angle+45.
     const launchRocket = (leftCss: string, topCss: string, angle: number, size: number, dist: number, dur: number): void => {
       const el = document.createElement('div')
-      el.textContent = '🚀'
-      el.style.cssText = `position:absolute;left:${leftCss};top:${topCss};font-size:${size}px;line-height:1;pointer-events:none;filter:drop-shadow(0 0 6px rgba(255,170,80,.75));`
+      const h = size * (82 / 24)
+      el.style.cssText = `position:absolute;left:${leftCss};top:${topCss};width:${size.toFixed(0)}px;height:${h.toFixed(0)}px;pointer-events:none;filter:drop-shadow(0 0 5px rgba(255,170,80,.55));`
+      el.innerHTML = ROCKET_SVG
       root.appendChild(el)
       const rad = (angle * Math.PI) / 180
       const ex = Math.cos(rad) * dist
       const ey = Math.sin(rad) * dist
-      const rot = angle + 45
+      const rot = angle + 90 // SVG nose points up (-90°)
       const anim = el.animate(
         [
           { opacity: 0, transform: `translate(0px,0px) rotate(${rot}deg) scale(.5)` },
@@ -154,7 +170,7 @@ export function SpaceBackground() {
           `${e.clientX}px`,
           `${e.clientY}px`,
           -90 + (Math.random() * 80 - 40), // up-and-out from the click
-          20 + Math.random() * 16,
+          16 + Math.random() * 10,
           260 + Math.random() * 280,
           950 + Math.random() * 700,
         )
@@ -178,7 +194,7 @@ export function SpaceBackground() {
             `${(5 + Math.random() * 90).toFixed(0)}vw`,
             '104vh',
             -90 + (Math.random() * 30 - 15),
-            18 + Math.random() * 14,
+            13 + Math.random() * 9,
             window.innerHeight * (1.1 + Math.random() * 0.35),
             5200 + Math.random() * 3500,
           )
