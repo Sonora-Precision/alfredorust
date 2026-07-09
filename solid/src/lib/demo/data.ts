@@ -65,8 +65,27 @@ const ST = {
   terminado: 'st-terminado',
   cancelado: 'st-cancelado',
 }
-const PRJ = { a: 'prj-flecha', b: 'prj-molde', c: 'prj-herramental' }
-const RES = { cnc1: 'res-cnc-1', torno: 'res-torno', cmm: 'res-cmm', grua: 'res-grua' }
+const PRJ = {
+  a: 'prj-flecha',
+  b: 'prj-molde',
+  c: 'prj-herramental',
+  d: 'prj-carcasa',
+  e: 'prj-engrane',
+  f: 'prj-fixture',
+  g: 'prj-valvula',
+  h: 'prj-prototipo',
+}
+const RES = {
+  cnc1: 'res-cnc-1',
+  torno: 'res-torno',
+  cmm: 'res-cmm',
+  grua: 'res-grua',
+  fresadora: 'res-fresadora',
+  rectificadora: 'res-rectificadora',
+  edm: 'res-edm',
+  montacargas: 'res-montacargas',
+  camioneta: 'res-camioneta',
+}
 
 // --- identity ----------------------------------------------------------------
 
@@ -128,6 +147,14 @@ const CONTACTS: Contact[] = [
   { id: 'ct-herramientas', name: 'Herramientas Sandvik', kind: 'supplier', email: 'mx@sandvik.com' },
   { id: 'ct-cfe', name: 'CFE Suministrador', kind: 'service', email: 'facturacion@cfe.mx' },
   { id: 'ct-contador', name: 'Despacho Contable Ríos', kind: 'service', email: 'contacto@rioscpa.mx' },
+  { id: 'ct-medica', name: 'Dispositivos Médicos Vértice', kind: 'customer', email: 'compras@vertice-med.mx' },
+  { id: 'ct-energia', name: 'Turbinas Energía del Golfo', kind: 'customer', email: 'suministro@turbogolfo.mx' },
+  { id: 'ct-agro', name: 'Maquinaria Agrícola Sinaloa', kind: 'customer', email: 'refacciones@agrosinaloa.mx' },
+  { id: 'ct-ferro', name: 'Ferretería Industrial Obregón', kind: 'supplier', email: 'ventas@ferroobregon.mx' },
+  { id: 'ct-recubrimientos', name: 'Recubrimientos y Tratamientos Térmicos SA', kind: 'supplier', email: 'servicio@rttsa.mx' },
+  { id: 'ct-gas', name: 'Gases Industriales Infra', kind: 'supplier', email: 'pedidos@infra.mx' },
+  { id: 'ct-logistica', name: 'Transportes Logística Pacífico', kind: 'service', email: 'operaciones@logpacifico.mx' },
+  { id: 'ct-seguros', name: 'Seguros Monterrey Empresarial', kind: 'service', email: 'polizas@segmty.mx' },
 ]
 
 // Spread across 2026 months so the dashboard trend chart has shape.
@@ -147,6 +174,25 @@ const TRANSACTIONS: Transaction[] = [
   { id: 'tx-13', date: '2026-04-18', description: 'Traspaso a caja chica', tx_type: 'transfer', amount: 15000, account_from: 'BBVA MXN', account_to: 'Caja chica', is_confirmed: true },
   { id: 'tx-14', date: '2026-04-24', description: 'Venta refacciones CNC', tx_type: 'income', amount: 132000, category: 'Ventas de maquinado', account_to: 'BBVA MXN', is_confirmed: true },
   { id: 'tx-15', date: '2026-04-30', description: 'Honorarios contables', tx_type: 'expense', amount: 18500, category: 'Impuestos', account_from: 'Caja chica', is_confirmed: false },
+  // 2025 history
+  { id: 'tx-16', date: '2025-07-11', description: 'Anticipo carcasas — Vértice Médico', tx_type: 'income', amount: 185000, category: 'Ventas de maquinado', account_to: 'BBVA MXN', is_confirmed: true },
+  { id: 'tx-17', date: '2025-07-31', description: 'Nómina julio', tx_type: 'expense', amount: 198000, category: 'Nómina', account_from: 'BBVA MXN', is_confirmed: true },
+  { id: 'tx-18', date: '2025-08-08', description: 'Compra aluminio 6061', tx_type: 'expense', amount: 74200, category: 'Materia prima', account_from: 'BBVA MXN', is_confirmed: true },
+  { id: 'tx-19', date: '2025-08-19', description: 'Maquinado engranes — Turbinas Golfo', tx_type: 'income', amount: 298000, category: 'Ventas de maquinado', account_to: 'Santander USD', is_confirmed: true },
+  { id: 'tx-20', date: '2025-08-30', description: 'Recibo CFE', tx_type: 'expense', amount: 38900, category: 'Energía (CFE)', account_from: 'BBVA MXN', is_confirmed: true },
+  { id: 'tx-21', date: '2025-09-15', description: 'Servicio de dibujo CAD/CAM', tx_type: 'income', amount: 62000, category: 'Servicios de ingeniería', account_to: 'BBVA MXN', is_confirmed: true },
+  { id: 'tx-22', date: '2025-09-30', description: 'Nómina septiembre', tx_type: 'expense', amount: 205000, category: 'Nómina', account_from: 'BBVA MXN', is_confirmed: true },
+  { id: 'tx-23', date: '2025-10-14', description: 'Tratamiento térmico lote engranes', tx_type: 'expense', amount: 46500, category: 'Materia prima', account_from: 'Amex Corporativa', is_confirmed: true },
+  { id: 'tx-24', date: '2025-10-27', description: 'Finiquito carcasas — Vértice Médico', tx_type: 'income', amount: 224000, category: 'Ventas de maquinado', account_to: 'BBVA MXN', is_confirmed: true },
+  { id: 'tx-25', date: '2025-11-12', description: 'Renta nave industrial', tx_type: 'expense', amount: 72000, category: 'Renta de nave', account_from: 'BBVA MXN', is_confirmed: true },
+  { id: 'tx-26', date: '2025-12-05', description: 'Anticipo válvulas — Turbinas Golfo', tx_type: 'income', amount: 275000, category: 'Ventas de maquinado', account_to: 'BBVA MXN', is_confirmed: true },
+  { id: 'tx-27', date: '2025-12-20', description: 'Aguinaldos', tx_type: 'expense', amount: 165000, category: 'Nómina', account_from: 'BBVA MXN', is_confirmed: true },
+  // 2026 continued
+  { id: 'tx-28', date: '2026-05-09', description: 'Traspaso fondeo Amex', tx_type: 'transfer', amount: 80000, account_from: 'BBVA MXN', account_to: 'Amex Corporativa', is_confirmed: true },
+  { id: 'tx-29', date: '2026-05-16', description: 'Refacciones agrícolas — Agrícola Sinaloa', tx_type: 'income', amount: 118000, category: 'Ventas de maquinado', account_to: 'BBVA MXN', is_confirmed: true },
+  { id: 'tx-30', date: '2026-05-31', description: 'Nómina mayo', tx_type: 'expense', amount: 221000, category: 'Nómina', account_from: 'BBVA MXN', is_confirmed: true },
+  { id: 'tx-31', date: '2026-06-18', description: 'Gases industriales Infra', tx_type: 'expense', amount: 24800, category: 'Materia prima', account_from: 'Amex Corporativa', is_confirmed: true },
+  { id: 'tx-32', date: '2026-06-30', description: 'Anticipo molde prototipo — Delta', tx_type: 'income', amount: 210000, category: 'Ventas de maquinado', account_to: 'BBVA MXN', is_confirmed: false },
 ]
 
 const RECURRING_PLANS: RecurringPlan[] = [
@@ -154,6 +200,10 @@ const RECURRING_PLANS: RecurringPlan[] = [
   { id: 'rp-nomina', name: 'Nómina quincenal', flow_type: 'expense', amount_estimated: 107000, frequency: 'biweekly', start_date: '2026-01-01', is_active: true },
   { id: 'rp-cfe', name: 'Recibo CFE', flow_type: 'expense', amount_estimated: 42000, frequency: 'monthly', start_date: '2026-01-15', is_active: true },
   { id: 'rp-mantto', name: 'Mantenimiento CNC', flow_type: 'expense', amount_estimated: 25000, frequency: 'quarterly', start_date: '2026-02-01', is_active: true },
+  { id: 'rp-seguro', name: 'Póliza de seguro industrial', flow_type: 'expense', amount_estimated: 18500, frequency: 'monthly', start_date: '2026-01-10', is_active: true },
+  { id: 'rp-gases', name: 'Gases industriales Infra', flow_type: 'expense', amount_estimated: 12000, frequency: 'monthly', start_date: '2026-01-20', is_active: true },
+  { id: 'rp-contador', name: 'Honorarios contables', flow_type: 'expense', amount_estimated: 15000, frequency: 'monthly', start_date: '2026-01-05', is_active: true },
+  { id: 'rp-mantto-vertice', name: 'Contrato piezas Vértice Médico', flow_type: 'income', amount_estimated: 190000, frequency: 'quarterly', start_date: '2026-01-15', is_active: false },
 ]
 
 const PLANNED_ENTRIES: PlannedEntry[] = [
@@ -163,11 +213,19 @@ const PLANNED_ENTRIES: PlannedEntry[] = [
   { id: 'pe-04', name: 'ISR abril', flow_type: 'expense', amount_estimated: 51000, due_date: '2026-04-17', status: 'overdue', status_label: 'Vencido' },
   { id: 'pe-05', name: 'CFE abril', flow_type: 'expense', amount_estimated: 43000, due_date: '2026-04-15', status: 'covered', status_label: 'Cubierto' },
   { id: 'pe-06', name: 'Compra acero — cancelada', flow_type: 'expense', amount_estimated: 60000, due_date: '2026-04-05', status: 'cancelled', status_label: 'Cancelado' },
+  { id: 'pe-07', name: 'Anticipo válvulas — Turbinas Golfo', flow_type: 'income', amount_estimated: 275000, due_date: '2026-06-10', status: 'covered', status_label: 'Cubierto' },
+  { id: 'pe-08', name: 'Renta junio', flow_type: 'expense', amount_estimated: 72000, due_date: '2026-06-01', status: 'covered', status_label: 'Cubierto' },
+  { id: 'pe-09', name: 'Nómina 2ª quincena junio', flow_type: 'expense', amount_estimated: 110000, due_date: '2026-06-30', status: 'planned', status_label: 'Planeado' },
+  { id: 'pe-10', name: 'Cobro refacciones — Agrícola Sinaloa', flow_type: 'income', amount_estimated: 118000, due_date: '2026-07-05', status: 'partially_covered', status_label: 'Parcial' },
+  { id: 'pe-11', name: 'ISR mayo', flow_type: 'expense', amount_estimated: 57000, due_date: '2026-06-17', status: 'overdue', status_label: 'Vencido' },
+  { id: 'pe-12', name: 'Póliza seguro industrial julio', flow_type: 'expense', amount_estimated: 18500, due_date: '2026-07-10', status: 'planned', status_label: 'Planeado' },
 ]
 
 const FORECASTS: Forecast[] = [
   { id: 'fc-q2', currency: 'MXN', projected_net: 486000, start_date: '2026-04-01', end_date: '2026-06-30', scenario_name: 'Q2 base' },
   { id: 'fc-optim', currency: 'MXN', projected_net: 742000, start_date: '2026-04-01', end_date: '2026-06-30', scenario_name: 'Q2 optimista' },
+  { id: 'fc-q3', currency: 'MXN', projected_net: 521000, start_date: '2026-07-01', end_date: '2026-09-30', scenario_name: 'Q3 base' },
+  { id: 'fc-conserv', currency: 'MXN', projected_net: 318000, start_date: '2026-07-01', end_date: '2026-09-30', scenario_name: 'Q3 conservador' },
 ]
 
 // --- operations --------------------------------------------------------------
@@ -177,12 +235,24 @@ const ORDERS: Order[] = [
   { id: 'ord-02', title: 'Molde de inyección serie D', status: 'confirmed', status_label: 'Confirmada', amount: 415000, scheduled_at: '2026-05-02', contact_id: 'ct-automotriz' },
   { id: 'ord-03', title: 'Herramental de estampado', status: 'pending', status_label: 'Pendiente', amount: 260000, scheduled_at: '2026-05-18', contact_id: 'ct-automotriz' },
   { id: 'ord-04', title: 'Refacciones CNC urgentes', status: 'completed', status_label: 'Completada', amount: 132000, scheduled_at: '2026-04-24', contact_id: 'ct-aeropartes' },
+  { id: 'ord-05', title: 'Carcasas de aluminio serie médica', status: 'completed', status_label: 'Completada', amount: 224000, scheduled_at: '2025-10-27', contact_id: 'ct-medica' },
+  { id: 'ord-06', title: 'Engranes helicoidales para turbina', status: 'in_progress', status_label: 'En proceso', amount: 298000, scheduled_at: '2026-06-05', contact_id: 'ct-energia' },
+  { id: 'ord-07', title: 'Válvulas de alta presión', status: 'confirmed', status_label: 'Confirmada', amount: 275000, scheduled_at: '2026-06-28', contact_id: 'ct-energia' },
+  { id: 'ord-08', title: 'Refacciones agrícolas lote 50', status: 'pending', status_label: 'Pendiente', amount: 118000, scheduled_at: '2026-07-14', contact_id: 'ct-agro' },
+  { id: 'ord-09', title: 'Fixtures de sujeción a medida', status: 'in_progress', status_label: 'En proceso', amount: 96000, scheduled_at: '2026-06-20', contact_id: 'ct-automotriz' },
+  { id: 'ord-10', title: 'Prototipo de bomba', status: 'cancelled', status_label: 'Cancelada', amount: 84000, scheduled_at: '2026-05-30', contact_id: 'ct-agro' },
+  { id: 'ord-11', title: 'Molde prototipo inyección', status: 'confirmed', status_label: 'Confirmada', amount: 210000, scheduled_at: '2026-07-22', contact_id: 'ct-automotriz' },
 ]
 
 const PROJECTS: ProjectRow[] = [
   { id: PRJ.a, title: 'Lote 200 flechas — Aeropartes', description: 'Maquinado CNC de flechas de acero 4140', status: 'produccion', status_label: 'Producción', priority: 'high', priority_label: 'Alta', total_budget: 320000, scheduled_at: '2026-04-12', contact_id: 'ct-aeropartes' },
   { id: PRJ.b, title: 'Molde inyección serie D — Delta', description: 'Diseño y manufactura de molde', status: 'ingenieria', status_label: 'Ingeniería', priority: 'urgent', priority_label: 'Urgente', total_budget: 415000, scheduled_at: '2026-05-02', contact_id: 'ct-automotriz' },
   { id: PRJ.c, title: 'Herramental de estampado', description: 'Herramental progresivo', status: 'cotizado', status_label: 'Cotizado', priority: 'medium', priority_label: 'Media', total_budget: 260000, scheduled_at: '2026-05-18', contact_id: 'ct-automotriz' },
+  { id: PRJ.d, title: 'Carcasas de aluminio — Vértice Médico', description: 'Maquinado de carcasas 6061 grado médico', status: 'entregado', status_label: 'Entregado', priority: 'medium', priority_label: 'Media', total_budget: 224000, scheduled_at: '2025-10-27', contact_id: 'ct-medica' },
+  { id: PRJ.e, title: 'Engranes helicoidales — Turbinas Golfo', description: 'Tallado y rectificado de engranes para turbina', status: 'produccion', status_label: 'Producción', priority: 'high', priority_label: 'Alta', total_budget: 298000, scheduled_at: '2026-06-05', contact_id: 'ct-energia' },
+  { id: PRJ.f, title: 'Fixtures de sujeción — Delta', description: 'Diseño y manufactura de fixtures a medida', status: 'ingenieria', status_label: 'Ingeniería', priority: 'medium', priority_label: 'Media', total_budget: 96000, scheduled_at: '2026-06-20', contact_id: 'ct-automotriz' },
+  { id: PRJ.g, title: 'Válvulas de alta presión — Turbinas Golfo', description: 'Maquinado de cuerpos de válvula en acero inoxidable', status: 'orden_de_compra_mandada', status_label: 'OC enviada', priority: 'urgent', priority_label: 'Urgente', total_budget: 275000, scheduled_at: '2026-06-28', contact_id: 'ct-energia' },
+  { id: PRJ.h, title: 'Prototipo de bomba', description: 'Corrida de prototipo, cancelada por el cliente', status: 'cancelado', status_label: 'Cancelado', priority: 'low', priority_label: 'Baja', total_budget: 84000, scheduled_at: '2026-05-30', contact_id: 'ct-agro' },
 ]
 
 const CONCEPT_STATUSES: ConceptStatusFull[] = [
@@ -208,6 +278,28 @@ const PROJECT_CONCEPTS: Record<string, ProjectConcept[]> = {
   [PRJ.c]: [
     { id: 'pc-c1', status_id: ST.pedido, name: 'Cotización de componentes', quantity: 1, unit: 'job', estimated_hours: 12, estimated_cost: 18000, position: 0 },
   ],
+  [PRJ.d]: [
+    { id: 'pc-d1', status_id: ST.terminado, name: 'Maquinado de carcasas', quantity: 120, unit: 'pza', description: 'Aluminio 6061 grado médico', estimated_hours: 96, estimated_cost: 144000, position: 0 },
+    { id: 'pc-d2', status_id: ST.terminado, name: 'Inspección CMM', quantity: 120, unit: 'pza', estimated_hours: 20, estimated_cost: 30000, position: 1 },
+    { id: 'pc-d3', status_id: ST.entrega, name: 'Empaque y embarque', quantity: 1, unit: 'lote', estimated_hours: 6, estimated_cost: 12000, position: 2 },
+  ],
+  [PRJ.e]: [
+    { id: 'pc-e1', status_id: ST.cnc, name: 'Tallado de engranes', quantity: 80, unit: 'pza', description: 'Engranes helicoidales', estimated_hours: 72, estimated_cost: 108000, position: 0 },
+    { id: 'pc-e2', status_id: ST.cnc, name: 'Rectificado de flancos', quantity: 80, unit: 'pza', estimated_hours: 40, estimated_cost: 60000, position: 1 },
+    { id: 'pc-e3', status_id: ST.calidad, name: 'Metrología de engranes', quantity: 80, unit: 'pza', estimated_hours: 18, estimated_cost: 27000, position: 2 },
+  ],
+  [PRJ.f]: [
+    { id: 'pc-f1', status_id: ST.ing, name: 'Diseño de fixtures', quantity: 4, unit: 'pza', estimated_hours: 48, estimated_cost: 48000, position: 0 },
+    { id: 'pc-f2', status_id: ST.pedido, name: 'Compra de placa de acero', quantity: 1, unit: 'lote', estimated_hours: 0, estimated_cost: 22000, position: 1 },
+  ],
+  [PRJ.g]: [
+    { id: 'pc-g1', status_id: ST.pedido, name: 'Compra de barra inoxidable 316', quantity: 1, unit: 'lote', estimated_hours: 0, estimated_cost: 78000, position: 0 },
+    { id: 'pc-g2', status_id: ST.cnc, name: 'Torneado de cuerpos de válvula', quantity: 40, unit: 'pza', estimated_hours: 56, estimated_cost: 84000, position: 1 },
+    { id: 'pc-g3', status_id: ST.calidad, name: 'Prueba hidrostática', quantity: 40, unit: 'pza', estimated_hours: 16, estimated_cost: 24000, position: 2 },
+  ],
+  [PRJ.h]: [
+    { id: 'pc-h1', status_id: ST.cancelado, name: 'Prototipo de impulsor', quantity: 1, unit: 'pza', description: 'Cancelado por el cliente', estimated_hours: 24, estimated_cost: 36000, position: 0 },
+  ],
 }
 
 const RESOURCES: Resource[] = [
@@ -215,6 +307,11 @@ const RESOURCES: Resource[] = [
   { id: RES.torno, name: 'Torno CNC Mazak', resource_type: 'machinery', resource_type_label: 'Maquinaria', is_active: true, hourly_cost: 780, currency: 'MXN', allowed_status_ids: [ST.cnc] },
   { id: RES.cmm, name: 'CMM Zeiss', resource_type: 'equipment', resource_type_label: 'Equipo', is_active: true, hourly_cost: 620, currency: 'MXN', allowed_status_ids: [ST.calidad] },
   { id: RES.grua, name: 'Grúa viajera 5T', resource_type: 'equipment', resource_type_label: 'Equipo', is_active: true, hourly_cost: 300, currency: 'MXN', allowed_status_ids: [ST.entrega] },
+  { id: RES.fresadora, name: 'Fresadora CNC Doosan', resource_type: 'machinery', resource_type_label: 'Maquinaria', is_active: true, hourly_cost: 820, currency: 'MXN', allowed_status_ids: [ST.cnc, ST.ing] },
+  { id: RES.rectificadora, name: 'Rectificadora Okamoto', resource_type: 'machinery', resource_type_label: 'Maquinaria', is_active: true, hourly_cost: 560, currency: 'MXN', allowed_status_ids: [ST.cnc, ST.calidad] },
+  { id: RES.edm, name: 'EDM de penetración Sodick', resource_type: 'machinery', resource_type_label: 'Maquinaria', is_active: false, hourly_cost: 690, currency: 'MXN', allowed_status_ids: [ST.cnc] },
+  { id: RES.montacargas, name: 'Montacargas Toyota 3T', resource_type: 'equipment', resource_type_label: 'Equipo', is_active: true, hourly_cost: 220, currency: 'MXN', allowed_status_ids: [ST.entrega] },
+  { id: RES.camioneta, name: 'Camioneta de reparto Hino', resource_type: 'vehicle', resource_type_label: 'Vehículo', is_active: true, hourly_cost: 180, currency: 'MXN', allowed_status_ids: [ST.entrega] },
 ]
 
 const RESOURCE_LOGS: ResourceLog[] = [
@@ -222,6 +319,14 @@ const RESOURCE_LOGS: ResourceLog[] = [
   { id: 'rl-02', project_id: PRJ.a, phase: 'CNC', resource_name: 'Torno CNC Mazak', started_at: '2026-04-20T09:00:00Z', ended_at: '2026-04-20T13:00:00Z', duration_hours: 4, operator_name: 'R. Salas' },
   { id: 'rl-03', project_id: PRJ.a, phase: 'Calidad', resource_name: 'CMM Zeiss', started_at: '2026-04-21T10:00:00Z', ended_at: '2026-04-21T12:00:00Z', duration_hours: 2, operator_name: 'M. Ávila' },
   { id: 'rl-04', project_id: PRJ.b, phase: 'Ingeniería', resource_name: 'Centro CNC Haus VF-4', started_at: '2026-04-22T08:00:00Z', ended_at: null, duration_hours: null, operator_name: 'J. Domínguez' },
+  { id: 'rl-05', project_id: PRJ.e, phase: 'CNC', resource_name: 'Fresadora CNC Doosan', started_at: '2026-06-06T07:30:00Z', ended_at: '2026-06-06T15:30:00Z', duration_hours: 8, operator_name: 'A. Fuentes' },
+  { id: 'rl-06', project_id: PRJ.e, phase: 'CNC', resource_name: 'Rectificadora Okamoto', started_at: '2026-06-08T08:00:00Z', ended_at: '2026-06-08T12:00:00Z', duration_hours: 4, operator_name: 'R. Salas' },
+  { id: 'rl-07', project_id: PRJ.e, phase: 'Calidad', resource_name: 'CMM Zeiss', started_at: '2026-06-10T09:00:00Z', ended_at: null, duration_hours: null, operator_name: 'M. Ávila' },
+  { id: 'rl-08', project_id: PRJ.d, phase: 'CNC', resource_name: 'Centro CNC Haus VF-4', started_at: '2025-10-15T08:00:00Z', ended_at: '2025-10-15T16:00:00Z', duration_hours: 8, operator_name: 'J. Domínguez' },
+  { id: 'rl-09', project_id: PRJ.d, phase: 'Entrega', resource_name: 'Grúa viajera 5T', started_at: '2025-10-27T07:00:00Z', ended_at: '2025-10-27T09:00:00Z', duration_hours: 2, operator_name: 'L. Torres' },
+  { id: 'rl-10', project_id: PRJ.g, phase: 'CNC', resource_name: 'Torno CNC Mazak', started_at: '2026-06-25T08:00:00Z', ended_at: '2026-06-25T17:00:00Z', duration_hours: 9, operator_name: 'R. Salas' },
+  { id: 'rl-11', project_id: PRJ.f, phase: 'Ingeniería', resource_name: 'Fresadora CNC Doosan', started_at: '2026-06-21T10:00:00Z', ended_at: '2026-06-21T13:30:00Z', duration_hours: 3.5, operator_name: 'A. Fuentes' },
+  { id: 'rl-12', project_id: PRJ.a, phase: 'Entrega', resource_name: 'Montacargas Toyota 3T', started_at: '2026-04-25T14:00:00Z', ended_at: null, duration_hours: null, operator_name: 'L. Torres' },
 ]
 
 function buildGrid(): GridView {
@@ -265,6 +370,16 @@ const CFDIS: Cfdi[] = [
   { uuid: 'a1b2c3d4-0001-4a1a-9b2c-000000000006', folio: 'A-1040', tipo: 'I', fecha: '2026-02-05', total: 415000, moneda: 'MXN', emisor_nombre: 'Aurora Manufactura', receptor_nombre: 'Grupo Automotriz Delta', es_emitido: true },
   { uuid: 'a1b2c3d4-0001-4a1a-9b2c-000000000007', folio: 'A-1039', tipo: 'I', fecha: '2026-01-14', total: 320000, moneda: 'MXN', emisor_nombre: 'Aurora Manufactura', receptor_nombre: 'Aeropartes del Norte SA', es_emitido: true },
   { uuid: 'a1b2c3d4-0001-4a1a-9b2c-000000000008', folio: 'E-0007', tipo: 'E', fecha: '2026-03-28', total: 12000, moneda: 'MXN', emisor_nombre: 'Aurora Manufactura', receptor_nombre: 'Grupo Automotriz Delta', es_emitido: true },
+  { uuid: 'a1b2c3d4-0001-4a1a-9b2c-000000000009', folio: 'A-1043', tipo: 'I', fecha: '2026-05-16', total: 118000, moneda: 'MXN', emisor_nombre: 'Aurora Manufactura', receptor_nombre: 'Maquinaria Agrícola Sinaloa', es_emitido: true },
+  { uuid: 'a1b2c3d4-0001-4a1a-9b2c-000000000010', folio: 'A-1038', tipo: 'I', fecha: '2025-10-27', total: 224000, moneda: 'MXN', emisor_nombre: 'Aurora Manufactura', receptor_nombre: 'Dispositivos Médicos Vértice', es_emitido: true },
+  { uuid: 'a1b2c3d4-0001-4a1a-9b2c-000000000011', folio: 'A-1035', tipo: 'I', fecha: '2025-08-19', total: 298000, moneda: 'MXN', emisor_nombre: 'Aurora Manufactura', receptor_nombre: 'Turbinas Energía del Golfo', es_emitido: true },
+  { uuid: 'a1b2c3d4-0001-4a1a-9b2c-000000000012', folio: 'A-1044', tipo: 'I', fecha: '2025-12-05', total: 275000, moneda: 'MXN', emisor_nombre: 'Aurora Manufactura', receptor_nombre: 'Turbinas Energía del Golfo', es_emitido: true },
+  { uuid: 'a1b2c3d4-0001-4a1a-9b2c-000000000013', folio: 'F-5510', tipo: 'I', fecha: '2025-08-08', total: 74200, moneda: 'MXN', emisor_nombre: 'Aceros Especiales de México', receptor_nombre: 'Aurora Manufactura', es_emitido: false },
+  { uuid: 'a1b2c3d4-0001-4a1a-9b2c-000000000014', folio: 'F-9033', tipo: 'I', fecha: '2025-10-14', total: 46500, moneda: 'MXN', emisor_nombre: 'Recubrimientos y Tratamientos Térmicos SA', receptor_nombre: 'Aurora Manufactura', es_emitido: false },
+  { uuid: 'a1b2c3d4-0001-4a1a-9b2c-000000000015', folio: 'F-1188', tipo: 'I', fecha: '2026-06-18', total: 24800, moneda: 'MXN', emisor_nombre: 'Gases Industriales Infra', receptor_nombre: 'Aurora Manufactura', es_emitido: false },
+  { uuid: 'a1b2c3d4-0001-4a1a-9b2c-000000000016', folio: 'CFE-802', tipo: 'I', fecha: '2025-08-30', total: 38900, moneda: 'MXN', emisor_nombre: 'CFE Suministrador', receptor_nombre: 'Aurora Manufactura', es_emitido: false },
+  { uuid: 'a1b2c3d4-0001-4a1a-9b2c-000000000017', folio: 'E-0008', tipo: 'E', fecha: '2026-05-30', total: 8400, moneda: 'MXN', emisor_nombre: 'Aurora Manufactura', receptor_nombre: 'Maquinaria Agrícola Sinaloa', es_emitido: true },
+  { uuid: 'a1b2c3d4-0001-4a1a-9b2c-000000000018', folio: 'F-4471', tipo: 'E', fecha: '2026-04-30', total: 3200, moneda: 'MXN', emisor_nombre: 'Ferretería Industrial Obregón', receptor_nombre: 'Aurora Manufactura', es_emitido: false },
 ]
 
 const CFDI_LIST: CfdiList = {
