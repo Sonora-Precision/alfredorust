@@ -54,7 +54,7 @@ function buildStars(): string {
     const startLeft = rtl ? '106%' : '-6%'
     const dx = rtl ? '-118vw' : '118vw'
     const dy = `${((rnd() * 2 - 1) * 16).toFixed(1)}vh`
-    const dur = 26 + rnd() * 30 // ~satellite pace across the viewport
+    const dur = 34 + rnd() * 34 // gentle glide across the viewport
     const delay = (-rnd() * dur).toFixed(1)
     html +=
       `<span style="position:absolute;left:${startLeft};top:${top}%;` +
