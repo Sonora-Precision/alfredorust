@@ -93,6 +93,15 @@ Remove the stored credential file:
 cargo run --bin spcli -- reset-auth --yes
 ```
 
+Check tenant onboarding readiness (what the active company still needs before it
+is ready to operate). Same checklist the in-app **Configuración inicial** wizard
+uses. Pair it with the `onboarding` skill for a guided setup interview:
+
+```bash
+cargo run --bin spcli -- onboarding status
+cargo run --bin spcli -- --json onboarding status
+```
+
 Print machine-readable command metadata:
 
 ```bash

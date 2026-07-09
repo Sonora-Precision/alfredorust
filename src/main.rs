@@ -189,6 +189,10 @@ async fn main() {
             get(routes::accounts_index).post(routes::accounts_create),
         )
         .route(
+            "/api/onboarding/status",
+            get(routes::onboarding_status_api),
+        )
+        .route(
             "/api/admin/accounts",
             get(routes::accounts_data_api).post(routes::accounts_create_api),
         )

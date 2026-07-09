@@ -110,7 +110,17 @@ enum Command {
         #[command(subcommand)]
         command: PdfCommand,
     },
+    Onboarding {
+        #[command(subcommand)]
+        command: OnboardingCommand,
+    },
     Manifest,
+}
+
+#[derive(Subcommand)]
+enum OnboardingCommand {
+    /// Show the tenant readiness checklist for the active company.
+    Status,
 }
 
 #[derive(Args)]
@@ -1463,6 +1473,9 @@ async fn run(cli: Cli) -> Result<()> {
         Command::Pdf { command } => match command {
             PdfCommand::Preview(args) => pdf_preview(args, cli.json).await,
         },
+        Command::Onboarding { command } => match command {
+            OnboardingCommand::Status => onboarding_status(cli.json).await,
+        },
         Command::Manifest => print_manifest(cli.json),
     }
 }
@@ -2735,6 +2748,43 @@ async fn cfdi_job_status(job_id: &str, json_output: bool) -> Result<()> {
     print_value_output(&value, json_output, "CFDI job")
 }
 
+async fn onboarding_status(json_output: bool) -> Result<()> {
+    let mut state = load_state()?;
+    let value = authenticated_get(&mut state, "/api/onboarding/status").await?;
+    save_state(&state)?;
+
+    if json_output {
+        print_json(&value)?;
+        return Ok(());
+    }
+
+    let ready = value.get("ready").and_then(Value::as_bool).unwrap_or(false);
+    let done = value.get("required_done").and_then(Value::as_u64).unwrap_or(0);
+    let total = value.get("required_total").and_then(Value::as_u64).unwrap_or(0);
+    println!(
+        "Estado de configuración: {} ({done}/{total} obligatorios)",
+        if ready { "LISTO ✓" } else { "INCOMPLETO" }
+    );
+    if let Some(steps) = value.get("steps").and_then(Value::as_array) {
+        for step in steps {
+            let mark = if step.get("done").and_then(Value::as_bool).unwrap_or(false) {
+                "[x]"
+            } else {
+                "[ ]"
+            };
+            let label = step.get("label").and_then(Value::as_str).unwrap_or("?");
+            let detail = step.get("detail").and_then(Value::as_str).unwrap_or("");
+            let tag = if step.get("required").and_then(Value::as_bool).unwrap_or(false) {
+                "obligatorio"
+            } else {
+                "opcional"
+            };
+            println!("  {mark} {label} ({tag}) — {detail}");
+        }
+    }
+    Ok(())
+}
+
 async fn selected_company_id(state: &mut CredentialState) -> Result<String> {
     let selected_slug = state
         .company_slug
@@ -2911,6 +2961,7 @@ fn print_manifest(json_output: bool) -> Result<()> {
             { "name": "resources usages allocations replace", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["usage-id", "--concept-id", "--allocation"], "output_schema": "allocation_ids" },
             { "name": "time timeline", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--mode", "--from", "--to"], "output_schema": "timeline_buckets" },
             { "name": "pdf preview", "auth_required": true, "company_required": false, "destructive": false, "arguments": ["--input", "--source", "--output"], "output_schema": "pdf_preview" },
+            { "name": "onboarding status", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "onboarding_status" },
             { "name": "manifest", "auth_required": false, "company_required": false, "destructive": false }
         ],
         "output": { "human_default": true, "json_flag": "--json" }

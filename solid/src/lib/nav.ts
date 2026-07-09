@@ -2,7 +2,7 @@
 // and the CommandPalette. Each entry carries its Lucide icon and an optional
 // `can(auth)` gate; groups are shown only when at least one child is visible,
 // which reproduces the admin/staff split the old Sidebar hard-coded.
-import { Boxes, Clock, Home, Landmark, ShieldCheck, Wallet, type LucideProps } from 'lucide-solid'
+import { Boxes, Clock, Home, Landmark, Rocket, ShieldCheck, Wallet, type LucideProps } from 'lucide-solid'
 import type { Component } from 'solid-js'
 
 export interface NavAuth {
@@ -52,6 +52,7 @@ const resourceUsage: Gate = (a) =>
 
 export const NAV: NavEntry[] = [
   { id: 'home', label: 'Inicio', icon: Home, href: '/' },
+  { id: 'onboarding', label: 'Configuración inicial', icon: Rocket, href: '/onboarding', can: admin },
   { id: 'tiempo', label: 'Tiempo', icon: Clock, href: '/tiempo', can: adminOr('view_timeline') },
   {
     id: 'finanzas',

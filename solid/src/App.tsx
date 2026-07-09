@@ -19,6 +19,7 @@ const DesignPreview = lazy(() => import('./preview/DesignPreview'))
 
 const Login = lazy(() => import('./pages/Login'))
 const Dashboard = lazy(() => import('./pages/Dashboard'))
+const Onboarding = lazy(() => import('./pages/Onboarding'))
 const Accounts = lazy(() => import('./pages/Accounts'))
 const Categories = lazy(() => import('./pages/Categories'))
 const Contacts = lazy(() => import('./pages/Contacts'))
@@ -56,6 +57,7 @@ export default function App(): JSX.Element {
       <Route path="/preview/design" component={DesignPreview} />
       <Route path="/" component={ProtectedLayout}>
         <Route path="/" component={Dashboard} />
+        <Route path="/onboarding" component={Onboarding} />
         <Route path="/accounts" component={Accounts} />
         <Route path="/categories" component={Categories} />
         <Route path="/contacts" component={Contacts} />

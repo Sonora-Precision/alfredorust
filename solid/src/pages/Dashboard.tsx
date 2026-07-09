@@ -7,17 +7,20 @@
 // `tx_charts` in frontend/src/pages/transactions.rs, ported to a Dashboard
 // landing view. See docs/solid-migration/pages-part1.md "Dashboard" +
 // "TransactionsPage".
+import { A } from '@solidjs/router'
 import { createQuery } from '@tanstack/solid-query'
-import { Landmark, Scale, TrendingDown, TrendingUp, Wallet } from 'lucide-solid'
+import { ArrowRight, Landmark, Rocket, Scale, TrendingDown, TrendingUp, Wallet } from 'lucide-solid'
 import { Motion } from 'solid-motionone'
 import { type JSX, Show, createMemo } from 'solid-js'
 
 import { Donut } from '../components/charts/Donut'
 import { LineArea } from '../components/charts/LineArea'
+import { Button } from '../components/ui/Button'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Spinner } from '../components/ui/Spinner'
 import * as financeApi from '../lib/api/finance'
+import { getOnboardingStatus } from '../lib/api/onboarding'
 import { money } from '../lib/format'
 import { switchCompanyHref } from '../lib/tenant'
 import { createCountUp, prefersReducedMotion } from '../lib/motion'
@@ -73,6 +76,13 @@ export default function Dashboard(): JSX.Element {
     queryKey: ['transactions'],
     queryFn: financeApi.listTransactions,
   }))
+  // Onboarding nudge — admins only; hidden once the tenant is ready.
+  const onboardingQuery = createQuery(() => ({
+    queryKey: ['onboarding'],
+    queryFn: getOnboardingStatus,
+    enabled: auth.isAdmin(),
+  }))
+  const showOnboarding = () => auth.isAdmin() && onboardingQuery.data && !onboardingQuery.data.ready
 
   const isLoading = () => accountsQuery.isLoading || transactionsQuery.isLoading
   const hasData = () => (transactionsQuery.data?.length ?? 0) > 0
@@ -117,6 +127,28 @@ export default function Dashboard(): JSX.Element {
   return (
     <div class="space-y-6">
       <PageHeader title="Inicio" subtitle={`Hola, ${auth.user()} — ${auth.company()}`} />
+
+      <Show when={showOnboarding()}>
+        <Card glass glow class="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div class="flex items-center gap-3">
+            <div class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground">
+              <Rocket class="h-6 w-6" />
+            </div>
+            <div>
+              <p class="text-sm font-semibold">Termina de configurar tu empresa</p>
+              <p class="text-[12px] text-muted-foreground">
+                {onboardingQuery.data?.required_done ?? 0} de {onboardingQuery.data?.required_total ?? 0} pasos
+                obligatorios listos. Completa el resto para empezar a operar.
+              </p>
+            </div>
+          </div>
+          <A href="/onboarding" class="shrink-0">
+            <Button class="magnetic gap-1.5">
+              Continuar <ArrowRight class="h-4 w-4" />
+            </Button>
+          </A>
+        </Card>
+      </Show>
 
       <Show
         when={!isLoading()}
