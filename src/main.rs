@@ -688,14 +688,18 @@ async fn main() {
     // retired and unmounted.
     let spa3_dir = std::env::var("SOLID_DIST").unwrap_or_else(|_| "solid/dist".to_string());
     let spa3_index = format!("{spa3_dir}/index.html");
-    let spa3_service = ServeDir::new(&spa3_dir).fallback(ServeFile::new(spa3_index));
+    let spa3_service = ServeDir::new(&spa3_dir).fallback(ServeFile::new(spa3_index.clone()));
 
     // Daily in-process CFDI download cron (05:00 Mexico time) for all companies
     // with a SAT config. Shares the same Arc<AppState> as the router.
     tokio::spawn(crate::cron::run_daily_cfdi_cron(state.clone()));
 
     let app = Router::new()
-        .route("/login", post(routes::login))
+        // `/login` is BOTH the SPA login screen (GET → serve index.html) and the
+        // JSON login API (POST). Without the GET arm, Axum returns 405 for a
+        // browser navigating to /login (path matches, method doesn't) instead of
+        // falling through to the SPA.
+        .route("/login", post(routes::login).get_service(ServeFile::new(spa3_index)))
         .merge(protected)
         .merge(test_gated)
         // SPA at the site root: anything not matched by an explicit route above
