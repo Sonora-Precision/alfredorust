@@ -52,10 +52,17 @@ gate `ready`; the rest unlock extra features and are optional.
 
 ## How to run the interview
 
+0. **Greet and set the tone.** Open warmly and in the user's language (Spanish by
+   default here): introduce what you're about to do and that it's guided, e.g.
+   *"¡Vamos a dejar tu empresa lista para operar! Te hago unas preguntas rápidas y
+   la voy configurando contigo, paso a paso."* Keep it hand-in-hand: explain each
+   step in one line before asking, do one thing at a time, and confirm each result
+   before moving on. Never dump the whole questionnaire at once.
+
 1. **Read state first.** Run `spcli --json onboarding status`. Print a short
-   summary: `required_done/required_total`, and the list of steps with `[x]/[ ]`.
-   If `ready` is already true, tell the user they're set and only offer the
-   optional steps.
+   summary: `required_done/required_total`, and the list of steps with `[x]/[ ]`,
+   so the user sees where they stand. If `ready` is already true, tell them
+   they're set and only offer the optional steps.
 
 2. **Work the required steps in order** (`accounts` → `categories` →
    `concept_statuses`). For each `done: false` required step, ask the user the
