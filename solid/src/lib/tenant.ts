@@ -7,6 +7,6 @@ export function switchCompanyHref(slug: string): string {
   const host = loc.host
   const dot = host.indexOf('.')
   const rest = dot >= 0 ? host.slice(dot + 1) : host
-  // Land on the SPA (/v3) of the destination tenant.
-  return `${proto}//${slug}.${rest}/v3/`
+  // Land on the destination tenant's SPA (served at the site root).
+  return `${proto}//${slug}.${rest}/`
 }

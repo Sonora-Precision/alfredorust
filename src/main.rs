@@ -49,10 +49,9 @@ async fn main() {
         .route("/api/tiempo", get(routes::tiempo_data))
         .route("/api/sat/cfdi/download", post(routes::sat_cfdi_download))
         .route("/logout", post(routes::logout))
-        .route(
-            "/account",
-            get(routes::account_edit).post(routes::account_update),
-        )
+        // NOTE: the legacy Askama `/account` and `/tiempo` HTML pages were
+        // removed — the SolidJS SPA now owns those paths (served at root). Their
+        // JSON APIs (`/api/account`, `/api/tiempo`) stay below.
         .route(
             "/api/account",
             get(routes::account_profile_data_api).post(routes::account_profile_update_api),
@@ -81,7 +80,6 @@ async fn main() {
         .route("/admin/users/{id}/qrcode", get(routes::users_qrcode))
         .route("/pdf", get(routes::pdf_editor))
         .route("/pdf/preview", post(routes::pdf_preview))
-        .route("/tiempo", get(routes::tiempo_page))
         .route("/api/me", get(routes::me))
         .route("/api/me/companies", get(routes::me_companies))
         .route(
@@ -684,13 +682,10 @@ async fn main() {
             session::require_session,
         ));
 
-    // SolidJS SPA (Vite build), mounted under `/v3` on every tenant.
-    // `nest_service` strips the `/v3` prefix, so ServeDir sees `/`, `/accounts`,
-    // etc.; its `.fallback(index.html)` covers client-side deep links like
-    // `/v3/accounts`. The SPA calls absolute `/api/...` paths (not `/v3/api`).
-    // The old Leptos SPA (`frontend/`, previously served at `/v2`) has been
-    // retired: it is no longer served or built. Its source stays in the repo,
-    // but nothing mounts it (`SPA_DIST`/`frontend/dist` are unused now).
+    // SolidJS SPA (Vite build) — the primary front-end, served at the site root
+    // (see `.fallback_service` below). ServeDir's `.fallback(index.html)` covers
+    // client-side deep links. The old Leptos SPA (`frontend/`, once at `/v2`) is
+    // retired and unmounted.
     let spa3_dir = std::env::var("SOLID_DIST").unwrap_or_else(|_| "solid/dist".to_string());
     let spa3_index = format!("{spa3_dir}/index.html");
     let spa3_service = ServeDir::new(&spa3_dir).fallback(ServeFile::new(spa3_index));
@@ -700,11 +695,14 @@ async fn main() {
     tokio::spawn(crate::cron::run_daily_cfdi_cron(state.clone()));
 
     let app = Router::new()
-        .route("/", get(routes::home))
         .route("/login", post(routes::login))
         .merge(protected)
         .merge(test_gated)
-        .nest_service("/v3", spa3_service)
+        // SPA at the site root: anything not matched by an explicit route above
+        // (API, POST /login, /setup, /qrcode, /admin/*, …) falls through to the
+        // SolidJS build, whose ServeDir `.fallback(index.html)` covers client-side
+        // deep links (`/accounts`, `/cfdi`, …). The SPA is the primary front-end.
+        .fallback_service(spa3_service)
         .with_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 8090));

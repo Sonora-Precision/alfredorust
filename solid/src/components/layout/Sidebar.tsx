@@ -31,10 +31,9 @@ export function Sidebar(): JSX.Element {
   const navAuth: NavAuth = { role: () => auth.role(), hasPermission: (p) => auth.hasPermission(p) }
 
   const [manualOpen, setManualOpen] = createSignal<Set<string>>(new Set())
-  // Path without the router base (/v3), so active detection works whether or not
-  // useLocation() includes it — this is what auto-opens the active group and
-  // highlights the current item.
-  const path = () => location.pathname.replace(/^\/v3(?=\/|$)/, '') || '/'
+  // Current path (SPA is served at root now) — drives active-group auto-open and
+  // current-item highlighting.
+  const path = () => location.pathname || '/'
   const isActive = (href: string) => (href === '/' ? path() === '/' : path().startsWith(href))
   const groupOpen = (group: NavGroupDef, children: { href: string }[]) =>
     manualOpen().has(group.id) || children.some((c) => isActive(c.href))

@@ -62,7 +62,7 @@ export function setUnauthorizedHandler(handler: (() => void) | null): void {
 function redirectToLogin(): void {
   onUnauthorized?.()
   if (typeof window !== 'undefined') {
-    window.location.href = '/v3/login'
+    window.location.href = '/login'
   }
 }
 

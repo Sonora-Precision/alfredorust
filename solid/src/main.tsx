@@ -32,7 +32,7 @@ render(
   () => (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <Router base="/v3">
+        <Router base="/">
           <App />
         </Router>
         <Toaster />
