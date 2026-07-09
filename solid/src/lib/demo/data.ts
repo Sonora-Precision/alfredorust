@@ -366,13 +366,38 @@ function genTimelineItems(monthsBack: number, monthsFwd: number, density: number
   return items
 }
 
-// Actuals over the past ~30 months; plan over the coming ~22 months (+ recent) —
-// a ~4.3-year span so even the Year view shows several populated buckets.
-const TL_TX = genTimelineItems(30, 0, 0.5, 'dtx', TX_INCOME, TX_EXPENSE)
-const TL_PLAN = genTimelineItems(1, 22, 0.42, 'dpe', PLAN_INCOME, PLAN_EXPENSE)
+// Actuals span the past ~30 months; the plan/budget spans the FULL ~4.3-year
+// window (past 30 + next 22 months) so every period in range shows both real
+// (past) and plan items — no empty buckets until you scroll past the data.
+const TL_TX = genTimelineItems(42, 0, 0.62, 'dtx', TX_INCOME, TX_EXPENSE)
+const TL_PLAN = genTimelineItems(42, 40, 0.58, 'dpe', PLAN_INCOME, PLAN_EXPENSE)
 
-const tlNet = (items: TLItem[], ltMs: number, geMs = -Infinity): number =>
-  items.reduce((a, it) => (it.ms >= geMs && it.ms < ltMs ? a + (it.income ? it.amount : -it.amount) : a), 0)
+// Precomputed sorted cumulative nets → O(log n) "net of all items before a time"
+// (called per visible bucket per fetch, so keep it cheap regardless of pool size).
+function tlCum(items: TLItem[]): { ms: number[]; acc: number[] } {
+  const s = [...items].sort((a, b) => a.ms - b.ms)
+  const ms: number[] = []
+  const acc: number[] = []
+  let run = 0
+  for (const it of s) {
+    run += it.income ? it.amount : -it.amount
+    ms.push(it.ms)
+    acc.push(run)
+  }
+  return { ms, acc }
+}
+const TX_CUM = tlCum(TL_TX)
+const PLAN_CUM = tlCum(TL_PLAN)
+function tlNetBefore(cum: { ms: number[]; acc: number[] }, ltMs: number): number {
+  let lo = 0
+  let hi = cum.ms.length
+  while (lo < hi) {
+    const m = (lo + hi) >> 1
+    if (cum.ms[m] < ltMs) lo = m + 1
+    else hi = m
+  }
+  return lo > 0 ? cum.acc[lo - 1] : 0
+}
 
 /** Aggregate the item pool into buckets for the requested mode/range — so the
  * chart is populated by real items and switching day/week/month/year reflows. */
@@ -380,8 +405,8 @@ function buildTimelineRange(modeRaw: string, fromIso: string, toIso: string): Ti
   const mode = (['day', 'week', 'month', 'year'].includes(modeRaw) ? modeRaw : 'month') as TLMode
   const to = new Date(toIso).getTime()
   const nowMs = Date.now()
-  const realAtNow = tlNet(TL_TX, nowMs)
-  const planBeforeNow = tlNet(TL_PLAN, nowMs)
+  const realAtNow = tlNetBefore(TX_CUM, nowMs)
+  const planBeforeNow = tlNetBefore(PLAN_CUM, nowMs)
   const out: TimelineBucket[] = []
   let cur = tlBucketStart(new Date(fromIso), mode)
   let guard = 0
@@ -398,9 +423,9 @@ function buildTimelineRange(modeRaw: string, fromIso: string, toIso: string): Ti
     const planned_expense = sumExp(pes)
     // Real accumulates through the past then flatlines after now; plan =
     // real-at-now + future plan, so the lines coincide until today then diverge.
-    const cumulative_real = Math.round(tlNet(TL_TX, be))
+    const cumulative_real = Math.round(tlNetBefore(TX_CUM, be))
     const cumulative_planned = Math.round(
-      be <= nowMs ? tlNet(TL_TX, be) : realAtNow + (tlNet(TL_PLAN, be) - planBeforeNow),
+      be <= nowMs ? tlNetBefore(TX_CUM, be) : realAtNow + (tlNetBefore(PLAN_CUM, be) - planBeforeNow),
     )
     out.push({
       start: cur.toISOString(),
