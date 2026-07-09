@@ -36,13 +36,13 @@
   }
 
   :root[data-theme='light'] {
-    --background: 210 40% 98%;
+    --background: 214 32% 95%;
     --foreground: 222 47% 11%;
     --card: 0 0% 100%;
     --card-foreground: 222 47% 11%;
-    --muted: 210 40% 96%;
+    --muted: 214 30% 92%;
     --muted-foreground: 215 16% 47%;
-    --border: 214 32% 91%;
+    --border: 214 24% 84%;
     --input: 214 32% 91%;
     --primary: 217 91% 55%;
     --primary-foreground: 0 0% 100%;

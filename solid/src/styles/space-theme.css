@@ -25,7 +25,7 @@
 }
 [data-theme='light'] .card {
   background: hsl(var(--card) / 0.72);
-  border: 1px solid hsl(0 0% 100% / 0.7);
+  border: 1px solid hsl(var(--border));
 }
 
 /* Cursor-following border glow — a "light catching the edge of glass" cue.
@@ -52,7 +52,7 @@
 }
 [data-theme='light'] .bg-glass {
   background: hsl(var(--card) / 0.85);
-  border: 1px solid hsl(0 0% 100% / 0.7);
+  border: 1px solid hsl(var(--border));
 }
 
 /* ---- Nested tile inside an existing .card — subtle tint only, no
@@ -141,7 +141,7 @@
    Static (no drift): moving the field behind the frosted cards re-blurs every
    frame and felt laggy; a subset twinkles for life instead. */
 #space #starfield { position: absolute; inset: 0; }
-[data-theme='light'] #space #starfield { opacity: 0.5; }
+[data-theme='light'] #space #starfield { opacity: 0.32; }
 /* A few stars drift smoothly like the satellite: each is a tiny element moving
    via its own transform (GPU-composited, cheap), NOT the whole field. Uses
    `alternate` so it eases out and back with no loop jump. Per-star --dx/--dy. */
