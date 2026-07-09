@@ -637,7 +637,7 @@ export default function PlannedEntries(): JSX.Element {
 
       {/* Delete confirmation */}
       <Modal
-        open={deleteTarget() !== null}
+        open={deleteTarget() !== null} variant="center"
         onOpenChange={(open) => !open && setDeleteTarget(null)}
         title="Eliminar entrada"
       >

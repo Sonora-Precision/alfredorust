@@ -456,7 +456,7 @@ export default function ConceptStatuses(): JSX.Element {
       </Modal>
 
       {/* Delete confirmation */}
-      <Modal open={deleteTarget() !== null} onOpenChange={(open) => !open && setDeleteTarget(null)} title="Eliminar estado">
+      <Modal variant="center" open={deleteTarget() !== null} onOpenChange={(open) => !open && setDeleteTarget(null)} title="Eliminar estado">
         <div class="space-y-4">
           <p class="text-sm text-muted-foreground">
             ¿Eliminar el estado <span class="font-semibold text-foreground">{deleteTarget()?.name}</span>? Esta acción no

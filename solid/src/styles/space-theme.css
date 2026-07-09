@@ -72,68 +72,77 @@
   border-color: hsl(var(--foreground) / 0.09);
 }
 
-/* ---- "Axe 100%" A/B preview (html.axe-max, toggled by AxePreviewToggle or
-        ?axe=1). Makes every surface fully OPAQUE and removes the animated
-        starfield + all backdrop blur so automated contrast checkers can resolve
-        a solid background for every text node. A comparison aid, not the
-        default. `--card`/`--muted` are theme-aware so one rule covers both. ---- */
-html.axe-max #space {
+/* ---- CALM MODE (html.calm — visual effects OFF via the topbar toggle, or
+        ?calm=1). Makes every surface OPAQUE, hides the starfield, drops all
+        backdrop blur and kills animations/transitions: a calm / high-contrast /
+        low-power mode (also what lets contrast checkers measure a solid bg).
+        `--card`/`--muted` are theme-aware so one rule covers both themes. ---- */
+html.calm #space {
   display: none;
 }
-html.axe-max body {
+/* Kill CSS animations + transitions in calm mode (JS-driven motion is gated on
+   motionReduced() which is also true here). */
+html.calm *,
+html.calm *::before,
+html.calm *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+}
+html.calm body {
   background: hsl(var(--background));
 }
-html.axe-max *,
-html.axe-max *::before,
-html.axe-max *::after {
+html.calm *,
+html.calm *::before,
+html.calm *::after {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }
 /* The card edge-glow is a gradient ::before; axe reads it as a background image
    over the text and can't determine contrast. Hide it in the preview. */
-html.axe-max .glow-edge::before {
+html.calm .glow-edge::before {
   display: none !important;
 }
 /* Genuine low-contrast pairs → force AA in the preview: solid badges, and the
    primary-colored link in the demo banner reads as foreground. */
-html.axe-max .badge {
+html.calm .badge {
   background-color: hsl(var(--muted)) !important;
   color: hsl(var(--foreground)) !important;
   --tw-ring-color: hsl(var(--border)) !important;
 }
-html.axe-max .demo-banner a {
+html.calm .demo-banner a {
   color: hsl(var(--foreground)) !important;
 }
-html.axe-max .card,
-html.axe-max .bg-glass {
+html.calm .card,
+html.calm .bg-glass {
   background: hsl(var(--card));
   /* Drop the blur too: axe can't measure contrast through a backdrop-filter
      even when the background is fully opaque, so it must go for a clean read. */
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
-html.axe-max .tile-glass {
+html.calm .tile-glass {
   background: hsl(var(--muted));
   border-color: hsl(var(--border));
 }
 /* Topbar + demo banner use translucent Tailwind utilities + blur — opaque them
    too so the preview transforms consistently. */
-html.axe-max header {
+html.calm header {
   background: hsl(var(--background));
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
-html.axe-max .demo-banner {
+html.calm .demo-banner {
   background: hsl(var(--muted));
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
 /* Push secondary text + chart labels to full AA contrast in this preview only
    (the var flows to .text-muted-foreground and the chart <text fill=var(...)>). */
-html.axe-max {
+html.calm {
   --muted-foreground: 215 32% 82%;
 }
-html.axe-max[data-theme='light'] {
+html.calm[data-theme='light'] {
   --muted-foreground: 215 28% 30%;
 }
 

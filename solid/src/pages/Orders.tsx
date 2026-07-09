@@ -482,7 +482,7 @@ export default function Orders(): JSX.Element {
       </Modal>
 
       {/* Delete confirmation */}
-      <Modal open={deleteTarget() !== null} onOpenChange={(open) => !open && setDeleteTarget(null)} title="Eliminar orden">
+      <Modal variant="center" open={deleteTarget() !== null} onOpenChange={(open) => !open && setDeleteTarget(null)} title="Eliminar orden">
         <div class="space-y-4">
           <p class="text-sm text-muted-foreground">
             ¿Eliminar la orden <span class="font-semibold text-foreground">{deleteTarget()?.title}</span>? Esta acción

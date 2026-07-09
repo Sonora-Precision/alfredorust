@@ -397,7 +397,7 @@ export default function Projects(): JSX.Element {
       </Modal>
 
       {/* Delete confirmation */}
-      <Modal open={deleteTarget() !== null} onOpenChange={(open) => !open && setDeleteTarget(null)} title="Eliminar proyecto">
+      <Modal variant="center" open={deleteTarget() !== null} onOpenChange={(open) => !open && setDeleteTarget(null)} title="Eliminar proyecto">
         <div class="space-y-4">
           <p class="text-sm text-muted-foreground">
             ¿Eliminar el proyecto <span class="font-semibold text-foreground">{deleteTarget()?.title}</span>? Esta

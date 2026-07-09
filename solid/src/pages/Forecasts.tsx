@@ -371,7 +371,7 @@ export default function Forecasts(): JSX.Element {
 
       {/* Delete confirmation */}
       <Modal
-        open={deleteTarget() !== null}
+        open={deleteTarget() !== null} variant="center"
         onOpenChange={(open) => !open && setDeleteTarget(null)}
         title="Eliminar pronóstico"
       >

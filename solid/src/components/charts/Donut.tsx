@@ -3,7 +3,7 @@
 import type { JSX } from 'solid-js'
 import { For, Show, createMemo } from 'solid-js'
 
-import { useAxeMax } from '../../lib/axe-preview'
+import { isCalm } from '../../lib/effects'
 
 export interface DonutSegment {
   label: string
@@ -44,7 +44,7 @@ export function Donut(props: DonutProps): JSX.Element {
     <svg viewBox="0 0 144 144" class={props.class} style={{ width: '100%', height: '100%' }}>
       {/* axe-100 preview: solid backdrop so contrast checkers can measure the
           SVG text (the donut hole is otherwise "no determinable background"). */}
-      <Show when={useAxeMax()()}>
+      <Show when={isCalm()}>
         <rect x="0" y="0" width="144" height="144" fill="hsl(var(--card))" />
       </Show>
       <circle cx={cx} cy={cy} r={r} fill="none" stroke="currentColor" stroke-opacity="0.12" stroke-width={sw} />

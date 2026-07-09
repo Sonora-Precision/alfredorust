@@ -367,7 +367,7 @@ export default function Resources(): JSX.Element {
       </Modal>
 
       {/* Delete confirmation */}
-      <Modal open={deleteTarget() !== null} onOpenChange={(open) => !open && setDeleteTarget(null)} title="Eliminar recurso">
+      <Modal variant="center" open={deleteTarget() !== null} onOpenChange={(open) => !open && setDeleteTarget(null)} title="Eliminar recurso">
         <div class="space-y-4">
           <p class="text-sm text-muted-foreground">
             ¿Eliminar el recurso <span class="font-semibold text-foreground">{deleteTarget()?.name}</span>? Esta

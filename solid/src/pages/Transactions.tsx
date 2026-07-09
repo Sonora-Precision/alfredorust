@@ -524,7 +524,7 @@ export default function Transactions(): JSX.Element {
       </Modal>
 
       {/* Delete confirmation */}
-      <Modal open={deleteTarget() !== null} onOpenChange={(open) => !open && setDeleteTarget(null)} title="Eliminar movimiento">
+      <Modal variant="center" open={deleteTarget() !== null} onOpenChange={(open) => !open && setDeleteTarget(null)} title="Eliminar movimiento">
         <div class="space-y-4">
           <p class="text-sm text-muted-foreground">
             ¿Eliminar el movimiento <span class="font-semibold text-foreground">{deleteTarget()?.description}</span>?

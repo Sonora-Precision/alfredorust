@@ -7,6 +7,8 @@
 // props, the KPI count-up tween) that can't rely on a CSS media query alone.
 import { createEffect, createSignal, onCleanup, untrack, type Accessor } from 'solid-js'
 
+import { isCalm } from './effects'
+
 const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)'
 
 /**
@@ -50,12 +52,13 @@ export function setMotionForced(on: boolean): void {
 }
 
 /**
- * Effective reduced-motion: honours the OS preference UNLESS the user forced
- * full motion via the ⚡ toggle. JS-driven motion (SpaceBackground, count-up)
- * should gate on this rather than prefersReducedMotion() directly.
+ * Effective reduced-motion: reduced when calm mode (visual effects OFF) is on,
+ * or when the OS asks for reduced motion and the user hasn't forced it. JS-driven
+ * motion (SpaceBackground, count-up) gates on this rather than
+ * prefersReducedMotion() directly.
  */
 export function motionReduced(): boolean {
-  return prefersReducedMotion() && !motionForced()
+  return isCalm() || (prefersReducedMotion() && !motionForced())
 }
 
 const easeOutCubic = (t: number): number => 1 - (1 - t) ** 3

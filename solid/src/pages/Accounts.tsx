@@ -305,7 +305,7 @@ export default function Accounts(): JSX.Element {
       </Modal>
 
       {/* Delete confirmation */}
-      <Modal open={deleteTarget() !== null} onOpenChange={(open) => !open && setDeleteTarget(null)} title="Eliminar cuenta">
+      <Modal variant="center" open={deleteTarget() !== null} onOpenChange={(open) => !open && setDeleteTarget(null)} title="Eliminar cuenta">
         <div class="space-y-4">
           <p class="text-sm text-muted-foreground">
             ¿Eliminar la cuenta <span class="font-semibold text-foreground">{deleteTarget()?.name}</span>? Esta acción

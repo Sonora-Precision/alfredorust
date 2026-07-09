@@ -366,7 +366,7 @@ export default function ResourceLogs(): JSX.Element {
       </Modal>
 
       {/* Delete confirmation */}
-      <Modal open={deleteTarget() !== null} onOpenChange={(open) => !open && setDeleteTarget(null)} title="Eliminar registro">
+      <Modal variant="center" open={deleteTarget() !== null} onOpenChange={(open) => !open && setDeleteTarget(null)} title="Eliminar registro">
         <div class="space-y-4">
           <p class="text-sm text-muted-foreground">
             ¿Eliminar este registro de recurso? Esta acción no se puede deshacer.

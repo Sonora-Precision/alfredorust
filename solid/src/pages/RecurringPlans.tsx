@@ -441,7 +441,7 @@ export default function RecurringPlans(): JSX.Element {
 
       {/* Delete confirmation */}
       <Modal
-        open={deleteTarget() !== null}
+        open={deleteTarget() !== null} variant="center"
         onOpenChange={(open) => !open && setDeleteTarget(null)}
         title="Eliminar plan"
       >
