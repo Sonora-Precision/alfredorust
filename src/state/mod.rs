@@ -67,7 +67,7 @@ pub use resources::*;
 pub use sat_configs::*;
 pub use users::*;
 
-pub const SESSION_TTL_SECONDS: u64 = 60 * 60 * 24; // 1 day
+pub const SESSION_TTL_SECONDS: u64 = 60 * 60 * 24 * 30; // 30 days
 pub const PLANNED_MONTHS_AHEAD: u32 = 24;
 
 #[derive(Clone)]

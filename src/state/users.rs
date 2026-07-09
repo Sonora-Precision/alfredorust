@@ -36,13 +36,9 @@ pub async fn find_user(state: &AppState, username: &str) -> Result<Option<UserWi
 }
 
 pub async fn create_session(state: &AppState, username: &str) -> Result<String> {
-    let _ = state
-        .sessions
-        // `user_email` is the internal session→user link field; it carries the
-        // username value (kept named as-is to avoid a sessions migration).
-        .delete_many(doc! { "user_email": username.to_string() })
-        .await;
-
+    // Allow multiple concurrent sessions per user (phone + desktop, or a
+    // test/automation login): we no longer delete the user's other sessions on
+    // login. Each session expires on its own TTL (SESSION_TTL_SECONDS).
     let mut token_bytes = [0u8; 32];
     rand::rng().fill_bytes(&mut token_bytes);
     let token = BASE32_NOPAD.encode(&token_bytes);
