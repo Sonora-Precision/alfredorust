@@ -10,6 +10,9 @@
 // All use credentials:'include', absolute paths, Accept: application/json.
 // 401 -> clear auth + redirect to /v3/login. Non-ok -> throw ApiError.
 
+import { isDemo } from '../demo/mode'
+import { demoBlob, demoGet, demoMutation } from '../demo/data'
+
 /** Mirrors the 4-way error taxonomy from the Leptos client's `ApiError`. */
 export class ApiError extends Error {
   readonly kind: 'unauthorized' | 'forbidden' | 'status' | 'transport'
@@ -119,6 +122,7 @@ export async function apiGet<T>(
   path: string,
   params?: Record<string, string | number>,
 ): Promise<T> {
+  if (isDemo()) return demoGet<T>(path, params)
   return handle<T>(
     fetch(buildUrl(path, params), {
       method: 'GET',
@@ -129,6 +133,7 @@ export async function apiGet<T>(
 }
 
 export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
+  if (isDemo()) return demoMutation<T>(path)
   return handle<T>(
     fetch(path, {
       method: 'POST',
@@ -143,6 +148,7 @@ export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
 }
 
 export async function apiPostForm<T>(path: string, form: FormData): Promise<T> {
+  if (isDemo()) return demoMutation<T>(path)
   // Do not set Content-Type manually — the browser sets the multipart
   // boundary automatically for a FormData body.
   return handle<T>(
@@ -156,6 +162,7 @@ export async function apiPostForm<T>(path: string, form: FormData): Promise<T> {
 }
 
 export async function apiGetBlob(path: string): Promise<Blob> {
+  if (isDemo()) return demoBlob(path)
   let resp: Response
   try {
     resp = await fetch(path, { method: 'GET', credentials: 'include' })

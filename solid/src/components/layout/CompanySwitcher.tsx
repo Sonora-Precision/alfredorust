@@ -5,16 +5,23 @@ import type { JSX } from 'solid-js'
 import { Show } from 'solid-js'
 
 import { useAuth } from '../../lib/auth/AuthContext'
+import { isDemo } from '../../lib/demo/mode'
 import { switchCompanyHref } from '../../lib/tenant'
+import { toast } from '../ui/Toast'
 import { Select } from '../ui/Select'
 
 export function CompanySwitcher(): JSX.Element {
   const auth = useAuth()
 
   const handleChange = (slug: string) => {
-    if (slug !== auth.companySlug()) {
-      window.location.href = switchCompanyHref(slug)
+    if (slug === auth.companySlug()) return
+    // In the demo, switching tenants would navigate off the sealed demo
+    // subdomain into a real (auth-gated) tenant — block it and explain.
+    if (isDemo()) {
+      toast.info('Demo de solo lectura', 'El cambio de empresa está deshabilitado en la demo.')
+      return
     }
+    window.location.href = switchCompanyHref(slug)
   }
 
   return (

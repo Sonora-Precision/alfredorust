@@ -8,6 +8,7 @@ import { Transition } from 'solid-transition-group'
 
 import { useSidebarCollapsed } from '../../lib/layout'
 import { CommandPalette } from './CommandPalette'
+import { DemoBanner } from './DemoBanner'
 import { Sidebar } from './Sidebar'
 import { SpaceBackground } from './SpaceBackground'
 import { Topbar } from './Topbar'
@@ -19,6 +20,7 @@ export function AppShell(props: ParentProps): JSX.Element {
       <SpaceBackground />
       <Sidebar />
       <div class="app-shell relative z-10 flex min-h-screen flex-col" classList={{ 'sidebar-collapsed': collapsed() }}>
+        <DemoBanner />
         <Topbar />
         <main class="mx-auto w-full min-w-0 max-w-[1400px] flex-1 px-4 py-6 sm:px-6">
           <Transition name="page" mode="outin">

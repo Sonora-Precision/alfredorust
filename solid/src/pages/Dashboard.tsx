@@ -19,8 +19,10 @@ import { Button } from '../components/ui/Button'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Spinner } from '../components/ui/Spinner'
+import { toast } from '../components/ui/Toast'
 import * as financeApi from '../lib/api/finance'
 import { getOnboardingStatus } from '../lib/api/onboarding'
+import { isDemo } from '../lib/demo/mode'
 import { money } from '../lib/format'
 import { switchCompanyHref } from '../lib/tenant'
 import { createCountUp, prefersReducedMotion } from '../lib/motion'
@@ -233,7 +235,13 @@ export default function Dashboard(): JSX.Element {
             {companies().map((c) => (
               <li>
                 <a
-                  href={switchCompanyHref(c.slug)}
+                  href={isDemo() ? '#' : switchCompanyHref(c.slug)}
+                  onClick={(e) => {
+                    if (isDemo()) {
+                      e.preventDefault()
+                      toast.info('Demo de solo lectura', 'El cambio de empresa está deshabilitado en la demo.')
+                    }
+                  }}
                   class={
                     c.active
                       ? 'font-semibold text-foreground'
