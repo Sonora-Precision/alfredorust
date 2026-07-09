@@ -106,7 +106,7 @@ export function LineArea(props: LineAreaProps): JSX.Element {
                 y={c().h + c().pb - 4}
                 text-anchor={l.anchor}
                 font-size="10"
-                fill="#94a3b8"
+                fill="hsl(var(--muted-foreground))"
               >
                 {l.text}
               </text>

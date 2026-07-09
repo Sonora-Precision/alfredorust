@@ -12,7 +12,8 @@
     --card: 222 40% 11%;
     --card-foreground: 213 31% 91%;
     --muted: 217 33% 17%;
-    --muted-foreground: 215 20% 65%;
+    /* Bumped 65%→75% for WCAG AA contrast on glass/dark surfaces (pa11y/axe). */
+    --muted-foreground: 215 25% 75%;
     --border: 217 30% 22%;
     --input: 217 30% 22%;
     --primary: 217 91% 60%;
@@ -41,7 +42,8 @@
     --card: 0 0% 100%;
     --card-foreground: 222 47% 11%;
     --muted: 214 30% 92%;
-    --muted-foreground: 215 16% 47%;
+    /* Darkened 47%→38% for WCAG AA contrast on light/glass surfaces (pa11y/axe). */
+    --muted-foreground: 215 22% 38%;
     --border: 214 24% 84%;
     --input: 214 32% 91%;
     --primary: 217 91% 55%;

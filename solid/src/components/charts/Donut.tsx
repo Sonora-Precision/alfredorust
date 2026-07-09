@@ -58,7 +58,7 @@ export function Donut(props: DonutProps): JSX.Element {
       <text x={cx} y={cy - 7} text-anchor="middle" style={{ 'font-size': '18px', 'font-weight': '700', fill: 'currentColor' }}>
         {props.centerValue}
       </text>
-      <text x={cx} y={cy + 12} text-anchor="middle" style={{ 'font-size': '10px', fill: '#94a3b8' }}>
+      <text x={cx} y={cy + 12} text-anchor="middle" style={{ 'font-size': '10px', fill: 'hsl(var(--muted-foreground))' }}>
         {props.centerLabel}
       </text>
     </svg>
