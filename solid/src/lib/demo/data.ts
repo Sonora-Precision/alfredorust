@@ -322,38 +322,86 @@ function tlStep(anchor: Date, mode: TLMode, n: number): Date {
       return new Date(Date.UTC(d.getUTCFullYear() + n, 0, 1))
   }
 }
-/** Integer periods from the current bucket to `cur` (0 = now, <0 past, >0 future). */
-function tlPeriodsFromNow(cur: Date, now: Date, mode: TLMode): number {
-  switch (mode) {
-    case 'day':
-      return Math.round((cur.getTime() - now.getTime()) / 86_400_000)
-    case 'week':
-      return Math.round((cur.getTime() - now.getTime()) / (7 * 86_400_000))
-    case 'month':
-      return (cur.getUTCFullYear() - now.getUTCFullYear()) * 12 + (cur.getUTCMonth() - now.getUTCMonth())
-    case 'year':
-      return cur.getUTCFullYear() - now.getUTCFullYear()
+// Deterministic 0..1 pseudo-random (stable across reloads — no Math.random).
+function tlSeed(n: number): number {
+  const x = Math.sin(n * 12.9898 + 78.233) * 43758.5453
+  return x - Math.floor(x)
+}
+const TX_INCOME = ['Anticipo lote flechas — Aeropartes', 'Finiquito molde — Delta', 'Venta refacciones CNC', 'Servicio de ingeniería', 'Maquinado herramental', 'Venta de piezas torneadas']
+const TX_EXPENSE = ['Compra acero 4140', 'Nómina', 'Insertos Sandvik', 'Renta de nave', 'Recibo CFE', 'Mantenimiento CNC', 'Honorarios contables', 'Materia prima']
+const PLAN_INCOME = ['Cobro proyecto', 'Anticipo cliente', 'Finiquito orden']
+const PLAN_EXPENSE = ['Nómina quincenal', 'Renta de nave', 'Recibo CFE', 'Compra de acero', 'Pago a proveedores', 'ISR provisional']
+
+interface TLItem { id: string; ms: number; iso: string; amount: number; income: boolean; label: string }
+
+/** Deterministic item pool spread over [monthsBack ago, monthsFwd ahead). */
+function genTimelineItems(monthsBack: number, monthsFwd: number, density: number, prefix: string, inc: string[], exp: string[]): TLItem[] {
+  const items: TLItem[] = []
+  const now = new Date()
+  const end = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + monthsFwd, 1)
+  const cur = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - monthsBack, 1))
+  let d = 0
+  while (cur.getTime() < end) {
+    if (tlSeed(d * 1.7 + prefix.length) < density) {
+      const n = 1 + Math.floor(tlSeed(d * 2.3) * 2)
+      for (let j = 0; j < n; j++) {
+        const income = tlSeed(d * 3.1 + j * 9.7) > 0.6
+        const amount = income
+          ? Math.round(50_000 + tlSeed(d + j * 5) * 300_000)
+          : Math.round(6_000 + tlSeed(d * 5 + j) * 95_000)
+        const labels = income ? inc : exp
+        items.push({
+          id: `${prefix}-${d}-${j}`,
+          ms: cur.getTime(),
+          iso: cur.toISOString(),
+          amount,
+          income,
+          label: labels[Math.floor(tlSeed(d * 7 + j * 2) * labels.length)],
+        })
+      }
+    }
+    cur.setUTCDate(cur.getUTCDate() + 1)
+    d++
   }
+  return items
 }
 
+// Actuals over the past ~30 months; plan over the coming ~22 months (+ recent) —
+// a ~4.3-year span so even the Year view shows several populated buckets.
+const TL_TX = genTimelineItems(30, 0, 0.5, 'dtx', TX_INCOME, TX_EXPENSE)
+const TL_PLAN = genTimelineItems(1, 22, 0.42, 'dpe', PLAN_INCOME, PLAN_EXPENSE)
+
+const tlNet = (items: TLItem[], ltMs: number, geMs = -Infinity): number =>
+  items.reduce((a, it) => (it.ms >= geMs && it.ms < ltMs ? a + (it.income ? it.amount : -it.amount) : a), 0)
+
+/** Aggregate the item pool into buckets for the requested mode/range — so the
+ * chart is populated by real items and switching day/week/month/year reflows. */
 function buildTimelineRange(modeRaw: string, fromIso: string, toIso: string): TimelineBucket[] {
   const mode = (['day', 'week', 'month', 'year'].includes(modeRaw) ? modeRaw : 'month') as TLMode
-  const to = new Date(toIso)
-  const nowStart = tlBucketStart(new Date(), mode)
+  const to = new Date(toIso).getTime()
+  const nowMs = Date.now()
+  const realAtNow = tlNet(TL_TX, nowMs)
+  const planBeforeNow = tlNet(TL_PLAN, nowMs)
   const out: TimelineBucket[] = []
   let cur = tlBucketStart(new Date(fromIso), mode)
   let guard = 0
-  const wave = (k: number, a: number, f: number, p: number) => a * Math.sin(k * f + p)
-  while (cur.getTime() < to.getTime() && guard++ < 4000) {
-    const k = tlPeriodsFromNow(cur, nowStart, mode)
-    const past = k <= 0
-    const real_income = past ? Math.round(300_000 + wave(k, 70_000, 0.6, 0) + wave(k, 26_000, 1.9, 1)) : 0
-    const real_expense = past ? Math.round(215_000 + wave(k, 44_000, 0.5, 1)) : 0
-    const planned_income = Math.round(312_000 + wave(k, 52_000, 0.55, 0.3))
-    const planned_expense = Math.round(224_000 + wave(k, 36_000, 0.5, 0.8))
-    // Deterministic per-k accumulation so lines are continuous across fetches.
-    // Real trends up until "now" then flatlines; plan keeps climbing into the future.
-    const cumRealAt = (kk: number) => 1_200_000 + 62_000 * kk + 30_000 * Math.sin(kk * 0.4)
+  const sumInc = (a: TLItem[]) => a.reduce((s, i) => s + (i.income ? i.amount : 0), 0)
+  const sumExp = (a: TLItem[]) => a.reduce((s, i) => s + (i.income ? 0 : i.amount), 0)
+  while (cur.getTime() < to && guard++ < 4000) {
+    const bs = cur.getTime()
+    const be = tlStep(cur, mode, 1).getTime()
+    const txs = TL_TX.filter((t) => t.ms >= bs && t.ms < be)
+    const pes = TL_PLAN.filter((t) => t.ms >= bs && t.ms < be)
+    const real_income = sumInc(txs)
+    const real_expense = sumExp(txs)
+    const planned_income = sumInc(pes)
+    const planned_expense = sumExp(pes)
+    // Real accumulates through the past then flatlines after now; plan =
+    // real-at-now + future plan, so the lines coincide until today then diverge.
+    const cumulative_real = Math.round(tlNet(TL_TX, be))
+    const cumulative_planned = Math.round(
+      be <= nowMs ? tlNet(TL_TX, be) : realAtNow + (tlNet(TL_PLAN, be) - planBeforeNow),
+    )
     out.push({
       start: cur.toISOString(),
       end: tlStep(cur, mode, 1).toISOString(),
@@ -363,10 +411,10 @@ function buildTimelineRange(modeRaw: string, fromIso: string, toIso: string): Ti
       planned_expense,
       net_real: real_income - real_expense,
       net_planned: planned_income - planned_expense,
-      cumulative_real: Math.round(past ? cumRealAt(k) : cumRealAt(0)),
-      cumulative_planned: Math.round(1_200_000 + 70_000 * k + 40_000 * Math.sin(k * 0.35)),
-      transactions: [],
-      planned_entries: [],
+      cumulative_real,
+      cumulative_planned,
+      transactions: txs.map((t) => ({ id: t.id, description: t.label, amount: t.amount, date: t.iso, type: t.income ? 'income' : 'expense' })),
+      planned_entries: pes.map((t) => ({ id: t.id, name: t.label, amount_estimated: t.amount, due_date: t.iso, flow_type: t.income ? 'income' : 'expense', status: 'planned' })),
     })
     cur = tlStep(cur, mode, 1)
   }
