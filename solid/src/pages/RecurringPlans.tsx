@@ -6,7 +6,7 @@
 // docs/solid-migration/pages-part1.md "RecurringPlansPage" for the spec.
 import { createMutation, createQuery, useQueryClient } from '@tanstack/solid-query'
 import { Pencil, Play, Plus, Repeat, Trash2 } from 'lucide-solid'
-import { type JSX, Show, createSignal } from 'solid-js'
+import { type JSX, Show, createSignal, For } from 'solid-js'
 
 import { Badge, boolBadgeTone, flowBadgeProps } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
@@ -243,7 +243,7 @@ export default function RecurringPlans(): JSX.Element {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {(plansQuery.data ?? []).map((p) => (
+                  <For each={plansQuery.data ?? []}>{(p) => (
                     <TableRow>
                       <TableCell class="font-medium text-foreground">{p.name}</TableCell>
                       <TableCell>
@@ -280,7 +280,7 @@ export default function RecurringPlans(): JSX.Element {
                         </TableCell>
                       </Show>
                     </TableRow>
-                  ))}
+                  )}</For>
                 </TableBody>
               </Table>
             </Show>
@@ -324,9 +324,9 @@ export default function RecurringPlans(): JSX.Element {
               onChange={(v) => setForm((f) => ({ ...f, frequency: v }))}
               disabled={loadingDetail()}
             >
-              {FREQUENCIES.map((fr) => (
+              <For each={FREQUENCIES}>{(fr) => (
                 <option value={fr.value}>{fr.label}</option>
-              ))}
+              )}</For>
             </Select>
           </div>
           <div class="space-y-1.5">
@@ -338,9 +338,9 @@ export default function RecurringPlans(): JSX.Element {
               required
             >
               <option value="">— Selecciona —</option>
-              {(categoriesQuery.data ?? []).map((c) => (
+              <For each={categoriesQuery.data ?? []}>{(c) => (
                 <option value={c.id}>{c.name}</option>
-              ))}
+              )}</For>
             </Select>
           </div>
           <div class="space-y-1.5">
@@ -352,9 +352,9 @@ export default function RecurringPlans(): JSX.Element {
               required
             >
               <option value="">— Selecciona —</option>
-              {(accountsQuery.data ?? []).map((a) => (
+              <For each={accountsQuery.data ?? []}>{(a) => (
                 <option value={a.id}>{a.name}</option>
-              ))}
+              )}</For>
             </Select>
           </div>
           <div class="space-y-1.5">
@@ -403,9 +403,9 @@ export default function RecurringPlans(): JSX.Element {
               disabled={loadingDetail()}
             >
               <option value="">— Ninguno —</option>
-              {(contactsQuery.data ?? []).map((c) => (
+              <For each={contactsQuery.data ?? []}>{(c) => (
                 <option value={c.id}>{c.name}</option>
-              ))}
+              )}</For>
             </Select>
           </div>
           <div class="space-y-1.5 sm:col-span-2">

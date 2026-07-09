@@ -9,7 +9,7 @@
 // NOT "fix" this.
 import { createMutation, createQuery, useQueryClient } from '@tanstack/solid-query'
 import { Clock, Pencil, Trash2 } from 'lucide-solid'
-import { type JSX, Show, createSignal } from 'solid-js'
+import { type JSX, Show, createSignal, For } from 'solid-js'
 
 import { Button } from '../components/ui/Button'
 import { Card, CardContent } from '../components/ui/Card'
@@ -230,7 +230,7 @@ export default function ResourceLogs(): JSX.Element {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {(logsQuery.data ?? []).map((log) => {
+                  <For each={logsQuery.data ?? []}>{(log) => {
                     const open = log.ended_at == null
                     return (
                       <TableRow>
@@ -272,7 +272,7 @@ export default function ResourceLogs(): JSX.Element {
                         </Show>
                       </TableRow>
                     )
-                  })}
+                  }}</For>
                 </TableBody>
               </Table>
             </Show>
@@ -296,9 +296,9 @@ export default function ResourceLogs(): JSX.Element {
               disabled={loadingDetail()}
             >
               <option value="">— Ninguno —</option>
-              {(projectsQuery.data ?? []).map((p) => (
+              <For each={projectsQuery.data ?? []}>{(p) => (
                 <option value={p.id}>{p.title}</option>
-              ))}
+              )}</For>
             </Select>
           </div>
           <div class="space-y-1.5">
@@ -309,9 +309,9 @@ export default function ResourceLogs(): JSX.Element {
               disabled={loadingDetail()}
             >
               <option value="">— Ninguno —</option>
-              {(resourcesQuery.data ?? []).map((r) => (
+              <For each={resourcesQuery.data ?? []}>{(r) => (
                 <option value={r.id}>{r.name}</option>
-              ))}
+              )}</For>
             </Select>
           </div>
           <div class="space-y-1.5">

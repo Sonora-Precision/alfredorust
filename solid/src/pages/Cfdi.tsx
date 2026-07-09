@@ -576,7 +576,7 @@ export default function Cfdi(): JSX.Element {
                             <span class="shrink-0 text-[12px] tnum text-muted-foreground">{money(val)}</span>
                           </div>
                           <div class="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                            <div class="bar-grow h-full rounded-full bg-rose-500" style={`width:${((val / maxEmisor()) * 100).toFixed(1)}%`} />
+                            <div class="bar-grow h-full rounded-full bg-rose-500" style={{ width: `${((val / maxEmisor()) * 100).toFixed(1)}%` }} />
                           </div>
                         </div>
                       )}
@@ -599,7 +599,7 @@ export default function Cfdi(): JSX.Element {
                             <span class="shrink-0 text-[12px] tnum text-muted-foreground">{money(val)}</span>
                           </div>
                           <div class="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                            <div class="bar-grow h-full rounded-full bg-emerald-500" style={`width:${((val / maxReceptor()) * 100).toFixed(1)}%`} />
+                            <div class="bar-grow h-full rounded-full bg-emerald-500" style={{ width: `${((val / maxReceptor()) * 100).toFixed(1)}%` }} />
                           </div>
                         </div>
                       )}

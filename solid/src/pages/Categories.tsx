@@ -9,7 +9,7 @@
 // exact behavior here rather than "fixing" it (not in PLAN §13).
 import { createMutation, createQuery, useQueryClient } from '@tanstack/solid-query'
 import { FolderTree, Pencil, Trash2 } from 'lucide-solid'
-import { type JSX, Show, createMemo, createSignal } from 'solid-js'
+import { type JSX, Show, createMemo, createSignal, For } from 'solid-js'
 
 import { Badge, flowBadgeProps } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
@@ -194,7 +194,7 @@ export default function Categories(): JSX.Element {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {(categoriesQuery.data ?? []).map((cat) => {
+                  <For each={categoriesQuery.data ?? []}>{(cat) => {
                     const flow = flowBadgeProps(cat.flow_type)
                     return (
                       <TableRow>
@@ -222,7 +222,7 @@ export default function Categories(): JSX.Element {
                         </Show>
                       </TableRow>
                     )
-                  })}
+                  }}</For>
                 </TableBody>
               </Table>
             </Show>
@@ -250,9 +250,9 @@ export default function Categories(): JSX.Element {
               onChange={(v) => setForm((f) => ({ ...f, flowType: v as FlowType }))}
               disabled={loadingDetail()}
             >
-              {FLOW_TYPES.map((t) => (
+              <For each={FLOW_TYPES}>{(t) => (
                 <option value={t.value}>{t.label}</option>
-              ))}
+              )}</For>
             </Select>
           </div>
           <div class="space-y-1.5 sm:col-span-2">
@@ -263,9 +263,9 @@ export default function Categories(): JSX.Element {
               disabled={loadingDetail()}
             >
               <option value="">— Ninguna —</option>
-              {parentOptions().map((c) => (
+              <For each={parentOptions()}>{(c) => (
                 <option value={c.id}>{c.name}</option>
-              ))}
+              )}</For>
             </Select>
           </div>
 

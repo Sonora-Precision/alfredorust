@@ -9,7 +9,7 @@
 // re-enrollment.
 import { createMutation, createQuery, useQueryClient } from '@tanstack/solid-query'
 import { Pencil, Plus, Trash2, Users as UsersIcon } from 'lucide-solid'
-import { type JSX, Show, createEffect, createSignal, onCleanup } from 'solid-js'
+import { type JSX, Show, createEffect, createSignal, onCleanup, For } from 'solid-js'
 import { createStore } from 'solid-js/store'
 
 import { Badge, roleBadgeTone } from '../components/ui/Badge'
@@ -292,7 +292,7 @@ export default function Users(): JSX.Element {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {(usersQuery.data ?? []).map((u) => (
+                  <For each={usersQuery.data ?? []}>{(u) => (
                     <TableRow>
                       <TableCell class="font-medium text-foreground">{u.username}</TableCell>
                       <TableCell class="text-muted-foreground">{u.companies.join(', ')}</TableCell>
@@ -319,7 +319,7 @@ export default function Users(): JSX.Element {
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))}
+                  )}</For>
                 </TableBody>
               </Table>
             </Show>
@@ -368,6 +368,7 @@ export default function Users(): JSX.Element {
               fallback={<p class="text-sm text-muted-foreground">Sin compañías disponibles.</p>}
             >
               <div class="space-y-2">
+                {/* eslint-disable-next-line solid/prefer-for -- index-keyed store form: array is stable, only nested fields mutate via setMembershipRows(i, ...) */}
                 {membershipRows.map((m, i) => (
                   <div class="rounded-md border border-border p-3">
                     <div class="flex items-center justify-between gap-3">
@@ -392,6 +393,7 @@ export default function Users(): JSX.Element {
                         <p class="text-xs font-semibold uppercase text-muted-foreground sm:col-span-2">
                           Permisos staff
                         </p>
+                        {/* eslint-disable-next-line solid/prefer-for -- static PERMISSIONS list, pi indexes the store's perms array */}
                         {PERMISSIONS.map((p, pi) => (
                           <Checkbox
                             checked={m.perms[pi] ?? false}

@@ -322,7 +322,7 @@ export default function ConceptStatuses(): JSX.Element {
                               <button
                                 type="button"
                                 class="shrink-0 cursor-grab text-muted-foreground hover:text-foreground active:cursor-grabbing"
-                                style="touch-action:none"
+                                style={{"touch-action":"none"}}
                                 aria-label="Arrastrar para reordenar"
                                 onPointerDown={(e) => onDragStart(e, s.id)}
                               >
@@ -330,7 +330,7 @@ export default function ConceptStatuses(): JSX.Element {
                               </button>
                             </Show>
                             <Show when={s.color}>
-                              <span class="h-3 w-3 shrink-0 rounded-full" style={`background:${s.color}`} />
+                              <span class="h-3 w-3 shrink-0 rounded-full" style={{ background: s.color ?? undefined }} />
                             </Show>
                             <div class="min-w-0 flex-1">
                               <div class="flex flex-wrap items-center gap-2">
@@ -390,7 +390,7 @@ export default function ConceptStatuses(): JSX.Element {
                         <div class="p-2">
                           <div
                             class="rounded-lg border-2 border-dashed border-primary/40 bg-primary/5"
-                            style={`height:${Math.max(0, (drag()?.height ?? 56) - 16)}px`}
+                            style={{ height: `${Math.max(0, (drag()?.height ?? 56) - 16)}px` }}
                           />
                         </div>
                       </Show>
@@ -408,11 +408,11 @@ export default function ConceptStatuses(): JSX.Element {
         <Portal>
           <div
             class="bg-glass pointer-events-none fixed z-[70] flex items-center gap-3 rounded-xl border border-border px-4 py-3 shadow-2xl"
-            style={`position:fixed; left:${drag()!.left}px; top:${drag()!.y - drag()!.offset}px; width:${drag()!.width}px`}
+            style={{ position: 'fixed', left: `${drag()!.left}px`, top: `${drag()!.y - drag()!.offset}px`, width: `${drag()!.width}px` }}
           >
             <GripVertical class="h-5 w-5 text-muted-foreground" />
             <Show when={floatingItem()!.color}>
-              <span class="h-3 w-3 shrink-0 rounded-full" style={`background:${floatingItem()!.color}`} />
+              <span class="h-3 w-3 shrink-0 rounded-full" style={{ background: floatingItem()!.color ?? undefined }} />
             </Show>
             <span class="font-medium text-foreground">{floatingItem()!.name}</span>
           </div>

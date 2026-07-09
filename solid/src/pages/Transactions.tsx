@@ -7,7 +7,7 @@
 // "TransactionsPage".
 import { createMutation, createQuery, useQueryClient } from '@tanstack/solid-query'
 import { ArrowLeftRight, Pencil, Trash2 } from 'lucide-solid'
-import { type JSX, Show, createMemo, createSignal } from 'solid-js'
+import { type JSX, Show, createMemo, createSignal, For } from 'solid-js'
 
 import { Donut } from '../components/charts/Donut'
 import { LineArea } from '../components/charts/LineArea'
@@ -288,7 +288,7 @@ export default function Transactions(): JSX.Element {
           <Card glass>
             <CardContent class="p-4">
               <p class="mb-2 text-xs font-semibold text-muted-foreground">Por categoría</p>
-              {charts().catBars.map((c) => (
+              <For each={charts().catBars}>{(c) => (
                 <div class="mb-2">
                   <div class="flex justify-between text-xs">
                     <span class="truncate text-muted-foreground">{c.name}</span>
@@ -307,7 +307,7 @@ export default function Transactions(): JSX.Element {
                   </div>
                   <span class="text-[10px] text-muted-foreground">{c.count} mov.</span>
                 </div>
-              ))}
+              )}</For>
             </CardContent>
           </Card>
         </div>
@@ -356,7 +356,7 @@ export default function Transactions(): JSX.Element {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {(transactionsQuery.data ?? []).map((t) => (
+                  <For each={transactionsQuery.data ?? []}>{(t) => (
                     <TableRow>
                       <TableCell class="tnum text-muted-foreground">{t.date}</TableCell>
                       <TableCell class="font-medium text-foreground">{t.description}</TableCell>
@@ -383,7 +383,7 @@ export default function Transactions(): JSX.Element {
                         </TableCell>
                       </Show>
                     </TableRow>
-                  ))}
+                  )}</For>
                 </TableBody>
               </Table>
             </Show>
@@ -425,9 +425,9 @@ export default function Transactions(): JSX.Element {
               onChange={(v) => setForm((f) => ({ ...f, txType: v as TransactionType }))}
               disabled={loadingDetail()}
             >
-              {TX_TYPES.map((t) => (
+              <For each={TX_TYPES}>{(t) => (
                 <option value={t.value}>{t.label}</option>
-              ))}
+              )}</For>
             </Select>
           </div>
           <div class="space-y-1.5">
@@ -438,9 +438,9 @@ export default function Transactions(): JSX.Element {
               disabled={loadingDetail()}
             >
               <option value="">— Selecciona —</option>
-              {(categoriesQuery.data ?? []).map((c) => (
+              <For each={categoriesQuery.data ?? []}>{(c) => (
                 <option value={c.id}>{c.name}</option>
-              ))}
+              )}</For>
             </Select>
           </div>
           <div class="space-y-1.5">
@@ -461,9 +461,9 @@ export default function Transactions(): JSX.Element {
               disabled={loadingDetail()}
             >
               <option value="">— Ninguna —</option>
-              {(accountsQuery.data ?? []).map((a) => (
+              <For each={accountsQuery.data ?? []}>{(a) => (
                 <option value={a.id}>{a.name}</option>
-              ))}
+              )}</For>
             </Select>
           </div>
           <div class="space-y-1.5">
@@ -474,9 +474,9 @@ export default function Transactions(): JSX.Element {
               disabled={loadingDetail()}
             >
               <option value="">— Ninguna —</option>
-              {(accountsQuery.data ?? []).map((a) => (
+              <For each={accountsQuery.data ?? []}>{(a) => (
                 <option value={a.id}>{a.name}</option>
-              ))}
+              )}</For>
             </Select>
           </div>
           <div class="space-y-1.5">
@@ -487,9 +487,9 @@ export default function Transactions(): JSX.Element {
               disabled={loadingDetail()}
             >
               <option value="">— Ninguno —</option>
-              {(plannedEntriesQuery.data ?? []).map((p) => (
+              <For each={plannedEntriesQuery.data ?? []}>{(p) => (
                 <option value={p.id}>{p.name}</option>
-              ))}
+              )}</For>
             </Select>
           </div>
           <div class="space-y-1.5 sm:col-span-2">

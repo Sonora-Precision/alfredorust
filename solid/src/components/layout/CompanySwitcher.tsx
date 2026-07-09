@@ -2,7 +2,7 @@
 // Switching is a full navigation to the target tenant subdomain (the session
 // cookie is shared across subdomains) — ported from frontend/src/app.rs.
 import type { JSX } from 'solid-js'
-import { Show } from 'solid-js'
+import { Show, For } from 'solid-js'
 
 import { useAuth } from '../../lib/auth/AuthContext'
 import { isDemo } from '../../lib/demo/mode'
@@ -33,9 +33,9 @@ export function CompanySwitcher(): JSX.Element {
           class="py-1.5 text-sm"
           aria-label="Cambiar de compañía"
         >
-          {auth.companies().map((c) => (
+          <For each={auth.companies()}>{(c) => (
             <option value={c.slug}>{c.name}</option>
-          ))}
+          )}</For>
         </Select>
       </div>
     </Show>

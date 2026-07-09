@@ -229,7 +229,7 @@ export default function Resources(): JSX.Element {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {(resourcesQuery.data ?? []).map((r) => (
+                  <For each={resourcesQuery.data ?? []}>{(r) => (
                     <TableRow>
                       <TableCell class="font-medium text-foreground">{r.name}</TableCell>
                       <TableCell>
@@ -259,7 +259,7 @@ export default function Resources(): JSX.Element {
                         </TableCell>
                       </Show>
                     </TableRow>
-                  ))}
+                  )}</For>
                 </TableBody>
               </Table>
             </Show>
@@ -287,9 +287,9 @@ export default function Resources(): JSX.Element {
               onChange={(v) => setForm((f) => ({ ...f, resourceType: v as ResourceType }))}
               disabled={loadingDetail()}
             >
-              {RESOURCE_TYPES.map((t) => (
+              <For each={RESOURCE_TYPES}>{(t) => (
                 <option value={t.value}>{t.label}</option>
-              ))}
+              )}</For>
             </Select>
           </div>
           <div class="space-y-1.5">

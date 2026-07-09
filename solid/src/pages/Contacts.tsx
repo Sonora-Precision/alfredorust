@@ -10,7 +10,7 @@
 // so it's kept as-is here rather than silently upgraded.
 import { createMutation, createQuery, useQueryClient } from '@tanstack/solid-query'
 import { Pencil, Trash2, Users } from 'lucide-solid'
-import { type JSX, Show, createSignal } from 'solid-js'
+import { type JSX, Show, createSignal, For } from 'solid-js'
 
 import { Button } from '../components/ui/Button'
 import { Card, CardContent } from '../components/ui/Card'
@@ -203,7 +203,7 @@ export default function Contacts(): JSX.Element {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {(contactsQuery.data ?? []).map((c) => (
+                  <For each={contactsQuery.data ?? []}>{(c) => (
                     <TableRow>
                       <TableCell class="font-medium text-foreground">{c.name}</TableCell>
                       <TableCell>{c.kind}</TableCell>
@@ -226,7 +226,7 @@ export default function Contacts(): JSX.Element {
                         </TableCell>
                       </Show>
                     </TableRow>
-                  ))}
+                  )}</For>
                 </TableBody>
               </Table>
             </Show>
@@ -254,9 +254,9 @@ export default function Contacts(): JSX.Element {
               onChange={(v) => setForm((f) => ({ ...f, contactType: v as ContactType }))}
               disabled={loadingDetail()}
             >
-              {CONTACT_TYPES.map((t) => (
+              <For each={CONTACT_TYPES}>{(t) => (
                 <option value={t.value}>{t.label}</option>
-              ))}
+              )}</For>
             </Select>
           </div>
           <div class="space-y-1.5">

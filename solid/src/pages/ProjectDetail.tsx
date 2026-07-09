@@ -6,7 +6,7 @@
 // docs/solid-migration/pages-part2.md "Project detail" and PLAN.md §13.
 import { A, useParams } from '@solidjs/router'
 import { createMutation, createQuery, useQueryClient } from '@tanstack/solid-query'
-import { type JSX, Show, createSignal } from 'solid-js'
+import { type JSX, Show, createSignal, For } from 'solid-js'
 
 import { Badge, statusBadgeTone } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
@@ -214,7 +214,7 @@ export default function ProjectDetail(): JSX.Element {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {(conceptsQuery.data ?? []).map((c) => (
+                  <For each={conceptsQuery.data ?? []}>{(c) => (
                     <TableRow>
                       <TableCell class="tnum text-muted-foreground">{c.position}</TableCell>
                       <TableCell class="font-medium text-foreground">{c.name}</TableCell>
@@ -252,7 +252,7 @@ export default function ProjectDetail(): JSX.Element {
                         </TableCell>
                       </Show>
                     </TableRow>
-                  ))}
+                  )}</For>
                 </TableBody>
               </Table>
             </Show>
@@ -275,9 +275,9 @@ export default function ProjectDetail(): JSX.Element {
             <label class="block text-sm font-medium text-foreground">Estado</label>
             <Select value={form().statusId} onChange={(v) => setForm((f) => ({ ...f, statusId: v }))}>
               <option value="">— Inicial —</option>
-              {(statusesQuery.data ?? []).map((s) => (
+              <For each={statusesQuery.data ?? []}>{(s) => (
                 <option value={s.id}>{s.name}</option>
-              ))}
+              )}</For>
             </Select>
           </div>
           <div class="space-y-1.5">

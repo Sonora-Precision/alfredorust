@@ -4,7 +4,7 @@
 // page) rather than the old Leptos inline-Card form.
 import { createMutation, createQuery, useQueryClient } from '@tanstack/solid-query'
 import { Check, ClipboardList, Pencil, Plus, Trash2 } from 'lucide-solid'
-import { type JSX, Show, createMemo, createSignal } from 'solid-js'
+import { type JSX, Show, createMemo, createSignal, For } from 'solid-js'
 import { createStore } from 'solid-js/store'
 
 import { Badge, statusBadgeTone } from '../components/ui/Badge'
@@ -270,7 +270,7 @@ export default function Orders(): JSX.Element {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {(ordersQuery.data ?? []).map((o) => {
+                  <For each={ordersQuery.data ?? []}>{(o) => {
                     const label = o.status_label || o.status
                     return (
                       <TableRow>
@@ -311,7 +311,7 @@ export default function Orders(): JSX.Element {
                         </Show>
                       </TableRow>
                     )
-                  })}
+                  }}</For>
                 </TableBody>
               </Table>
             </Show>
@@ -339,9 +339,9 @@ export default function Orders(): JSX.Element {
               onChange={(v) => setForm((f) => ({ ...f, status: v as OrderStatus }))}
               disabled={loadingDetail()}
             >
-              {STATUSES.map((s) => (
+              <For each={STATUSES}>{(s) => (
                 <option value={s.value}>{s.label}</option>
-              ))}
+              )}</For>
             </Select>
           </div>
           <div class="space-y-1.5">
@@ -352,9 +352,9 @@ export default function Orders(): JSX.Element {
               disabled={loadingDetail()}
             >
               <option value="">— Ninguno —</option>
-              {(contactsQuery.data ?? []).map((c) => (
+              <For each={contactsQuery.data ?? []}>{(c) => (
                 <option value={c.id}>{c.name}</option>
-              ))}
+              )}</For>
             </Select>
           </div>
           <div class="space-y-1.5">
@@ -365,9 +365,9 @@ export default function Orders(): JSX.Element {
               disabled={loadingDetail()}
             >
               <option value="">— Ninguna —</option>
-              {(categoriesQuery.data ?? []).map((c) => (
+              <For each={categoriesQuery.data ?? []}>{(c) => (
                 <option value={c.id}>{c.name}</option>
-              ))}
+              )}</For>
             </Select>
           </div>
           <div class="space-y-1.5">
@@ -378,9 +378,9 @@ export default function Orders(): JSX.Element {
               disabled={loadingDetail()}
             >
               <option value="">— Ninguna —</option>
-              {(accountsQuery.data ?? []).map((a) => (
+              <For each={accountsQuery.data ?? []}>{(a) => (
                 <option value={a.id}>{a.name}</option>
-              ))}
+              )}</For>
             </Select>
           </div>
           <div class="space-y-1.5">
@@ -412,7 +412,7 @@ export default function Orders(): JSX.Element {
               </Button>
             </div>
             <div class="space-y-2">
-              {items.map((row) => (
+              <For each={items}>{(row) => (
                 <div class="grid grid-cols-12 gap-2">
                   <div class="col-span-6">
                     <Input
@@ -453,7 +453,7 @@ export default function Orders(): JSX.Element {
                     </Button>
                   </div>
                 </div>
-              ))}
+              )}</For>
             </div>
           </div>
 

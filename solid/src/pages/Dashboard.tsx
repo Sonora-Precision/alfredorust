@@ -11,7 +11,7 @@ import { A } from '@solidjs/router'
 import { createQuery } from '@tanstack/solid-query'
 import { ArrowRight, Landmark, Rocket, Scale, TrendingDown, TrendingUp, Wallet } from 'lucide-solid'
 import { Motion } from 'solid-motionone'
-import { type JSX, Show, createMemo } from 'solid-js'
+import { type JSX, Show, createMemo, For } from 'solid-js'
 
 import { Donut } from '../components/charts/Donut'
 import { LineArea } from '../components/charts/LineArea'
@@ -232,7 +232,7 @@ export default function Dashboard(): JSX.Element {
         </CardHeader>
         <CardContent>
           <ul class="space-y-1">
-            {companies().map((c) => (
+            <For each={companies()}>{(c) => (
               <li>
                 <a
                   href={isDemo() ? '#' : switchCompanyHref(c.slug)}
@@ -252,7 +252,7 @@ export default function Dashboard(): JSX.Element {
                   {c.active ? ' (activa)' : ''}
                 </a>
               </li>
-            ))}
+            )}</For>
           </ul>
         </CardContent>
       </Card>

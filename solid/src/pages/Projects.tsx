@@ -6,7 +6,7 @@
 import { createMutation, createQuery, useQueryClient } from '@tanstack/solid-query'
 import { A } from '@solidjs/router'
 import { Briefcase, Pencil, Plus, Trash2 } from 'lucide-solid'
-import { type JSX, Show, createMemo, createSignal } from 'solid-js'
+import { type JSX, Show, createMemo, createSignal, For } from 'solid-js'
 
 import { Badge, priorityBadgeTone, statusBadgeTone } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
@@ -234,7 +234,7 @@ export default function Projects(): JSX.Element {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {(projectsQuery.data ?? []).map((p) => {
+                  <For each={projectsQuery.data ?? []}>{(p) => {
                     const statusLabel = p.status_label || p.status
                     const priorityLabel = p.priority_label || p.priority
                     return (
@@ -287,7 +287,7 @@ export default function Projects(): JSX.Element {
                         </TableCell>
                       </TableRow>
                     )
-                  })}
+                  }}</For>
                 </TableBody>
               </Table>
             </Show>
@@ -315,9 +315,9 @@ export default function Projects(): JSX.Element {
               onChange={(v) => setForm((f) => ({ ...f, priority: v as ProjectPriority }))}
               disabled={loadingDetail()}
             >
-              {PRIORITIES.map((p) => (
+              <For each={PRIORITIES}>{(p) => (
                 <option value={p.value}>{p.label}</option>
-              ))}
+              )}</For>
             </Select>
           </div>
           <div class="space-y-1.5">
@@ -328,9 +328,9 @@ export default function Projects(): JSX.Element {
               disabled={loadingDetail()}
             >
               <option value="">— Ninguno —</option>
-              {(contactsQuery.data ?? []).map((c) => (
+              <For each={contactsQuery.data ?? []}>{(c) => (
                 <option value={c.id}>{c.name}</option>
-              ))}
+              )}</For>
             </Select>
           </div>
           <div class="space-y-1.5">
@@ -341,9 +341,9 @@ export default function Projects(): JSX.Element {
               disabled={loadingDetail()}
             >
               <option value="">— Ninguna —</option>
-              {(categoriesQuery.data ?? []).map((c) => (
+              <For each={categoriesQuery.data ?? []}>{(c) => (
                 <option value={c.id}>{c.name}</option>
-              ))}
+              )}</For>
             </Select>
           </div>
           <div class="space-y-1.5">

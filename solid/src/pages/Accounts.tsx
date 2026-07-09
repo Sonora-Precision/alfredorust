@@ -4,7 +4,7 @@
 // docs/solid-migration/pages-part1.md "AccountsPage" for the behavior spec.
 import { createMutation, createQuery, useQueryClient } from '@tanstack/solid-query'
 import { Landmark, Pencil, Plus, Trash2 } from 'lucide-solid'
-import { type JSX, Show, createMemo, createSignal } from 'solid-js'
+import { type JSX, Show, createMemo, createSignal, For } from 'solid-js'
 
 import { Badge, boolBadgeTone, typeBadgeTone } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
@@ -203,7 +203,7 @@ export default function Accounts(): JSX.Element {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {(accountsQuery.data ?? []).map((acc) => (
+                  <For each={accountsQuery.data ?? []}>{(acc) => (
                     <TableRow>
                       <TableCell class="font-medium text-foreground">{acc.name}</TableCell>
                       <TableCell>
@@ -231,7 +231,7 @@ export default function Accounts(): JSX.Element {
                         </TableCell>
                       </Show>
                     </TableRow>
-                  ))}
+                  )}</For>
                 </TableBody>
               </Table>
             </Show>
@@ -259,9 +259,9 @@ export default function Accounts(): JSX.Element {
               onChange={(v) => setForm((f) => ({ ...f, accountType: v as AccountType }))}
               disabled={loadingDetail()}
             >
-              {ACCOUNT_TYPES.map((t) => (
+              <For each={ACCOUNT_TYPES}>{(t) => (
                 <option value={t.value}>{t.label}</option>
-              ))}
+              )}</For>
             </Select>
           </div>
           <div class="space-y-1.5">

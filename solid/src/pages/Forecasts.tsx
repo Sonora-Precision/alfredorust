@@ -5,7 +5,7 @@
 // docs/solid-migration/pages-part1.md "ForecastsPage" for the spec.
 import { createMutation, createQuery, useQueryClient } from '@tanstack/solid-query'
 import { LineChart, Pencil, Plus, Trash2 } from 'lucide-solid'
-import { type JSX, Show, createSignal } from 'solid-js'
+import { type JSX, Show, createSignal, For } from 'solid-js'
 
 import { Button } from '../components/ui/Button'
 import { Card, CardContent } from '../components/ui/Card'
@@ -227,7 +227,7 @@ export default function Forecasts(): JSX.Element {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {(forecastsQuery.data ?? []).map((f) => (
+                  <For each={forecastsQuery.data ?? []}>{(f) => (
                     <TableRow>
                       <TableCell class="font-medium text-foreground">{f.scenario_name ?? ''}</TableCell>
                       <TableCell class="tnum text-muted-foreground">
@@ -253,7 +253,7 @@ export default function Forecasts(): JSX.Element {
                         </TableCell>
                       </Show>
                     </TableRow>
-                  ))}
+                  )}</For>
                 </TableBody>
               </Table>
             </Show>

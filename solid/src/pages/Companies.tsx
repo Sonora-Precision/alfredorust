@@ -7,7 +7,7 @@
 // error, without hardcoding the reserved-slug list.
 import { createMutation, createQuery, useQueryClient } from '@tanstack/solid-query'
 import { Building2, Pencil, Plus, Trash2 } from 'lucide-solid'
-import { type JSX, Show, createSignal } from 'solid-js'
+import { type JSX, Show, createSignal, For } from 'solid-js'
 
 import { Badge, boolBadgeTone } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
@@ -229,7 +229,7 @@ export default function Companies(): JSX.Element {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {(companiesQuery.data ?? []).map((c) => (
+                  <For each={companiesQuery.data ?? []}>{(c) => (
                     <TableRow>
                       <TableCell class="font-medium text-foreground">{c.name}</TableCell>
                       <TableCell class="text-muted-foreground">{c.default_currency}</TableCell>
@@ -261,7 +261,7 @@ export default function Companies(): JSX.Element {
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))}
+                  )}</For>
                 </TableBody>
               </Table>
             </Show>

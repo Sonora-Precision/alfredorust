@@ -8,7 +8,7 @@
 // docs/solid-migration/pages-part1.md "PlannedEntriesPage" for the spec.
 import { createMutation, createQuery, useQueryClient } from '@tanstack/solid-query'
 import { Banknote, ListChecks, Pencil, Plus, Trash2 } from 'lucide-solid'
-import { type JSX, Show, createSignal } from 'solid-js'
+import { type JSX, Show, createSignal, For } from 'solid-js'
 
 import { Badge, flowBadgeProps, statusBadgeTone } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
@@ -358,7 +358,7 @@ export default function PlannedEntries(): JSX.Element {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {(entriesQuery.data ?? []).map((e) => (
+                  <For each={entriesQuery.data ?? []}>{(e) => (
                     <TableRow>
                       <Show when={isAdmin()}>
                         <TableCell>
@@ -405,7 +405,7 @@ export default function PlannedEntries(): JSX.Element {
                         </TableCell>
                       </Show>
                     </TableRow>
-                  ))}
+                  )}</For>
                 </TableBody>
               </Table>
             </Show>
@@ -448,9 +448,9 @@ export default function PlannedEntries(): JSX.Element {
               onChange={(v) => setForm((f) => ({ ...f, status: v as PlannedStatus }))}
               disabled={loadingDetail()}
             >
-              {STATUSES.map((s) => (
+              <For each={STATUSES}>{(s) => (
                 <option value={s.value}>{s.label}</option>
-              ))}
+              )}</For>
             </Select>
           </div>
           <div class="space-y-1.5">
@@ -462,9 +462,9 @@ export default function PlannedEntries(): JSX.Element {
               required
             >
               <option value="">— Selecciona —</option>
-              {(categoriesQuery.data ?? []).map((c) => (
+              <For each={categoriesQuery.data ?? []}>{(c) => (
                 <option value={c.id}>{c.name}</option>
-              ))}
+              )}</For>
             </Select>
           </div>
           <div class="space-y-1.5">
@@ -476,9 +476,9 @@ export default function PlannedEntries(): JSX.Element {
               required
             >
               <option value="">— Selecciona —</option>
-              {(accountsQuery.data ?? []).map((a) => (
+              <For each={accountsQuery.data ?? []}>{(a) => (
                 <option value={a.id}>{a.name}</option>
-              ))}
+              )}</For>
             </Select>
           </div>
           <div class="space-y-1.5">
@@ -509,9 +509,9 @@ export default function PlannedEntries(): JSX.Element {
               disabled={loadingDetail()}
             >
               <option value="">— Ninguno —</option>
-              {(contactsQuery.data ?? []).map((c) => (
+              <For each={contactsQuery.data ?? []}>{(c) => (
                 <option value={c.id}>{c.name}</option>
-              ))}
+              )}</For>
             </Select>
           </div>
           <div class="space-y-1.5">
@@ -522,9 +522,9 @@ export default function PlannedEntries(): JSX.Element {
               disabled={loadingDetail()}
             >
               <option value="">— Ninguno —</option>
-              {(projectsQuery.data ?? []).map((p) => (
+              <For each={projectsQuery.data ?? []}>{(p) => (
                 <option value={p.id}>{p.title}</option>
-              ))}
+              )}</For>
             </Select>
           </div>
           <div class="space-y-1.5 sm:col-span-2">
@@ -570,9 +570,9 @@ export default function PlannedEntries(): JSX.Element {
             <label class="block text-sm font-medium text-foreground">Cuenta</label>
             <Select value={payAccountId()} onChange={setPayAccountId} required>
               <option value="">— Selecciona —</option>
-              {(accountsQuery.data ?? []).map((a) => (
+              <For each={accountsQuery.data ?? []}>{(a) => (
                 <option value={a.id}>{a.name}</option>
-              ))}
+              )}</For>
             </Select>
           </div>
           <div class="space-y-1.5 sm:col-span-2">
@@ -610,9 +610,9 @@ export default function PlannedEntries(): JSX.Element {
             <label class="block text-sm font-medium text-foreground">Cuenta</label>
             <Select value={bulkAccountId()} onChange={setBulkAccountId} required>
               <option value="">— Selecciona —</option>
-              {(accountsQuery.data ?? []).map((a) => (
+              <For each={accountsQuery.data ?? []}>{(a) => (
                 <option value={a.id}>{a.name}</option>
-              ))}
+              )}</For>
             </Select>
           </div>
           <div class="space-y-1.5 sm:col-span-2">

@@ -13,7 +13,7 @@
 // `set_value("")` in the Leptos version.
 import { createMutation, createQuery, useQueryClient } from '@tanstack/solid-query'
 import { FileKey, Trash2 } from 'lucide-solid'
-import { type JSX, Show, createSignal } from 'solid-js'
+import { type JSX, Show, createSignal, For } from 'solid-js'
 
 import { Button } from '../components/ui/Button'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
@@ -193,7 +193,7 @@ export default function SatConfigs(): JSX.Element {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {(configsQuery.data ?? []).map((s) => (
+                  <For each={configsQuery.data ?? []}>{(s) => (
                     <TableRow>
                       <TableCell class="font-medium text-foreground">{s.rfc}</TableCell>
                       <TableCell class="text-muted-foreground">{s.label ?? ''}</TableCell>
@@ -210,7 +210,7 @@ export default function SatConfigs(): JSX.Element {
                         </Button>
                       </TableCell>
                     </TableRow>
-                  ))}
+                  )}</For>
                 </TableBody>
               </Table>
             </Show>
