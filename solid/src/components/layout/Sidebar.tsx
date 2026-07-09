@@ -144,7 +144,7 @@ export function Sidebar(): JSX.Element {
 
       {/* Mobile scrim */}
       <Show when={mobileNavOpen()}>
-        <div class="fixed inset-0 z-20 bg-black/40 md:hidden" onClick={() => setMobileNavOpen(false)} />
+        <div class="fixed inset-0 z-20 bg-black/40 min-[900px]:hidden" onClick={() => setMobileNavOpen(false)} />
       </Show>
     </>
   )
