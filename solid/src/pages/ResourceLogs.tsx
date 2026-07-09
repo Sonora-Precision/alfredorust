@@ -214,67 +214,127 @@ export default function ResourceLogs(): JSX.Element {
                 </CardContent>
               }
             >
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableHeadCell>Proyecto</TableHeadCell>
-                    <TableHeadCell>Fase</TableHeadCell>
-                    <TableHeadCell>Recurso</TableHeadCell>
-                    <TableHeadCell>Inicio</TableHeadCell>
-                    <TableHeadCell>Fin</TableHeadCell>
-                    <TableHeadCell>Horas</TableHeadCell>
-                    <TableHeadCell>Operador</TableHeadCell>
-                    <Show when={isAdmin()}>
-                      <TableHeadCell class="text-right">Acciones</TableHeadCell>
-                    </Show>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  <For each={logsQuery.data ?? []}>{(log) => {
-                    const open = log.ended_at == null
-                    return (
-                      <TableRow>
-                        <TableCell class="text-muted-foreground">{projectName(log.project_id)}</TableCell>
-                        <TableCell>{log.phase ?? ''}</TableCell>
-                        <TableCell>{log.resource_name ?? ''}</TableCell>
-                        <TableCell class="tnum text-muted-foreground">{rfc3339ToLocalDt(log.started_at)}</TableCell>
-                        <TableCell class="tnum text-muted-foreground">
-                          {log.ended_at ? rfc3339ToLocalDt(log.ended_at) : ''}
-                        </TableCell>
-                        <TableCell class="tnum">{log.duration_hours != null ? log.duration_hours.toFixed(2) : ''}</TableCell>
-                        <TableCell>{log.operator_name ?? ''}</TableCell>
-                        <Show when={isAdmin()}>
-                          <TableCell class="text-right">
-                            <div class="flex justify-end gap-1">
-                              <Show when={open}>
+              {/* Desktop: table. Mobile (<md): stacked cards. */}
+              <div class="hidden md:block">
+                <Table>
+                  <TableHead>
+                    <TableRow>
+                      <TableHeadCell>Proyecto</TableHeadCell>
+                      <TableHeadCell>Fase</TableHeadCell>
+                      <TableHeadCell>Recurso</TableHeadCell>
+                      <TableHeadCell>Inicio</TableHeadCell>
+                      <TableHeadCell>Fin</TableHeadCell>
+                      <TableHeadCell>Horas</TableHeadCell>
+                      <TableHeadCell>Operador</TableHeadCell>
+                      <Show when={isAdmin()}>
+                        <TableHeadCell class="text-right">Acciones</TableHeadCell>
+                      </Show>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    <For each={logsQuery.data ?? []}>{(log) => {
+                      const open = log.ended_at == null
+                      return (
+                        <TableRow>
+                          <TableCell class="text-muted-foreground">{projectName(log.project_id)}</TableCell>
+                          <TableCell>{log.phase ?? ''}</TableCell>
+                          <TableCell>{log.resource_name ?? ''}</TableCell>
+                          <TableCell class="tnum text-muted-foreground">{rfc3339ToLocalDt(log.started_at)}</TableCell>
+                          <TableCell class="tnum text-muted-foreground">
+                            {log.ended_at ? rfc3339ToLocalDt(log.ended_at) : ''}
+                          </TableCell>
+                          <TableCell class="tnum">{log.duration_hours != null ? log.duration_hours.toFixed(2) : ''}</TableCell>
+                          <TableCell>{log.operator_name ?? ''}</TableCell>
+                          <Show when={isAdmin()}>
+                            <TableCell class="text-right">
+                              <div class="flex justify-end gap-1">
+                                <Show when={open}>
+                                  <Button
+                                    variant="ghost"
+                                    class="text-emerald-700 hover:bg-emerald-50"
+                                    disabled={endMutation.isPending}
+                                    onClick={() => endMutation.mutate(log.id)}
+                                  >
+                                    Terminar
+                                  </Button>
+                                </Show>
+                                <Button variant="ghost" onClick={() => void openEdit(log)} aria-label="Editar">
+                                  <Pencil class="h-4 w-4" />
+                                </Button>
                                 <Button
                                   variant="ghost"
-                                  class="text-emerald-700 hover:bg-emerald-50"
-                                  disabled={endMutation.isPending}
-                                  onClick={() => endMutation.mutate(log.id)}
+                                  class="text-destructive hover:bg-destructive/10"
+                                  onClick={() => setDeleteTarget(log)}
+                                  aria-label="Eliminar"
                                 >
-                                  Terminar
+                                  <Trash2 class="h-4 w-4" />
                                 </Button>
-                              </Show>
-                              <Button variant="ghost" onClick={() => void openEdit(log)} aria-label="Editar">
-                                <Pencil class="h-4 w-4" />
-                              </Button>
+                              </div>
+                            </TableCell>
+                          </Show>
+                        </TableRow>
+                      )
+                    }}</For>
+                  </TableBody>
+                </Table>
+              </div>
+              <div class="space-y-2 md:hidden">
+                <For each={logsQuery.data ?? []}>{(log) => {
+                  const open = log.ended_at == null
+                  return (
+                    <div class="rounded-lg border border-border p-3">
+                      <div class="flex items-start justify-between gap-2">
+                        <p class="min-w-0 flex-1 font-medium text-foreground">
+                          {log.resource_name ?? projectName(log.project_id) ?? ''}
+                        </p>
+                        <Show when={isAdmin()}>
+                          <div class="flex shrink-0 gap-1">
+                            <Show when={open}>
                               <Button
                                 variant="ghost"
-                                class="text-destructive hover:bg-destructive/10"
-                                onClick={() => setDeleteTarget(log)}
-                                aria-label="Eliminar"
+                                class="text-emerald-700 hover:bg-emerald-50"
+                                disabled={endMutation.isPending}
+                                onClick={() => endMutation.mutate(log.id)}
                               >
-                                <Trash2 class="h-4 w-4" />
+                                Terminar
                               </Button>
-                            </div>
-                          </TableCell>
+                            </Show>
+                            <Button variant="ghost" onClick={() => void openEdit(log)} aria-label="Editar">
+                              <Pencil class="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              class="text-destructive hover:bg-destructive/10"
+                              onClick={() => setDeleteTarget(log)}
+                              aria-label="Eliminar"
+                            >
+                              <Trash2 class="h-4 w-4" />
+                            </Button>
+                          </div>
                         </Show>
-                      </TableRow>
-                    )
-                  }}</For>
-                </TableBody>
-              </Table>
+                      </div>
+                      <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                        <Show when={projectName(log.project_id) !== ''}>
+                          <span class="text-muted-foreground">{projectName(log.project_id)}</span>
+                        </Show>
+                        <Show when={log.phase}>
+                          <span class="text-muted-foreground">{log.phase}</span>
+                        </Show>
+                        <span class="tnum text-muted-foreground">
+                          {rfc3339ToLocalDt(log.started_at)}
+                          {log.ended_at ? ` → ${rfc3339ToLocalDt(log.ended_at)}` : ''}
+                        </span>
+                        <Show when={log.duration_hours != null}>
+                          <span class="tnum text-muted-foreground">{log.duration_hours!.toFixed(2)} h</span>
+                        </Show>
+                        <Show when={log.operator_name}>
+                          <span class="text-muted-foreground">{log.operator_name}</span>
+                        </Show>
+                      </div>
+                    </div>
+                  )
+                }}</For>
+              </div>
             </Show>
           </Show>
         </Show>

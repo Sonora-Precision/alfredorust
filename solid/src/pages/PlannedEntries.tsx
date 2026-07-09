@@ -341,73 +341,123 @@ export default function PlannedEntries(): JSX.Element {
                 </CardContent>
               }
             >
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <Show when={isAdmin()}>
-                      <TableHeadCell class="w-8" />
-                    </Show>
-                    <TableHeadCell>Nombre</TableHeadCell>
-                    <TableHeadCell>Flujo</TableHeadCell>
-                    <TableHeadCell>Monto</TableHeadCell>
-                    <TableHeadCell>Vence</TableHeadCell>
-                    <TableHeadCell>Estado</TableHeadCell>
-                    <Show when={isAdmin()}>
-                      <TableHeadCell class="text-right">Acciones</TableHeadCell>
-                    </Show>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  <For each={entriesQuery.data ?? []}>{(e) => (
+              <div class="hidden md:block">
+                <Table>
+                  <TableHead>
                     <TableRow>
                       <Show when={isAdmin()}>
+                        <TableHeadCell class="w-8" />
+                      </Show>
+                      <TableHeadCell>Nombre</TableHeadCell>
+                      <TableHeadCell>Flujo</TableHeadCell>
+                      <TableHeadCell>Monto</TableHeadCell>
+                      <TableHeadCell>Vence</TableHeadCell>
+                      <TableHeadCell>Estado</TableHeadCell>
+                      <Show when={isAdmin()}>
+                        <TableHeadCell class="text-right">Acciones</TableHeadCell>
+                      </Show>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    <For each={entriesQuery.data ?? []}>{(e) => (
+                      <TableRow>
+                        <Show when={isAdmin()}>
+                          <TableCell>
+                            <input
+                              type="checkbox"
+                              class="h-4 w-4 rounded border-input"
+                              checked={selected().has(e.id)}
+                              onChange={() => toggleSelected(e.id)}
+                            />
+                          </TableCell>
+                        </Show>
+                        <TableCell class="font-medium text-foreground">{e.name}</TableCell>
                         <TableCell>
+                          <Badge tone={flowBadgeProps(e.flow_type).tone}>{flowBadgeProps(e.flow_type).label}</Badge>
+                        </TableCell>
+                        <TableCell class="tnum">{money(e.amount_estimated)}</TableCell>
+                        <TableCell class="tnum text-muted-foreground">{e.due_date}</TableCell>
+                        <TableCell>
+                          <Badge tone={statusBadgeTone(statusLabel(e))}>{statusLabel(e)}</Badge>
+                        </TableCell>
+                        <Show when={isAdmin()}>
+                          <TableCell class="text-right">
+                            <div class="flex justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                class="text-emerald-600 hover:bg-emerald-500/10"
+                                onClick={() => beginPay(e)}
+                                aria-label="Pagar"
+                              >
+                                <Banknote class="h-4 w-4" />
+                              </Button>
+                              <Button variant="ghost" onClick={() => void openEdit(e)} aria-label="Editar">
+                                <Pencil class="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                class="text-destructive hover:bg-destructive/10"
+                                onClick={() => setDeleteTarget(e)}
+                                aria-label="Eliminar"
+                              >
+                                <Trash2 class="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </Show>
+                      </TableRow>
+                    )}</For>
+                  </TableBody>
+                </Table>
+              </div>
+              <div class="space-y-2 md:hidden">
+                <For each={entriesQuery.data ?? []}>{(e) => (
+                  <div class="rounded-lg border border-border p-3">
+                    <div class="flex items-start justify-between gap-2">
+                      <div class="flex min-w-0 flex-1 items-start gap-2">
+                        <Show when={isAdmin()}>
                           <input
                             type="checkbox"
-                            class="h-4 w-4 rounded border-input"
+                            class="mt-0.5 h-4 w-4 shrink-0 rounded border-input"
                             checked={selected().has(e.id)}
                             onChange={() => toggleSelected(e.id)}
                           />
-                        </TableCell>
-                      </Show>
-                      <TableCell class="font-medium text-foreground">{e.name}</TableCell>
-                      <TableCell>
-                        <Badge tone={flowBadgeProps(e.flow_type).tone}>{flowBadgeProps(e.flow_type).label}</Badge>
-                      </TableCell>
-                      <TableCell class="tnum">{money(e.amount_estimated)}</TableCell>
-                      <TableCell class="tnum text-muted-foreground">{e.due_date}</TableCell>
-                      <TableCell>
-                        <Badge tone={statusBadgeTone(statusLabel(e))}>{statusLabel(e)}</Badge>
-                      </TableCell>
+                        </Show>
+                        <p class="min-w-0 flex-1 font-medium text-foreground">{e.name}</p>
+                      </div>
                       <Show when={isAdmin()}>
-                        <TableCell class="text-right">
-                          <div class="flex justify-end gap-1">
-                            <Button
-                              variant="ghost"
-                              class="text-emerald-600 hover:bg-emerald-500/10"
-                              onClick={() => beginPay(e)}
-                              aria-label="Pagar"
-                            >
-                              <Banknote class="h-4 w-4" />
-                            </Button>
-                            <Button variant="ghost" onClick={() => void openEdit(e)} aria-label="Editar">
-                              <Pencil class="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              class="text-destructive hover:bg-destructive/10"
-                              onClick={() => setDeleteTarget(e)}
-                              aria-label="Eliminar"
-                            >
-                              <Trash2 class="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
+                        <div class="flex shrink-0 gap-1">
+                          <Button
+                            variant="ghost"
+                            class="text-emerald-600 hover:bg-emerald-500/10"
+                            onClick={() => beginPay(e)}
+                            aria-label="Pagar"
+                          >
+                            <Banknote class="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" onClick={() => void openEdit(e)} aria-label="Editar">
+                            <Pencil class="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            class="text-destructive hover:bg-destructive/10"
+                            onClick={() => setDeleteTarget(e)}
+                            aria-label="Eliminar"
+                          >
+                            <Trash2 class="h-4 w-4" />
+                          </Button>
+                        </div>
                       </Show>
-                    </TableRow>
-                  )}</For>
-                </TableBody>
-              </Table>
+                    </div>
+                    <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                      <Badge tone={flowBadgeProps(e.flow_type).tone}>{flowBadgeProps(e.flow_type).label}</Badge>
+                      <Badge tone={statusBadgeTone(statusLabel(e))}>{statusLabel(e)}</Badge>
+                      <span class="tnum font-medium text-foreground">{money(e.amount_estimated)}</span>
+                      <span class="tnum text-muted-foreground">Vence {e.due_date}</span>
+                    </div>
+                  </div>
+                )}</For>
+              </div>
             </Show>
           </Show>
         </Show>

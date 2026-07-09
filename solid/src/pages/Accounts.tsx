@@ -190,50 +190,83 @@ export default function Accounts(): JSX.Element {
                 </CardContent>
               }
             >
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableHeadCell>Nombre</TableHeadCell>
-                    <TableHeadCell>Tipo</TableHeadCell>
-                    <TableHeadCell>Moneda</TableHeadCell>
-                    <TableHeadCell>Estado</TableHeadCell>
-                    <Show when={isAdmin()}>
-                      <TableHeadCell class="text-right">Acciones</TableHeadCell>
-                    </Show>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  <For each={accountsQuery.data ?? []}>{(acc) => (
+              {/* Desktop: table. Mobile (<md): stacked cards so nothing gets
+                  cramped into a horizontal scroll. */}
+              <div class="hidden md:block">
+                <Table>
+                  <TableHead>
                     <TableRow>
-                      <TableCell class="font-medium text-foreground">{acc.name}</TableCell>
-                      <TableCell>
-                        <Badge tone={typeBadgeTone}>{accountTypeLabel(acc.account_type)}</Badge>
-                      </TableCell>
-                      <TableCell class="text-muted-foreground">{acc.currency}</TableCell>
-                      <TableCell>
-                        <Badge tone={boolBadgeTone(acc.is_active)}>{acc.is_active ? 'Activa' : 'Inactiva'}</Badge>
-                      </TableCell>
+                      <TableHeadCell>Nombre</TableHeadCell>
+                      <TableHeadCell>Tipo</TableHeadCell>
+                      <TableHeadCell>Moneda</TableHeadCell>
+                      <TableHeadCell>Estado</TableHeadCell>
                       <Show when={isAdmin()}>
-                        <TableCell class="text-right">
-                          <div class="flex justify-end gap-1">
-                            <Button variant="ghost" onClick={() => void openEdit(acc)} aria-label="Editar">
-                              <Pencil class="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              class="text-destructive hover:bg-destructive/10"
-                              onClick={() => setDeleteTarget(acc)}
-                              aria-label="Eliminar"
-                            >
-                              <Trash2 class="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
+                        <TableHeadCell class="text-right">Acciones</TableHeadCell>
                       </Show>
                     </TableRow>
-                  )}</For>
-                </TableBody>
-              </Table>
+                  </TableHead>
+                  <TableBody>
+                    <For each={accountsQuery.data ?? []}>{(acc) => (
+                      <TableRow>
+                        <TableCell class="font-medium text-foreground">{acc.name}</TableCell>
+                        <TableCell>
+                          <Badge tone={typeBadgeTone}>{accountTypeLabel(acc.account_type)}</Badge>
+                        </TableCell>
+                        <TableCell class="text-muted-foreground">{acc.currency}</TableCell>
+                        <TableCell>
+                          <Badge tone={boolBadgeTone(acc.is_active)}>{acc.is_active ? 'Activa' : 'Inactiva'}</Badge>
+                        </TableCell>
+                        <Show when={isAdmin()}>
+                          <TableCell class="text-right">
+                            <div class="flex justify-end gap-1">
+                              <Button variant="ghost" onClick={() => void openEdit(acc)} aria-label="Editar">
+                                <Pencil class="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                class="text-destructive hover:bg-destructive/10"
+                                onClick={() => setDeleteTarget(acc)}
+                                aria-label="Eliminar"
+                              >
+                                <Trash2 class="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </Show>
+                      </TableRow>
+                    )}</For>
+                  </TableBody>
+                </Table>
+              </div>
+              <div class="space-y-2 md:hidden">
+                <For each={accountsQuery.data ?? []}>{(acc) => (
+                  <div class="rounded-lg border border-border p-3">
+                    <div class="flex items-start justify-between gap-2">
+                      <p class="min-w-0 flex-1 font-medium text-foreground">{acc.name}</p>
+                      <Show when={isAdmin()}>
+                        <div class="flex shrink-0 gap-1">
+                          <Button variant="ghost" onClick={() => void openEdit(acc)} aria-label="Editar">
+                            <Pencil class="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            class="text-destructive hover:bg-destructive/10"
+                            onClick={() => setDeleteTarget(acc)}
+                            aria-label="Eliminar"
+                          >
+                            <Trash2 class="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </Show>
+                    </div>
+                    <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                      <Badge tone={typeBadgeTone}>{accountTypeLabel(acc.account_type)}</Badge>
+                      <Badge tone={boolBadgeTone(acc.is_active)}>{acc.is_active ? 'Activa' : 'Inactiva'}</Badge>
+                      <span class="text-muted-foreground">{acc.currency}</span>
+                    </div>
+                  </div>
+                )}</For>
+              </div>
             </Show>
           </Show>
         </Show>

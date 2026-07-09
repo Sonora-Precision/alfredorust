@@ -183,22 +183,45 @@ export default function SatConfigs(): JSX.Element {
                 </CardContent>
               }
             >
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableHeadCell>RFC</TableHeadCell>
-                    <TableHeadCell>Etiqueta</TableHeadCell>
-                    <TableHeadCell>Creada</TableHeadCell>
-                    <TableHeadCell class="text-right">Acciones</TableHeadCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  <For each={configsQuery.data ?? []}>{(s) => (
+              {/* Desktop: table. Mobile (<md): stacked cards. */}
+              <div class="hidden md:block">
+                <Table>
+                  <TableHead>
                     <TableRow>
-                      <TableCell class="font-medium text-foreground">{s.rfc}</TableCell>
-                      <TableCell class="text-muted-foreground">{s.label ?? ''}</TableCell>
-                      <TableCell class="tnum text-muted-foreground">{rfc3339ToDate(s.created_at)}</TableCell>
-                      <TableCell class="text-right">
+                      <TableHeadCell>RFC</TableHeadCell>
+                      <TableHeadCell>Etiqueta</TableHeadCell>
+                      <TableHeadCell>Creada</TableHeadCell>
+                      <TableHeadCell class="text-right">Acciones</TableHeadCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    <For each={configsQuery.data ?? []}>{(s) => (
+                      <TableRow>
+                        <TableCell class="font-medium text-foreground">{s.rfc}</TableCell>
+                        <TableCell class="text-muted-foreground">{s.label ?? ''}</TableCell>
+                        <TableCell class="tnum text-muted-foreground">{rfc3339ToDate(s.created_at)}</TableCell>
+                        <TableCell class="text-right">
+                          <Button
+                            variant="ghost"
+                            class="text-destructive hover:bg-destructive/10"
+                            disabled={deleteMutation.isPending}
+                            onClick={() => deleteMutation.mutate(s.id)}
+                            aria-label="Eliminar"
+                          >
+                            <Trash2 class="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    )}</For>
+                  </TableBody>
+                </Table>
+              </div>
+              <div class="space-y-2 md:hidden">
+                <For each={configsQuery.data ?? []}>{(s) => (
+                  <div class="rounded-lg border border-border p-3">
+                    <div class="flex items-start justify-between gap-2">
+                      <p class="min-w-0 flex-1 font-medium text-foreground">{s.rfc}</p>
+                      <div class="flex shrink-0 gap-1">
                         <Button
                           variant="ghost"
                           class="text-destructive hover:bg-destructive/10"
@@ -208,11 +231,17 @@ export default function SatConfigs(): JSX.Element {
                         >
                           <Trash2 class="h-4 w-4" />
                         </Button>
-                      </TableCell>
-                    </TableRow>
-                  )}</For>
-                </TableBody>
-              </Table>
+                      </div>
+                    </div>
+                    <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                      <Show when={s.label}>
+                        <span class="text-muted-foreground">{s.label}</span>
+                      </Show>
+                      <span class="tnum text-muted-foreground">{rfc3339ToDate(s.created_at)}</span>
+                    </div>
+                  </div>
+                )}</For>
+              </div>
             </Show>
           </Show>
         </Show>

@@ -220,76 +220,131 @@ export default function Projects(): JSX.Element {
                 </CardContent>
               }
             >
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableHeadCell>Título</TableHeadCell>
-                    <TableHeadCell>Estado</TableHeadCell>
-                    <TableHeadCell>Prioridad</TableHeadCell>
-                    <Show when={canMoney()}>
-                      <TableHeadCell>Presupuesto</TableHeadCell>
-                    </Show>
-                    <TableHeadCell>Fecha límite</TableHeadCell>
-                    <TableHeadCell class="text-right">Acciones</TableHeadCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  <For each={projectsQuery.data ?? []}>{(p) => {
-                    const statusLabel = p.status_label || p.status
-                    const priorityLabel = p.priority_label || p.priority
-                    return (
-                      <TableRow>
-                        <TableCell class="font-medium text-foreground">{p.title}</TableCell>
-                        <TableCell>
-                          <Badge tone={statusBadgeTone(statusLabel)}>{statusLabel}</Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge tone={priorityBadgeTone(p.priority)}>{priorityLabel}</Badge>
-                        </TableCell>
-                        <Show when={canMoney()}>
-                          <TableCell class="tnum text-muted-foreground">
-                            {p.total_budget != null ? money(p.total_budget) : ''}
+              {/* Desktop: table. Mobile (<md): stacked cards. */}
+              <div class="hidden md:block">
+                <Table>
+                  <TableHead>
+                    <TableRow>
+                      <TableHeadCell>Título</TableHeadCell>
+                      <TableHeadCell>Estado</TableHeadCell>
+                      <TableHeadCell>Prioridad</TableHeadCell>
+                      <Show when={canMoney()}>
+                        <TableHeadCell>Presupuesto</TableHeadCell>
+                      </Show>
+                      <TableHeadCell>Fecha límite</TableHeadCell>
+                      <TableHeadCell class="text-right">Acciones</TableHeadCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    <For each={projectsQuery.data ?? []}>{(p) => {
+                      const statusLabel = p.status_label || p.status
+                      const priorityLabel = p.priority_label || p.priority
+                      return (
+                        <TableRow>
+                          <TableCell class="font-medium text-foreground">{p.title}</TableCell>
+                          <TableCell>
+                            <Badge tone={statusBadgeTone(statusLabel)}>{statusLabel}</Badge>
                           </TableCell>
-                        </Show>
-                        <TableCell class="tnum text-muted-foreground">
-                          {p.scheduled_at ? rfc3339ToDate(p.scheduled_at) : ''}
-                        </TableCell>
-                        <TableCell class="text-right">
-                          <div class="flex justify-end gap-1">
-                            <A
-                              href={`/projects/${p.id}`}
-                              class="inline-flex items-center rounded-md px-3 py-2 text-sm font-medium text-foreground hover:bg-muted"
+                          <TableCell>
+                            <Badge tone={priorityBadgeTone(p.priority)}>{priorityLabel}</Badge>
+                          </TableCell>
+                          <Show when={canMoney()}>
+                            <TableCell class="tnum text-muted-foreground">
+                              {p.total_budget != null ? money(p.total_budget) : ''}
+                            </TableCell>
+                          </Show>
+                          <TableCell class="tnum text-muted-foreground">
+                            {p.scheduled_at ? rfc3339ToDate(p.scheduled_at) : ''}
+                          </TableCell>
+                          <TableCell class="text-right">
+                            <div class="flex justify-end gap-1">
+                              <A
+                                href={`/projects/${p.id}`}
+                                class="inline-flex items-center rounded-md px-3 py-2 text-sm font-medium text-foreground hover:bg-muted"
+                              >
+                                Ver
+                              </A>
+                              <Show when={isAdmin()}>
+                                <Button
+                                  variant="ghost"
+                                  class="text-emerald-700 hover:bg-emerald-50"
+                                  disabled={advanceMutation.isPending}
+                                  onClick={() => advanceMutation.mutate(p.id)}
+                                >
+                                  Avanzar
+                                </Button>
+                                <Button variant="ghost" onClick={() => void openEdit(p)} aria-label="Editar">
+                                  <Pencil class="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  class="text-destructive hover:bg-destructive/10"
+                                  onClick={() => setDeleteTarget(p)}
+                                  aria-label="Eliminar"
+                                >
+                                  <Trash2 class="h-4 w-4" />
+                                </Button>
+                              </Show>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    }}</For>
+                  </TableBody>
+                </Table>
+              </div>
+              <div class="space-y-2 md:hidden">
+                <For each={projectsQuery.data ?? []}>{(p) => {
+                  const statusLabel = p.status_label || p.status
+                  const priorityLabel = p.priority_label || p.priority
+                  return (
+                    <div class="rounded-lg border border-border p-3">
+                      <div class="flex items-start justify-between gap-2">
+                        <p class="min-w-0 flex-1 font-medium text-foreground">{p.title}</p>
+                        <div class="flex shrink-0 gap-1">
+                          <A
+                            href={`/projects/${p.id}`}
+                            class="inline-flex items-center rounded-md px-3 py-2 text-sm font-medium text-foreground hover:bg-muted"
+                          >
+                            Ver
+                          </A>
+                          <Show when={isAdmin()}>
+                            <Button
+                              variant="ghost"
+                              class="text-emerald-700 hover:bg-emerald-50"
+                              disabled={advanceMutation.isPending}
+                              onClick={() => advanceMutation.mutate(p.id)}
                             >
-                              Ver
-                            </A>
-                            <Show when={isAdmin()}>
-                              <Button
-                                variant="ghost"
-                                class="text-emerald-700 hover:bg-emerald-50"
-                                disabled={advanceMutation.isPending}
-                                onClick={() => advanceMutation.mutate(p.id)}
-                              >
-                                Avanzar
-                              </Button>
-                              <Button variant="ghost" onClick={() => void openEdit(p)} aria-label="Editar">
-                                <Pencil class="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                class="text-destructive hover:bg-destructive/10"
-                                onClick={() => setDeleteTarget(p)}
-                                aria-label="Eliminar"
-                              >
-                                <Trash2 class="h-4 w-4" />
-                              </Button>
-                            </Show>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    )
-                  }}</For>
-                </TableBody>
-              </Table>
+                              Avanzar
+                            </Button>
+                            <Button variant="ghost" onClick={() => void openEdit(p)} aria-label="Editar">
+                              <Pencil class="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              class="text-destructive hover:bg-destructive/10"
+                              onClick={() => setDeleteTarget(p)}
+                              aria-label="Eliminar"
+                            >
+                              <Trash2 class="h-4 w-4" />
+                            </Button>
+                          </Show>
+                        </div>
+                      </div>
+                      <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                        <Badge tone={statusBadgeTone(statusLabel)}>{statusLabel}</Badge>
+                        <Badge tone={priorityBadgeTone(p.priority)}>{priorityLabel}</Badge>
+                        <Show when={canMoney() && p.total_budget != null}>
+                          <span class="font-medium text-foreground tnum">{money(p.total_budget!)}</span>
+                        </Show>
+                        <Show when={p.scheduled_at}>
+                          <span class="text-muted-foreground tnum">{rfc3339ToDate(p.scheduled_at!)}</span>
+                        </Show>
+                      </div>
+                    </div>
+                  )
+                }}</For>
+              </div>
             </Show>
           </Show>
         </Show>

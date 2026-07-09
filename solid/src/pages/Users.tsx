@@ -282,46 +282,79 @@ export default function Users(): JSX.Element {
                 </CardContent>
               }
             >
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableHeadCell>Usuario</TableHeadCell>
-                    <TableHeadCell>Compañías</TableHeadCell>
-                    <TableHeadCell>Rol</TableHeadCell>
-                    <TableHeadCell class="text-right">Acciones</TableHeadCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  <For each={usersQuery.data ?? []}>{(u) => (
+              {/* Desktop: table. Mobile (<md): stacked cards. */}
+              <div class="hidden md:block">
+                <Table>
+                  <TableHead>
                     <TableRow>
-                      <TableCell class="font-medium text-foreground">{u.username}</TableCell>
-                      <TableCell class="text-muted-foreground">{u.companies.join(', ')}</TableCell>
-                      <TableCell>
-                        <Badge tone={roleBadgeTone(u.role)} class="uppercase">
-                          {u.role}
-                        </Badge>
-                      </TableCell>
-                      <TableCell class="text-right">
-                        <div class="flex justify-end gap-1">
-                          <Button variant="ghost" onClick={() => void openEdit(u)} aria-label="Editar">
-                            <Pencil class="h-4 w-4" />
-                          </Button>
-                          <Show when={u.username !== auth.user()}>
-                            <Button
-                              variant="ghost"
-                              class="text-destructive hover:bg-destructive/10"
-                              onClick={() => setDeleteTarget(u)}
-                              aria-label="Eliminar"
-                            >
-                              <Trash2 class="h-4 w-4" />
-                            </Button>
-                          </Show>
-                        </div>
-                      </TableCell>
+                      <TableHeadCell>Usuario</TableHeadCell>
+                      <TableHeadCell>Compañías</TableHeadCell>
+                      <TableHeadCell>Rol</TableHeadCell>
+                      <TableHeadCell class="text-right">Acciones</TableHeadCell>
                     </TableRow>
-                  )}</For>
-                </TableBody>
-              </Table>
+                  </TableHead>
+                  <TableBody>
+                    <For each={usersQuery.data ?? []}>{(u) => (
+                      <TableRow>
+                        <TableCell class="font-medium text-foreground">{u.username}</TableCell>
+                        <TableCell class="text-muted-foreground">{u.companies.join(', ')}</TableCell>
+                        <TableCell>
+                          <Badge tone={roleBadgeTone(u.role)} class="uppercase">
+                            {u.role}
+                          </Badge>
+                        </TableCell>
+                        <TableCell class="text-right">
+                          <div class="flex justify-end gap-1">
+                            <Button variant="ghost" onClick={() => void openEdit(u)} aria-label="Editar">
+                              <Pencil class="h-4 w-4" />
+                            </Button>
+                            <Show when={u.username !== auth.user()}>
+                              <Button
+                                variant="ghost"
+                                class="text-destructive hover:bg-destructive/10"
+                                onClick={() => setDeleteTarget(u)}
+                                aria-label="Eliminar"
+                              >
+                                <Trash2 class="h-4 w-4" />
+                              </Button>
+                            </Show>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )}</For>
+                  </TableBody>
+                </Table>
+              </div>
+              <div class="space-y-2 md:hidden">
+                <For each={usersQuery.data ?? []}>{(u) => (
+                  <div class="rounded-lg border border-border p-3">
+                    <div class="flex items-start justify-between gap-2">
+                      <p class="min-w-0 flex-1 font-medium text-foreground">{u.username}</p>
+                      <div class="flex shrink-0 gap-1">
+                        <Button variant="ghost" onClick={() => void openEdit(u)} aria-label="Editar">
+                          <Pencil class="h-4 w-4" />
+                        </Button>
+                        <Show when={u.username !== auth.user()}>
+                          <Button
+                            variant="ghost"
+                            class="text-destructive hover:bg-destructive/10"
+                            onClick={() => setDeleteTarget(u)}
+                            aria-label="Eliminar"
+                          >
+                            <Trash2 class="h-4 w-4" />
+                          </Button>
+                        </Show>
+                      </div>
+                    </div>
+                    <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                      <Badge tone={roleBadgeTone(u.role)} class="uppercase">{u.role}</Badge>
+                      <Show when={u.companies.length > 0}>
+                        <span class="text-muted-foreground">{u.companies.join(', ')}</span>
+                      </Show>
+                    </div>
+                  </div>
+                )}</For>
+              </div>
             </Show>
           </Show>
         </Show>

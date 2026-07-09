@@ -7,6 +7,7 @@ import { ChevronRight, Landmark, PanelLeftClose, PanelLeftOpen } from 'lucide-so
 import { For, Show, createSignal, type JSX } from 'solid-js'
 
 import { useAuth } from '../../lib/auth/AuthContext'
+import { CompanySwitcher } from './CompanySwitcher'
 import { mobileNavOpen, setMobileNavOpen, toggleSidebarCollapsed, useSidebarCollapsed } from '../../lib/layout'
 import {
   NAV,
@@ -60,6 +61,11 @@ export function Sidebar(): JSX.Element {
             <div class="text-[13px] font-semibold">alfredodev</div>
             <div class="text-[11px] text-muted-foreground">Gestión SAT</div>
           </div>
+        </div>
+
+        {/* Tenant switcher — mobile only (the topbar hosts it on ≥md). */}
+        <div class="px-3.5 pb-2 md:hidden">
+          <CompanySwitcher />
         </div>
 
         <nav class="flex-1 overflow-y-auto py-2" aria-label="Navegación principal">

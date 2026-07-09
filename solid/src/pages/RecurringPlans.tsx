@@ -229,60 +229,100 @@ export default function RecurringPlans(): JSX.Element {
                 </CardContent>
               }
             >
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableHeadCell>Nombre</TableHeadCell>
-                    <TableHeadCell>Flujo</TableHeadCell>
-                    <TableHeadCell>Monto</TableHeadCell>
-                    <TableHeadCell>Frecuencia</TableHeadCell>
-                    <TableHeadCell>Activo</TableHeadCell>
-                    <Show when={isAdmin()}>
-                      <TableHeadCell class="text-right">Acciones</TableHeadCell>
-                    </Show>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  <For each={plansQuery.data ?? []}>{(p) => (
+              <div class="hidden md:block">
+                <Table>
+                  <TableHead>
                     <TableRow>
-                      <TableCell class="font-medium text-foreground">{p.name}</TableCell>
-                      <TableCell>
-                        <Badge tone={flowBadgeProps(p.flow_type).tone}>{flowBadgeProps(p.flow_type).label}</Badge>
-                      </TableCell>
-                      <TableCell class="tnum">{money(p.amount_estimated)}</TableCell>
-                      <TableCell class="text-muted-foreground">{p.frequency}</TableCell>
-                      <TableCell>
-                        <Badge tone={boolBadgeTone(p.is_active)}>{p.is_active ? 'Sí' : 'No'}</Badge>
-                      </TableCell>
+                      <TableHeadCell>Nombre</TableHeadCell>
+                      <TableHeadCell>Flujo</TableHeadCell>
+                      <TableHeadCell>Monto</TableHeadCell>
+                      <TableHeadCell>Frecuencia</TableHeadCell>
+                      <TableHeadCell>Activo</TableHeadCell>
                       <Show when={isAdmin()}>
-                        <TableCell class="text-right">
-                          <div class="flex justify-end gap-1">
-                            <Button
-                              variant="ghost"
-                              onClick={() => generateMutation.mutate(p.id)}
-                              disabled={generateMutation.isPending}
-                              aria-label="Generar entradas"
-                            >
-                              <Play class="h-4 w-4" />
-                            </Button>
-                            <Button variant="ghost" onClick={() => void openEdit(p)} aria-label="Editar">
-                              <Pencil class="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              class="text-destructive hover:bg-destructive/10"
-                              onClick={() => setDeleteTarget(p)}
-                              aria-label="Eliminar"
-                            >
-                              <Trash2 class="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
+                        <TableHeadCell class="text-right">Acciones</TableHeadCell>
                       </Show>
                     </TableRow>
-                  )}</For>
-                </TableBody>
-              </Table>
+                  </TableHead>
+                  <TableBody>
+                    <For each={plansQuery.data ?? []}>{(p) => (
+                      <TableRow>
+                        <TableCell class="font-medium text-foreground">{p.name}</TableCell>
+                        <TableCell>
+                          <Badge tone={flowBadgeProps(p.flow_type).tone}>{flowBadgeProps(p.flow_type).label}</Badge>
+                        </TableCell>
+                        <TableCell class="tnum">{money(p.amount_estimated)}</TableCell>
+                        <TableCell class="text-muted-foreground">{p.frequency}</TableCell>
+                        <TableCell>
+                          <Badge tone={boolBadgeTone(p.is_active)}>{p.is_active ? 'Sí' : 'No'}</Badge>
+                        </TableCell>
+                        <Show when={isAdmin()}>
+                          <TableCell class="text-right">
+                            <div class="flex justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                onClick={() => generateMutation.mutate(p.id)}
+                                disabled={generateMutation.isPending}
+                                aria-label="Generar entradas"
+                              >
+                                <Play class="h-4 w-4" />
+                              </Button>
+                              <Button variant="ghost" onClick={() => void openEdit(p)} aria-label="Editar">
+                                <Pencil class="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                class="text-destructive hover:bg-destructive/10"
+                                onClick={() => setDeleteTarget(p)}
+                                aria-label="Eliminar"
+                              >
+                                <Trash2 class="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </Show>
+                      </TableRow>
+                    )}</For>
+                  </TableBody>
+                </Table>
+              </div>
+              <div class="space-y-2 md:hidden">
+                <For each={plansQuery.data ?? []}>{(p) => (
+                  <div class="rounded-lg border border-border p-3">
+                    <div class="flex items-start justify-between gap-2">
+                      <p class="min-w-0 flex-1 font-medium text-foreground">{p.name}</p>
+                      <Show when={isAdmin()}>
+                        <div class="flex shrink-0 gap-1">
+                          <Button
+                            variant="ghost"
+                            onClick={() => generateMutation.mutate(p.id)}
+                            disabled={generateMutation.isPending}
+                            aria-label="Generar entradas"
+                          >
+                            <Play class="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" onClick={() => void openEdit(p)} aria-label="Editar">
+                            <Pencil class="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            class="text-destructive hover:bg-destructive/10"
+                            onClick={() => setDeleteTarget(p)}
+                            aria-label="Eliminar"
+                          >
+                            <Trash2 class="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </Show>
+                    </div>
+                    <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                      <Badge tone={flowBadgeProps(p.flow_type).tone}>{flowBadgeProps(p.flow_type).label}</Badge>
+                      <Badge tone={boolBadgeTone(p.is_active)}>{p.is_active ? 'Sí' : 'No'}</Badge>
+                      <span class="tnum font-medium text-foreground">{money(p.amount_estimated)}</span>
+                      <span class="text-muted-foreground">{p.frequency}</span>
+                    </div>
+                  </div>
+                )}</For>
+              </div>
             </Show>
           </Show>
         </Show>

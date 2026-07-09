@@ -342,50 +342,85 @@ export default function Transactions(): JSX.Element {
                 </CardContent>
               }
             >
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableHeadCell>Fecha</TableHeadCell>
-                    <TableHeadCell>Descripción</TableHeadCell>
-                    <TableHeadCell>Tipo</TableHeadCell>
-                    <TableHeadCell>Monto</TableHeadCell>
-                    <TableHeadCell>Categoría</TableHeadCell>
-                    <Show when={isAdmin()}>
-                      <TableHeadCell class="text-right">Acciones</TableHeadCell>
-                    </Show>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  <For each={transactionsQuery.data ?? []}>{(t) => (
+              {/* Desktop: table. Mobile (<md): stacked cards. */}
+              <div class="hidden md:block">
+                <Table>
+                  <TableHead>
                     <TableRow>
-                      <TableCell class="tnum text-muted-foreground">{t.date}</TableCell>
-                      <TableCell class="font-medium text-foreground">{t.description}</TableCell>
-                      <TableCell>
-                        <Badge tone={txTypeBadgeTone(t.tx_type) as BadgeTone}>{txLabel(t.tx_type)}</Badge>
-                      </TableCell>
-                      <TableCell class="tnum">{money(t.amount)}</TableCell>
-                      <TableCell class="text-muted-foreground">{t.category ?? ''}</TableCell>
+                      <TableHeadCell>Fecha</TableHeadCell>
+                      <TableHeadCell>Descripción</TableHeadCell>
+                      <TableHeadCell>Tipo</TableHeadCell>
+                      <TableHeadCell>Monto</TableHeadCell>
+                      <TableHeadCell>Categoría</TableHeadCell>
                       <Show when={isAdmin()}>
-                        <TableCell class="text-right">
-                          <div class="flex justify-end gap-1">
-                            <Button variant="ghost" onClick={() => void openEdit(t)} aria-label="Editar">
-                              <Pencil class="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              class="text-destructive hover:bg-destructive/10"
-                              onClick={() => setDeleteTarget(t)}
-                              aria-label="Eliminar"
-                            >
-                              <Trash2 class="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
+                        <TableHeadCell class="text-right">Acciones</TableHeadCell>
                       </Show>
                     </TableRow>
-                  )}</For>
-                </TableBody>
-              </Table>
+                  </TableHead>
+                  <TableBody>
+                    <For each={transactionsQuery.data ?? []}>{(t) => (
+                      <TableRow>
+                        <TableCell class="tnum text-muted-foreground">{t.date}</TableCell>
+                        <TableCell class="font-medium text-foreground">{t.description}</TableCell>
+                        <TableCell>
+                          <Badge tone={txTypeBadgeTone(t.tx_type) as BadgeTone}>{txLabel(t.tx_type)}</Badge>
+                        </TableCell>
+                        <TableCell class="tnum">{money(t.amount)}</TableCell>
+                        <TableCell class="text-muted-foreground">{t.category ?? ''}</TableCell>
+                        <Show when={isAdmin()}>
+                          <TableCell class="text-right">
+                            <div class="flex justify-end gap-1">
+                              <Button variant="ghost" onClick={() => void openEdit(t)} aria-label="Editar">
+                                <Pencil class="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                class="text-destructive hover:bg-destructive/10"
+                                onClick={() => setDeleteTarget(t)}
+                                aria-label="Eliminar"
+                              >
+                                <Trash2 class="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </Show>
+                      </TableRow>
+                    )}</For>
+                  </TableBody>
+                </Table>
+              </div>
+              <div class="space-y-2 md:hidden">
+                <For each={transactionsQuery.data ?? []}>{(t) => (
+                  <div class="rounded-lg border border-border p-3">
+                    <div class="flex items-start justify-between gap-2">
+                      <p class="min-w-0 flex-1 font-medium text-foreground">{t.description}</p>
+                      <Show when={isAdmin()}>
+                        <div class="flex shrink-0 gap-1">
+                          <Button variant="ghost" onClick={() => void openEdit(t)} aria-label="Editar">
+                            <Pencil class="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            class="text-destructive hover:bg-destructive/10"
+                            onClick={() => setDeleteTarget(t)}
+                            aria-label="Eliminar"
+                          >
+                            <Trash2 class="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </Show>
+                    </div>
+                    <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                      <Badge tone={txTypeBadgeTone(t.tx_type) as BadgeTone}>{txLabel(t.tx_type)}</Badge>
+                      <span class="font-medium text-foreground tnum">{money(t.amount)}</span>
+                      <span class="text-muted-foreground tnum">{t.date}</span>
+                      <Show when={t.category}>
+                        <span class="text-muted-foreground">{t.category}</span>
+                      </Show>
+                    </div>
+                  </div>
+                )}</For>
+              </div>
             </Show>
           </Show>
         </Show>

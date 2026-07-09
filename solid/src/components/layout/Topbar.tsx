@@ -65,7 +65,11 @@ export function Topbar(): JSX.Element {
           </button>
           <EffectsToggle />
           <ThemeToggle />
-          <CompanySwitcher />
+          {/* Tenant switcher is wide (176px) — on mobile it's moved into the ☰
+              nav drawer (see Sidebar) so the header doesn't overflow. */}
+          <div class="hidden md:block">
+            <CompanySwitcher />
+          </div>
           <Dropdown
             items={[
               { label: 'Mi cuenta', onSelect: () => navigate('/account') },
