@@ -19,34 +19,48 @@ const SHOOTER_DIRS = [
 
 // A few tints so stars aren't all the same white — cool blues, warm gold, violet.
 const STAR_TINTS = ['255,255,255', '180,210,255', '255,228,170', '210,185,255', '165,230,255']
-const STAR_COUNT = 70
+const STAR_COUNT = 66
+const STAR_TRAVELERS = 7 // stars that visibly glide across, satellite-style
 
 function buildStars(): string {
   const rnd = Math.random
   const pick = () => STAR_TINTS[Math.floor(rnd() * STAR_TINTS.length)]
   let html = ''
+  // Static + twinkling field.
   for (let i = 0; i < STAR_COUNT; i++) {
-    const drift = rnd() < 0.16 // a few stars glide smoothly (their own transform, like the satellite)
-    const bright = !drift && rnd() < 0.1 // larger/brighter "hero" stars
-    const size = drift ? 2 + rnd() * 1.6 : bright ? 3 + rnd() * 1.8 : 1.2 + rnd() * 1.8
-    const op = drift ? 0.7 + rnd() * 0.3 : bright ? 0.85 + rnd() * 0.15 : 0.3 + rnd() * 0.55
-    const bloom = drift ? 4 + rnd() * 6 : bright ? 6 + rnd() * 8 : 1.5 + rnd() * 4
+    const bright = rnd() < 0.12 // larger/brighter "hero" stars
+    const size = bright ? 3 + rnd() * 1.8 : 1.2 + rnd() * 1.8
+    const op = bright ? 0.85 + rnd() * 0.15 : 0.3 + rnd() * 0.55
+    const bloom = bright ? 6 + rnd() * 8 : 1.5 + rnd() * 4
     const c = pick()
-    // A star does at most ONE transform animation (drift XOR twinkle) so the two
-    // never fight over `transform`.
-    let motion = ''
-    if (drift) {
-      const dx = ((rnd() * 2 - 1) * (30 + rnd() * 50)).toFixed(0)
-      const dy = ((rnd() * 2 - 1) * (20 + rnd() * 40)).toFixed(0)
-      const ddur = (16 + rnd() * 22).toFixed(1)
-      motion = `--dx:${dx}px;--dy:${dy}px;animation:starDrift ${ddur}s ease-in-out ${(rnd() * 6).toFixed(1)}s infinite alternate;`
-    } else if (rnd() < 0.4) {
-      motion = `animation:twinkle ${(2.6 + rnd() * 3.5).toFixed(1)}s ease-in-out ${(rnd() * 4).toFixed(1)}s infinite;`
-    }
+    const motion = rnd() < 0.4 ? `animation:twinkle ${(2.6 + rnd() * 3.5).toFixed(1)}s ease-in-out ${(rnd() * 4).toFixed(1)}s infinite;` : ''
     html +=
       `<span style="position:absolute;left:${(rnd() * 100).toFixed(2)}%;top:${(rnd() * 100).toFixed(2)}%;` +
       `width:${size.toFixed(1)}px;height:${size.toFixed(1)}px;border-radius:50%;` +
       `background:rgba(${c},${op.toFixed(2)});box-shadow:0 0 ${bloom.toFixed(1)}px rgba(${c},${(op * 0.8).toFixed(2)});${motion}"></span>`
+  }
+
+  // A few "traveling" stars that visibly glide across the screen, like the
+  // satellite: each is one small element moving via its own linear transform
+  // (cheap). Starts off one edge and ends off the other, so the loop reset
+  // happens off-screen (no jump). Negative delay spreads them out immediately.
+  for (let i = 0; i < STAR_TRAVELERS; i++) {
+    const c = pick()
+    const size = (1.8 + rnd() * 1.8).toFixed(1)
+    const op = (0.7 + rnd() * 0.3).toFixed(2)
+    const bloom = (4 + rnd() * 6).toFixed(1)
+    const top = (4 + rnd() * 86).toFixed(1)
+    const rtl = rnd() < 0.5
+    const startLeft = rtl ? '106%' : '-6%'
+    const dx = rtl ? '-118vw' : '118vw'
+    const dy = `${((rnd() * 2 - 1) * 16).toFixed(1)}vh`
+    const dur = 26 + rnd() * 30 // ~satellite pace across the viewport
+    const delay = (-rnd() * dur).toFixed(1)
+    html +=
+      `<span style="position:absolute;left:${startLeft};top:${top}%;` +
+      `width:${size}px;height:${size}px;border-radius:50%;` +
+      `background:rgba(${c},${op});box-shadow:0 0 ${bloom}px rgba(${c},${(Number(op) * 0.8).toFixed(2)});` +
+      `--dx:${dx};--dy:${dy};animation:starDrift ${dur.toFixed(1)}s linear ${delay}s infinite;"></span>`
   }
   return html
 }
