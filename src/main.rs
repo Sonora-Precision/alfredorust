@@ -78,8 +78,6 @@ async fn main() {
         .route("/admin/users/{id}/update", post(routes::users_update))
         .route("/admin/users/{id}/delete", post(routes::users_delete))
         .route("/admin/users/{id}/qrcode", get(routes::users_qrcode))
-        .route("/pdf", get(routes::pdf_editor))
-        .route("/pdf/preview", post(routes::pdf_preview))
         .route("/api/me", get(routes::me))
         .route("/api/me/companies", get(routes::me_companies))
         .route(

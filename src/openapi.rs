@@ -49,7 +49,6 @@ impl Modify for SecurityAddon {
         crate::routes::profile::me_companies,
         crate::routes::profile::me,
         crate::routes::tiempo::tiempo_data,
-        crate::routes::pdf::pdf_preview,
         crate::routes::admin::account::account_profile_data_api,
         crate::routes::admin::account::account_profile_update_api,
 

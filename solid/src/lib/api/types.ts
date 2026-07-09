@@ -714,10 +714,3 @@ export interface TimelineBucket {
 
 export type TimelineMode = 'day' | 'week' | 'month' | 'year'
 
-// --- PDF preview -----------------------------------------------------------------------
-
-export interface PdfPreviewResponse {
-  ok: boolean
-  pdf_base64: string | null
-  error: string | null
-}

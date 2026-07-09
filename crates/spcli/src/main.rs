@@ -1,6 +1,6 @@
 #![recursion_limit = "512"]
 
-use std::{env, fs, io::Read, path::PathBuf, process::ExitCode};
+use std::{env, fs, path::PathBuf, process::ExitCode};
 
 use aes_gcm::{
     Aes256Gcm, Nonce,
@@ -105,10 +105,6 @@ enum Command {
     Time {
         #[command(subcommand)]
         command: TimeCommand,
-    },
-    Pdf {
-        #[command(subcommand)]
-        command: PdfCommand,
     },
     Onboarding {
         #[command(subcommand)]
@@ -888,21 +884,6 @@ struct TimelineArgs {
 }
 
 #[derive(Subcommand)]
-enum PdfCommand {
-    Preview(PdfPreviewArgs),
-}
-
-#[derive(Args)]
-struct PdfPreviewArgs {
-    #[arg(long, conflicts_with = "source")]
-    input: Option<PathBuf>,
-    #[arg(long)]
-    source: Option<String>,
-    #[arg(long)]
-    output: Option<PathBuf>,
-}
-
-#[derive(Subcommand)]
 enum ListCommand {
     List,
 }
@@ -1469,9 +1450,6 @@ async fn run(cli: Cli) -> Result<()> {
         },
         Command::Time { command } => match command {
             TimeCommand::Timeline(args) => timeline(args, cli.json).await,
-        },
-        Command::Pdf { command } => match command {
-            PdfCommand::Preview(args) => pdf_preview(args, cli.json).await,
         },
         Command::Onboarding { command } => match command {
             OnboardingCommand::Status => onboarding_status(cli.json).await,
@@ -2809,41 +2787,6 @@ async fn timeline(args: TimelineArgs, json_output: bool) -> Result<()> {
     json_get_command(&path, json_output, "timeline buckets").await
 }
 
-async fn pdf_preview(args: PdfPreviewArgs, json_output: bool) -> Result<()> {
-    let source = read_pdf_source(args.input.as_ref(), args.source.as_deref())?;
-    let mut state = load_state()?;
-    let value =
-        authenticated_post_json(&mut state, "/pdf/preview", &json!({ "source": source })).await?;
-    save_state(&state)?;
-
-    if json_output {
-        print_json(&value)?;
-        return Ok(());
-    }
-
-    if value["ok"].as_bool() != Some(true) {
-        bail!(
-            "PDF preview failed: {}",
-            value["error"].as_str().unwrap_or("unknown error")
-        );
-    }
-
-    let pdf_base64 = value["pdf_base64"]
-        .as_str()
-        .ok_or_else(|| anyhow!("PDF preview response did not include pdf_base64"))?;
-    if let Some(output) = args.output {
-        let bytes = data_encoding::BASE64
-            .decode(pdf_base64.as_bytes())
-            .map_err(|_| anyhow!("PDF preview response contained invalid base64"))?;
-        fs::write(&output, bytes)
-            .with_context(|| format!("failed to write {}", output.display()))?;
-        println!("PDF written to {}", output.display());
-    } else {
-        println!("PDF preview succeeded ({} base64 bytes).", pdf_base64.len());
-    }
-    Ok(())
-}
-
 fn print_manifest(json_output: bool) -> Result<()> {
     let manifest = json!({
         "name": "spcli",
@@ -2960,7 +2903,6 @@ fn print_manifest(json_output: bool) -> Result<()> {
             { "name": "resources usages allocations list", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["usage-id"], "output_schema": "resource_usage_allocations" },
             { "name": "resources usages allocations replace", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["usage-id", "--concept-id", "--allocation"], "output_schema": "allocation_ids" },
             { "name": "time timeline", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--mode", "--from", "--to"], "output_schema": "timeline_buckets" },
-            { "name": "pdf preview", "auth_required": true, "company_required": false, "destructive": false, "arguments": ["--input", "--source", "--output"], "output_schema": "pdf_preview" },
             { "name": "onboarding status", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "onboarding_status" },
             { "name": "manifest", "auth_required": false, "company_required": false, "destructive": false }
         ],
@@ -3506,24 +3448,6 @@ fn validate_rfc3339(value: &str, name: &str) -> Result<String> {
     chrono::DateTime::parse_from_rfc3339(value)
         .with_context(|| format!("{name} must be RFC3339"))?;
     Ok(value.to_string())
-}
-
-fn read_pdf_source(input: Option<&PathBuf>, source: Option<&str>) -> Result<String> {
-    if let Some(source) = source {
-        return Ok(source.to_string());
-    }
-    if let Some(input) = input {
-        return fs::read_to_string(input)
-            .with_context(|| format!("failed to read {}", input.display()));
-    }
-    let mut source = String::new();
-    std::io::stdin()
-        .read_to_string(&mut source)
-        .context("failed to read Typst source from stdin")?;
-    if source.trim().is_empty() {
-        bail!("Typst source is required via --source, --input, or stdin");
-    }
-    Ok(source)
 }
 
 fn classify_error(err: &anyhow::Error) -> &'static str {

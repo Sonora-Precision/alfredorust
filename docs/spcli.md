@@ -230,13 +230,6 @@ Query the time timeline. `--from` and `--to` accept RFC3339 datetimes or `YYYY-M
 cargo run --bin spcli -- time timeline --mode month --from 2026-01-01 --to 2026-12-31
 ```
 
-Preview Typst PDF content from a file, inline string, or stdin:
-
-```bash
-cargo run --bin spcli -- pdf preview --input invoice.typ --output invoice.pdf
-cargo run --bin spcli -- pdf preview --source "= Hello"
-```
-
 CFDI download jobs are server in-memory records. `cfdi jobs list` and `cfdi jobs status <job-id>` only show jobs currently held by the running server process; status is lost when the app restarts unless persistent jobs are added later.
 
 Initiating a SAT CFDI download is intentionally not yet exposed in `spcli`: the current server route accepts a browser form rather than a JSON body, and the operation has external SAT side effects and job-lifecycle concerns that need a dedicated JSON endpoint and design pass first. Until then, trigger downloads from the web app; `spcli` can still read and poll the resulting jobs.
