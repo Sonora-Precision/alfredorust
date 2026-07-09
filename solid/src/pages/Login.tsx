@@ -4,14 +4,16 @@
 // (the cookies for that origin were already pre-seeded by the login
 // response); otherwise re-bootstrap /api/me in place and go to "/".
 import { useNavigate } from '@solidjs/router'
+import { Landmark } from 'lucide-solid'
 import { type JSX, Show, createSignal } from 'solid-js'
 
 import { login } from '../lib/api/auth'
 import { ApiError } from '../lib/api/client'
 import { useAuth } from '../lib/auth/AuthContext'
 import { Button } from '../components/ui/Button'
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
+import { Card } from '../components/ui/Card'
 import { Input } from '../components/ui/Input'
+import { SpaceBackground } from '../components/layout/SpaceBackground'
 
 export default function Login(): JSX.Element {
   const auth = useAuth()
@@ -47,12 +49,19 @@ export default function Login(): JSX.Element {
   }
 
   return (
-    <div class="flex min-h-screen items-center justify-center p-4">
-      <Card class="w-full max-w-sm">
-        <CardHeader>
-          <CardTitle>Iniciar sesión</CardTitle>
-        </CardHeader>
-        <CardContent>
+    <div class="min-h-screen">
+      <SpaceBackground />
+      <div class="relative z-10 flex min-h-screen items-center justify-center p-4">
+        <Card glass glow class="w-full max-w-sm p-6 sm:p-7">
+          <div class="mb-6 flex flex-col items-center gap-2.5 text-center">
+            <div class="grid h-11 w-11 place-items-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+              <Landmark class="h-6 w-6" />
+            </div>
+            <div class="leading-tight">
+              <h1 class="text-lg font-semibold tracking-tight">Iniciar sesión</h1>
+              <p class="mt-0.5 text-[12px] text-muted-foreground">Accede con tu usuario y código</p>
+            </div>
+          </div>
           <form class="space-y-4" onSubmit={submit}>
             <div class="space-y-1">
               <label class="block text-sm font-medium text-foreground">Usuario</label>
@@ -81,12 +90,12 @@ export default function Login(): JSX.Element {
               <p class="text-sm text-destructive">{error()}</p>
             </Show>
 
-            <Button type="submit" disabled={pending()} class="w-full">
+            <Button type="submit" disabled={pending()} class="magnetic w-full">
               {pending() ? 'Entrando…' : 'Entrar'}
             </Button>
           </form>
-        </CardContent>
-      </Card>
+        </Card>
+      </div>
     </div>
   )
 }
