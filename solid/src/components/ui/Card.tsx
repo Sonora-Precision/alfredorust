@@ -46,9 +46,9 @@ export function CardHeader(props: DivProps): JSX.Element {
 export function CardTitle(props: DivProps): JSX.Element {
   const [local, rest] = splitProps(props, ['class', 'children'])
   return (
-    <h3 class={cn('text-lg font-semibold leading-none tracking-tight', local.class)} {...rest}>
+    <h2 class={cn('text-lg font-semibold leading-none tracking-tight', local.class)} {...rest}>
       {local.children}
-    </h3>
+    </h2>
   )
 }
 
