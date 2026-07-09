@@ -72,6 +72,43 @@
   border-color: hsl(var(--foreground) / 0.09);
 }
 
+/* ---- "Axe 100%" A/B preview (html.axe-max, toggled by AxePreviewToggle or
+        ?axe=1). Makes the glass surfaces fully OPAQUE so automated contrast
+        checkers can measure a solid background — a comparison aid, not the
+        default. `--card`/`--muted` are theme-aware so one rule covers both. ---- */
+html.axe-max .card,
+html.axe-max .bg-glass {
+  background: hsl(var(--card));
+  /* Drop the blur too: axe can't measure contrast through a backdrop-filter
+     even when the background is fully opaque, so it must go for a clean read. */
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+html.axe-max .tile-glass {
+  background: hsl(var(--muted));
+  border-color: hsl(var(--border));
+}
+/* Topbar + demo banner use translucent Tailwind utilities + blur — opaque them
+   too so the preview transforms consistently. */
+html.axe-max header {
+  background: hsl(var(--background));
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+html.axe-max .demo-banner {
+  background: hsl(var(--muted));
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+/* Push secondary text + chart labels to full AA contrast in this preview only
+   (the var flows to .text-muted-foreground and the chart <text fill=var(...)>). */
+html.axe-max {
+  --muted-foreground: 215 32% 82%;
+}
+html.axe-max[data-theme='light'] {
+  --muted-foreground: 215 28% 30%;
+}
+
 /* Fallback when backdrop-filter isn't actually applied — older browsers, or
    macOS "Reduce transparency" / low-power mode neutralizing it (Safari still
    reports support, so we also cover it with the media query). Make the glass

@@ -10,6 +10,7 @@ import { setCmdkOpen, setMobileNavOpen } from '../../lib/layout'
 import { Badge, roleBadgeTone } from '../ui/Badge'
 import { Dropdown } from '../ui/Dropdown'
 import { CompanySwitcher } from './CompanySwitcher'
+import { AxePreviewToggle } from './AxePreviewToggle'
 import { MotionToggle } from './MotionToggle'
 import { ThemeToggle } from './ThemeToggle'
 
@@ -64,6 +65,7 @@ export function Topbar(): JSX.Element {
             <span class="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-destructive ring-2 ring-background" />
           </button>
           <MotionToggle />
+          <AxePreviewToggle />
           <ThemeToggle />
           <CompanySwitcher />
           <Dropdown

@@ -8,7 +8,7 @@ import { isDemo } from '../../lib/demo/mode'
 export function DemoBanner(): JSX.Element {
   return (
     <Show when={isDemo()}>
-      <div class="relative z-20 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 border-b border-border bg-primary/10 px-4 py-1.5 text-center text-[12px] backdrop-blur">
+      <div class="demo-banner relative z-20 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 border-b border-border bg-primary/10 px-4 py-1.5 text-center text-[12px] backdrop-blur">
         <span class="inline-flex items-center gap-1.5 font-medium text-foreground">
           <Rocket class="h-3.5 w-3.5 text-primary" />
           Demo interactiva
