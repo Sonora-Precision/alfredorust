@@ -61,7 +61,10 @@ export function setUnauthorizedHandler(handler: (() => void) | null): void {
 
 function redirectToLogin(): void {
   onUnauthorized?.()
-  if (typeof window !== 'undefined') {
+  // Don't hard-redirect when we're already on /login: the AuthContext bootstrap's
+  // own `/api/me` returns 401 while anonymous, which would otherwise reload
+  // /login forever (redirect loop). On /login we just clear auth and render it.
+  if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
     window.location.href = '/login'
   }
 }
