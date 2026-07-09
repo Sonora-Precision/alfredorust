@@ -81,8 +81,10 @@ export default function ResourceUsages(): JSX.Element {
   // --- filter bar: input-bound values vs. applied (fetch-driving) values ---
   const [date, setDate] = createSignal(todayStr())
   const [statusFilter, setStatusFilter] = createSignal('all')
-  const [appliedDate, setAppliedDate] = createSignal(date())
-  const [appliedStatus, setAppliedStatus] = createSignal(statusFilter())
+  // Seed the applied (fetch-driving) values from the same constants, not by
+  // reading the signals above (which is an untracked read at init).
+  const [appliedDate, setAppliedDate] = createSignal(todayStr())
+  const [appliedStatus, setAppliedStatus] = createSignal('all')
 
   const gridQuery = createQuery(() => ({
     queryKey: ['resource-usages', appliedDate(), appliedStatus()],

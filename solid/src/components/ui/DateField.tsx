@@ -62,7 +62,10 @@ interface DateFieldProps {
 
 export function DateField(props: DateFieldProps): JSX.Element {
   const [open, setOpen] = createSignal(false)
-  // Month currently shown in the grid — seeded from the value (or today).
+  // Month currently shown in the grid — seeded ONCE from the value (or today).
+  // Intentional untracked read: the popover mounts fresh per use and the user
+  // navigates months manually, so it need not track later value changes.
+  // eslint-disable-next-line solid/reactivity
   const initial = parse(props.value) ?? new Date()
   const [viewYear, setViewYear] = createSignal(initial.getFullYear())
   const [viewMonth, setViewMonth] = createSignal(initial.getMonth())
