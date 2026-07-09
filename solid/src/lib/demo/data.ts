@@ -279,37 +279,98 @@ const CFDI_JOBS: CfdiJob[] = [
 
 // --- timeline (tiempo) -------------------------------------------------------
 
-function buildTimeline(): TimelineBucket[] {
-  const months = [
-    { start: '2026-01-01', end: '2026-01-31', ri: 320000, re: 298500, pi: 0, pe: 0 },
-    { start: '2026-02-01', end: '2026-02-28', ri: 415000, re: 349700, pi: 0, pe: 0 },
-    { start: '2026-03-01', end: '2026-03-31', ri: 355000, re: 259800, pi: 0, pe: 0 },
-    { start: '2026-04-01', end: '2026-04-30', ri: 132000, re: 145800, pi: 0, pe: 0 },
-    { start: '2026-05-01', end: '2026-05-31', ri: 0, re: 0, pi: 390000, pe: 179000 },
-    { start: '2026-06-01', end: '2026-06-30', ri: 0, re: 0, pi: 280000, pe: 158000 },
-  ]
-  let cr = 0
-  let cp = 0
-  return months.map((m) => {
-    const net_real = m.ri - m.re
-    const net_planned = m.pi - m.pe
-    cr += net_real
-    cp += net_planned
-    return {
-      start: m.start,
-      end: m.end,
-      real_income: m.ri,
-      real_expense: m.re,
-      planned_income: m.pi,
-      planned_expense: m.pe,
-      net_real,
-      net_planned,
-      cumulative_real: cr,
-      cumulative_planned: cr + cp,
+// --- timeline (tiempo) --------------------------------------------------------
+// The Tiempo page is a virtualized scroller: it fetches buckets for a moving
+// [from,to) window and keys them by `start` (which must equal bucketAtIndex's
+// ISO). So the demo generates buckets on the fly for whatever range is asked,
+// with values that read as a real story: actuals (real_*) up to "now" then stop,
+// and a plan that continues into the future — so the two accumulated lines
+// visibly diverge past today as you scroll.
+type TLMode = 'day' | 'week' | 'month' | 'year'
+
+// Replicated 1:1 from Tiempo.tsx bucketStart/bucketAtIndex so the ISO keys match.
+function tlBucketStart(date: Date, mode: TLMode): Date {
+  const d = new Date(date.getTime())
+  switch (mode) {
+    case 'day':
+      d.setUTCHours(0, 0, 0, 0)
+      return d
+    case 'week': {
+      const weekday = (d.getUTCDay() + 6) % 7
+      d.setUTCDate(d.getUTCDate() - weekday)
+      d.setUTCHours(0, 0, 0, 0)
+      return d
+    }
+    case 'month':
+      return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1))
+    case 'year':
+      return new Date(Date.UTC(d.getUTCFullYear(), 0, 1))
+  }
+}
+function tlStep(anchor: Date, mode: TLMode, n: number): Date {
+  const d = new Date(anchor.getTime())
+  switch (mode) {
+    case 'day':
+      d.setUTCDate(d.getUTCDate() + n)
+      return d
+    case 'week':
+      d.setUTCDate(d.getUTCDate() + n * 7)
+      return d
+    case 'month':
+      return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + n, 1))
+    case 'year':
+      return new Date(Date.UTC(d.getUTCFullYear() + n, 0, 1))
+  }
+}
+/** Integer periods from the current bucket to `cur` (0 = now, <0 past, >0 future). */
+function tlPeriodsFromNow(cur: Date, now: Date, mode: TLMode): number {
+  switch (mode) {
+    case 'day':
+      return Math.round((cur.getTime() - now.getTime()) / 86_400_000)
+    case 'week':
+      return Math.round((cur.getTime() - now.getTime()) / (7 * 86_400_000))
+    case 'month':
+      return (cur.getUTCFullYear() - now.getUTCFullYear()) * 12 + (cur.getUTCMonth() - now.getUTCMonth())
+    case 'year':
+      return cur.getUTCFullYear() - now.getUTCFullYear()
+  }
+}
+
+function buildTimelineRange(modeRaw: string, fromIso: string, toIso: string): TimelineBucket[] {
+  const mode = (['day', 'week', 'month', 'year'].includes(modeRaw) ? modeRaw : 'month') as TLMode
+  const to = new Date(toIso)
+  const nowStart = tlBucketStart(new Date(), mode)
+  const out: TimelineBucket[] = []
+  let cur = tlBucketStart(new Date(fromIso), mode)
+  let guard = 0
+  const wave = (k: number, a: number, f: number, p: number) => a * Math.sin(k * f + p)
+  while (cur.getTime() < to.getTime() && guard++ < 4000) {
+    const k = tlPeriodsFromNow(cur, nowStart, mode)
+    const past = k <= 0
+    const real_income = past ? Math.round(300_000 + wave(k, 70_000, 0.6, 0) + wave(k, 26_000, 1.9, 1)) : 0
+    const real_expense = past ? Math.round(215_000 + wave(k, 44_000, 0.5, 1)) : 0
+    const planned_income = Math.round(312_000 + wave(k, 52_000, 0.55, 0.3))
+    const planned_expense = Math.round(224_000 + wave(k, 36_000, 0.5, 0.8))
+    // Deterministic per-k accumulation so lines are continuous across fetches.
+    // Real trends up until "now" then flatlines; plan keeps climbing into the future.
+    const cumRealAt = (kk: number) => 1_200_000 + 62_000 * kk + 30_000 * Math.sin(kk * 0.4)
+    out.push({
+      start: cur.toISOString(),
+      end: tlStep(cur, mode, 1).toISOString(),
+      real_income,
+      real_expense,
+      planned_income,
+      planned_expense,
+      net_real: real_income - real_expense,
+      net_planned: planned_income - planned_expense,
+      cumulative_real: Math.round(past ? cumRealAt(k) : cumRealAt(0)),
+      cumulative_planned: Math.round(1_200_000 + 70_000 * k + 40_000 * Math.sin(k * 0.35)),
       transactions: [],
       planned_entries: [],
-    }
-  })
+    })
+    cur = tlStep(cur, mode, 1)
+  }
+  return out
 }
 
 // --- admin -------------------------------------------------------------------
@@ -375,7 +436,7 @@ function resolve(path: string): unknown {
   if (path === '/api/me') return DEMO_ME
   if (path === '/api/account') return DEMO_PROFILE
   if (path === '/api/onboarding/status') return DEMO_ONBOARDING
-  if (path.startsWith('/api/tiempo')) return buildTimeline()
+  // /api/tiempo is handled in demoGet (needs the mode/from/to params).
 
   // fiscal (non-conventional /data + nested jobs)
   if (path === '/api/admin/cfdis/data') return CFDI_LIST
@@ -442,8 +503,16 @@ function resolve(path: string): unknown {
   return null
 }
 
-export async function demoGet<T>(path: string, _params?: Record<string, string | number>): Promise<T> {
+export async function demoGet<T>(path: string, params?: Record<string, string | number>): Promise<T> {
   const p = path.split('?')[0]
+  // Timeline needs the requested range (mode/from/to) to generate matching buckets.
+  if (p === '/api/tiempo' && params) {
+    return buildTimelineRange(
+      String(params.mode ?? 'month'),
+      String(params.from ?? ''),
+      String(params.to ?? ''),
+    ) as T
+  }
   const v = resolve(p)
   // Unknown endpoints default to an empty list, which renders cleanly.
   return (v ?? []) as T
