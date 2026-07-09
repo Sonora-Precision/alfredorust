@@ -42,6 +42,12 @@
 }
 .card.glow-edge:hover::before { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .card.glow-edge::before { display: none; } }
+/* Light theme: the cyan glow is faint on white — make it thicker + more vivid. */
+[data-theme='light'] .card.glow-edge::before {
+  padding: 1.5px;
+  background: radial-gradient(240px circle at var(--mx, 50%) var(--my, 50%),
+    hsl(199 98% 48% / 1), hsl(275 90% 58% / 0.55) 42%, transparent 72%);
+}
 
 /* ---- Floating overlay glass (menus, modals, drawers, toasts) ---- */
 .bg-glass {
@@ -141,7 +147,7 @@
    Static (no drift): moving the field behind the frosted cards re-blurs every
    frame and felt laggy; a subset twinkles for life instead. */
 #space #starfield { position: absolute; inset: 0; }
-[data-theme='light'] #space #starfield { opacity: 0.32; }
+[data-theme='light'] #space #starfield { opacity: 0.7; }
 /* A few stars drift smoothly like the satellite: each is a tiny element moving
    via its own transform (GPU-composited, cheap), NOT the whole field. Uses
    `alternate` so it eases out and back with no loop jump. Per-star --dx/--dy. */

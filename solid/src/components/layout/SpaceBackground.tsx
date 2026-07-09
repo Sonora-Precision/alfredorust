@@ -5,10 +5,11 @@
 // parallax — moving the whole field behind the frosted-glass cards forced a
 // per-frame re-blur that felt laggy. All motion is skipped under motionReduced()
 // (CSS honours the same via the html:not(.force-motion) reduced-motion guard).
-import { onCleanup, onMount } from 'solid-js'
+import { createEffect, onCleanup, onMount } from 'solid-js'
 import { Satellite } from 'lucide-solid'
 
 import { motionReduced } from '../../lib/motion'
+import { useTheme } from '../../lib/theme'
 
 const SHOOTER_DIRS = [
   { angle: 22, x: [0, 32], y: [-6, 18] },
@@ -17,14 +18,16 @@ const SHOOTER_DIRS = [
   { angle: 202, x: [62, 96], y: [52, 80] },
 ]
 
-// A few tints so stars aren't all the same white — cool blues, warm gold, violet.
-const STAR_TINTS = ['255,255,255', '180,210,255', '255,228,170', '210,185,255', '165,230,255']
+// Star tints per theme. Dark sky → light stars; light sky → darker warm/cool
+// specks (white stars would vanish on a near-white background).
+const DARK_TINTS = ['255,255,255', '180,210,255', '255,228,170', '210,185,255', '165,230,255']
+const LIGHT_TINTS = ['70,95,140', '40,110,200', '200,140,35', '120,90,190', '35,130,170']
 const STAR_COUNT = 66
 const STAR_TRAVELERS = 7 // stars that visibly glide across, satellite-style
 
-function buildStars(): string {
+function buildStars(tints: string[]): string {
   const rnd = Math.random
-  const pick = () => STAR_TINTS[Math.floor(rnd() * STAR_TINTS.length)]
+  const pick = () => tints[Math.floor(rnd() * tints.length)]
   let html = ''
   // Static + twinkling field.
   for (let i = 0; i < STAR_COUNT; i++) {
@@ -67,6 +70,15 @@ function buildStars(): string {
 
 export function SpaceBackground() {
   let root!: HTMLDivElement
+  let starfieldEl!: HTMLDivElement
+  const theme = useTheme()
+
+  // (Re)generate the starfield with theme-appropriate colours — on mount and
+  // whenever the theme flips (white stars would be invisible on the light sky).
+  createEffect(() => {
+    const tints = theme() === 'light' ? LIGHT_TINTS : DARK_TINTS
+    if (starfieldEl) starfieldEl.innerHTML = buildStars(tints)
+  })
 
   onMount(() => {
     const cleanups: Array<() => void> = []
@@ -76,10 +88,6 @@ export function SpaceBackground() {
       cleanups.push(() => target.removeEventListener(type, handler, opts))
     }
 
-    // Stars are rendered even under reduced motion (they just don't twinkle —
-    // the global reduced-motion rule freezes the inline animations).
-    const starfield = root.querySelector('#starfield')
-    if (starfield) starfield.innerHTML = buildStars()
 
     // Launch a shooting star from (leftCss, topCss) at `angle`, with the given
     // length/travel/duration. fill:forwards holds the final (invisible) frame so
@@ -110,26 +118,72 @@ export function SpaceBackground() {
       timers.push(window.setTimeout(() => el.remove(), dur + 250)) // safety net for cleanup
     }
 
-    // Click on empty background → a shooting star from the click point in a
-    // random direction/size. Deliberate action, so it runs even under reduced
-    // motion; ignore clicks on interactive UI.
+    // A rocket 🚀 that flies off toward `angle` (used in the light theme instead
+    // of shooting stars). The emoji nose points up-right, so rotate by angle+45.
+    const launchRocket = (leftCss: string, topCss: string, angle: number, size: number, dist: number, dur: number): void => {
+      const el = document.createElement('div')
+      el.textContent = '🚀'
+      el.style.cssText = `position:absolute;left:${leftCss};top:${topCss};font-size:${size}px;line-height:1;pointer-events:none;filter:drop-shadow(0 0 6px rgba(255,170,80,.75));`
+      root.appendChild(el)
+      const rad = (angle * Math.PI) / 180
+      const ex = Math.cos(rad) * dist
+      const ey = Math.sin(rad) * dist
+      const rot = angle + 45
+      const anim = el.animate(
+        [
+          { opacity: 0, transform: `translate(0px,0px) rotate(${rot}deg) scale(.5)` },
+          { opacity: 1, transform: `translate(${(ex * 0.12).toFixed(0)}px,${(ey * 0.12).toFixed(0)}px) rotate(${rot}deg) scale(1)`, offset: 0.14 },
+          { opacity: 1, transform: `translate(${(ex * 0.82).toFixed(0)}px,${(ey * 0.82).toFixed(0)}px) rotate(${rot}deg) scale(1)`, offset: 0.82 },
+          { opacity: 0, transform: `translate(${ex.toFixed(0)}px,${ey.toFixed(0)}px) rotate(${rot}deg) scale(.85)` },
+        ],
+        { duration: dur, easing: 'cubic-bezier(.25,0,.2,1)', fill: 'forwards' },
+      )
+      anim.onfinish = () => el.remove()
+      timers.push(window.setTimeout(() => el.remove(), dur + 250))
+    }
+
+    // Click on empty background → a shooting star (dark) or a rocket (light) from
+    // the click point. Deliberate action, so it runs even under reduced motion;
+    // ignore clicks on interactive UI.
     const INTERACTIVE =
       'a, button, input, select, textarea, label, [role="button"], [role="tab"], [role="menuitem"], [role="dialog"], [contenteditable]'
     bind(document, 'click', ((e: MouseEvent) => {
       if ((e.target as Element | null)?.closest?.(INTERACTIVE)) return
-      launchShooter(
-        `${e.clientX}px`,
-        `${e.clientY}px`,
-        Math.random() * 360,
-        80 + Math.random() * 120,
-        300 + Math.random() * 380,
-        700 + Math.random() * 700,
-      )
+      if (theme() === 'light') {
+        launchRocket(
+          `${e.clientX}px`,
+          `${e.clientY}px`,
+          -90 + (Math.random() * 80 - 40), // up-and-out from the click
+          20 + Math.random() * 16,
+          260 + Math.random() * 280,
+          950 + Math.random() * 700,
+        )
+      } else {
+        launchShooter(
+          `${e.clientX}px`,
+          `${e.clientY}px`,
+          Math.random() * 360,
+          80 + Math.random() * 120,
+          300 + Math.random() * 380,
+          700 + Math.random() * 700,
+        )
+      }
     }) as EventListener)
 
     if (!motionReduced()) {
-      // Ambient shooting stars from four varied directions.
-      const spawnShooter = () => {
+      // Ambient: shooting stars (dark) / rockets rising from the bottom (light).
+      const spawnAmbient = () => {
+        if (theme() === 'light') {
+          launchRocket(
+            `${(5 + Math.random() * 90).toFixed(0)}vw`,
+            '104vh',
+            -90 + (Math.random() * 30 - 15),
+            18 + Math.random() * 14,
+            window.innerHeight * (1.1 + Math.random() * 0.35),
+            5200 + Math.random() * 3500,
+          )
+          return
+        }
         const dir = SHOOTER_DIRS[Math.floor(Math.random() * SHOOTER_DIRS.length)]
         launchShooter(
           `${dir.x[0] + Math.random() * (dir.x[1] - dir.x[0])}vw`,
@@ -140,11 +194,11 @@ export function SpaceBackground() {
           850 + Math.random() * 550,
         )
       }
-      const loopShooter = () => {
-        spawnShooter()
-        timers.push(window.setTimeout(loopShooter, 4500 + Math.random() * 6000))
+      const loopAmbient = () => {
+        spawnAmbient()
+        timers.push(window.setTimeout(loopAmbient, 4500 + Math.random() * 6000))
       }
-      timers.push(window.setTimeout(loopShooter, 1500))
+      timers.push(window.setTimeout(loopAmbient, 1500))
 
       // Cursor glow + magnetic buttons + card edge-glow (single pointermove).
       const glow = root.querySelector<HTMLElement>('#cursorGlow')
@@ -188,7 +242,7 @@ export function SpaceBackground() {
     <div id="space" ref={root} aria-hidden="true">
       <div class="sky" />
       <div class="aurora" />
-      <div id="starfield" />
+      <div id="starfield" ref={starfieldEl} />
       {/* Constellations (thin SVG lines between stars) */}
       <svg class="constellation" style="position:absolute;top:6%;left:58%;width:260px;height:170px" viewBox="0 0 260 170">
         <g class="cline" fill="none" stroke="hsl(199 89% 75%)" stroke-width="2">
