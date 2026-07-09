@@ -17,7 +17,7 @@ const TONE_CLASSES: Record<BadgeTone, string> = {
 }
 
 const BADGE_BASE =
-  'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ring-inset whitespace-nowrap'
+  'badge inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ring-inset whitespace-nowrap'
 
 interface BadgeProps extends ParentProps {
   tone?: BadgeTone

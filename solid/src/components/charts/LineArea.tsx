@@ -4,6 +4,8 @@
 import type { JSX } from 'solid-js'
 import { For, Show, createMemo } from 'solid-js'
 
+import { useAxeMax } from '../../lib/axe-preview'
+
 export interface LineAreaPoint {
   label: string
   income: number
@@ -72,6 +74,11 @@ export function LineArea(props: LineAreaProps): JSX.Element {
     >
       {(c) => (
         <svg viewBox={`0 0 ${c().w} ${c().h + c().pb}`} class={props.class} style={{ width: '100%', height: '100%' }}>
+          {/* axe-100 preview: solid backdrop so contrast checkers can measure
+              the axis labels (SVG text otherwise has no determinable bg). */}
+          <Show when={useAxeMax()()}>
+            <rect x="0" y="0" width={c().w} height={c().h + c().pb} fill="hsl(var(--card))" />
+          </Show>
           <defs>
             <linearGradient id="chartI" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stop-color="#10b981" stop-opacity="0.15" />

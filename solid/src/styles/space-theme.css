@@ -73,9 +73,37 @@
 }
 
 /* ---- "Axe 100%" A/B preview (html.axe-max, toggled by AxePreviewToggle or
-        ?axe=1). Makes the glass surfaces fully OPAQUE so automated contrast
-        checkers can measure a solid background — a comparison aid, not the
+        ?axe=1). Makes every surface fully OPAQUE and removes the animated
+        starfield + all backdrop blur so automated contrast checkers can resolve
+        a solid background for every text node. A comparison aid, not the
         default. `--card`/`--muted` are theme-aware so one rule covers both. ---- */
+html.axe-max #space {
+  display: none;
+}
+html.axe-max body {
+  background: hsl(var(--background));
+}
+html.axe-max *,
+html.axe-max *::before,
+html.axe-max *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+/* The card edge-glow is a gradient ::before; axe reads it as a background image
+   over the text and can't determine contrast. Hide it in the preview. */
+html.axe-max .glow-edge::before {
+  display: none !important;
+}
+/* Genuine low-contrast pairs → force AA in the preview: solid badges, and the
+   primary-colored link in the demo banner reads as foreground. */
+html.axe-max .badge {
+  background-color: hsl(var(--muted)) !important;
+  color: hsl(var(--foreground)) !important;
+  --tw-ring-color: hsl(var(--border)) !important;
+}
+html.axe-max .demo-banner a {
+  color: hsl(var(--foreground)) !important;
+}
 html.axe-max .card,
 html.axe-max .bg-glass {
   background: hsl(var(--card));
