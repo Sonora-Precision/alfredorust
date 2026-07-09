@@ -1,6 +1,7 @@
 /target
 .env
 .env.smoke
+.env.cloudflare
 /tmp
 .DS_Store
 .secret
