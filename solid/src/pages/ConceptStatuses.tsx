@@ -65,13 +65,29 @@ export default function ConceptStatuses(): JSX.Element {
    * cache optimistically (so the list can't snap back), then write the changed
    * rows to the server (re-syncing from the server only on error). */
   async function commitOrder(order: ConceptStatusFull[]): Promise<void> {
+    const prev = new Map((statusesQuery.data ?? []).map((s) => [s.id, s]))
     const n = order.length
-    const normalized = order.map((s, i) => ({ ...s, position: i, is_initial: i === 0, is_terminal: i === n - 1 }))
+    // Backend rule: a status is at most ONE of initial/terminal/cancelled.
+    // Cancelled wins; otherwise first = initial, last = terminal (a lone status
+    // is just initial, never also terminal).
+    const normalized = order.map((s, i) => ({
+      ...s,
+      position: i,
+      is_initial: !s.is_cancelled && i === 0,
+      is_terminal: !s.is_cancelled && i === n - 1 && i !== 0,
+    }))
     setItems(normalized)
     qc.setQueryData<ConceptStatusFull[]>(['concept-statuses'], normalized)
-    const changed = normalized.filter((s, i) => {
-      const orig = order[i]
-      return orig.position !== i || orig.is_initial !== s.is_initial || orig.is_terminal !== s.is_terminal
+    const changed = normalized.filter((s) => {
+      const o = prev.get(s.id)
+      return (
+        !o ||
+        o.position !== s.position ||
+        o.is_initial !== s.is_initial ||
+        o.is_terminal !== s.is_terminal ||
+        o.is_cancelled !== s.is_cancelled ||
+        o.is_active !== s.is_active
+      )
     })
     if (changed.length === 0) return
     try {
@@ -94,8 +110,9 @@ export default function ConceptStatuses(): JSX.Element {
     }
   }
 
-  const toggleFlag = async (s: ConceptStatusFull, key: 'is_active' | 'is_cancelled', val: boolean): Promise<void> => {
-    setItems((prev) => prev.map((x) => (x.id === s.id ? { ...x, [key]: val } : x)))
+  // "Activo" is an independent flag → direct update.
+  const toggleActive = async (s: ConceptStatusFull, val: boolean): Promise<void> => {
+    setItems((prev) => prev.map((x) => (x.id === s.id ? { ...x, is_active: val } : x)))
     try {
       await operationsApi.updateConceptStatus(s.id, {
         name: s.name,
@@ -103,14 +120,19 @@ export default function ConceptStatuses(): JSX.Element {
         color: s.color ?? null,
         is_initial: s.is_initial,
         is_terminal: s.is_terminal,
-        is_cancelled: key === 'is_cancelled' ? val : s.is_cancelled,
-        is_active: key === 'is_active' ? val : s.is_active,
+        is_cancelled: s.is_cancelled,
+        is_active: val,
       })
       void qc.invalidateQueries({ queryKey: ['concept-statuses'] })
     } catch (e) {
       toast.error('No se pudo actualizar', humanizeError(e, ''))
       void qc.invalidateQueries({ queryKey: ['concept-statuses'] })
     }
+  }
+  // "Cancelado" is one of the mutually-exclusive kinds, so flipping it re-derives
+  // initial/terminal across the whole list (via commitOrder).
+  const toggleCancelled = async (s: ConceptStatusFull, val: boolean): Promise<void> => {
+    await commitOrder(items().map((x) => (x.id === s.id ? { ...x, is_cancelled: val } : x)))
   }
 
   // --- drag: floating clone + gap placeholder (pointer = mouse AND touch) ----
@@ -185,7 +207,7 @@ export default function ConceptStatuses(): JSX.Element {
       return id ? operationsApi.updateConceptStatus(id, payload) : operationsApi.createConceptStatus(payload)
     },
     onSuccess: () => {
-      if (!editingId()) normalizeAfterLoad = true
+      normalizeAfterLoad = true // re-derive first/last (+ un-cancel) after any save
       void qc.invalidateQueries({ queryKey: ['concept-statuses'] })
       toast.success(editingId() ? 'Estado actualizado' : 'Estado creado')
       closeModal()
@@ -205,14 +227,17 @@ export default function ConceptStatuses(): JSX.Element {
     const id = editingId()
     const existing = id ? items().find((s) => s.id === id) : undefined
     const count = items().length
+    const cancelled = f.isCancelled
     saveMutation.mutate({
       name: f.name.trim(),
       color: color === '' ? null : color,
-      is_cancelled: f.isCancelled,
+      is_cancelled: cancelled,
       is_active: f.isActive,
       position: existing ? existing.position : count,
-      is_initial: existing ? existing.is_initial : count === 0,
-      is_terminal: existing ? existing.is_terminal : true,
+      // Never initial+terminal together; cancelled clears both. A brand-new row
+      // is appended last → terminal only when it isn't also the very first.
+      is_initial: cancelled ? false : existing ? existing.is_initial : count === 0,
+      is_terminal: cancelled ? false : existing ? existing.is_terminal : count > 0,
     })
   }
 
@@ -310,10 +335,13 @@ export default function ConceptStatuses(): JSX.Element {
                             <div class="min-w-0 flex-1">
                               <div class="flex flex-wrap items-center gap-2">
                                 <span class="font-medium text-foreground">{s.name}</span>
-                                <Show when={i() === 0}>
+                                <Show when={s.is_cancelled}>
+                                  <Badge tone="danger">Cancelado</Badge>
+                                </Show>
+                                <Show when={!s.is_cancelled && i() === 0}>
                                   <Badge tone="info">Inicial</Badge>
                                 </Show>
-                                <Show when={i() === items().length - 1}>
+                                <Show when={!s.is_cancelled && i() === items().length - 1 && i() !== 0}>
                                   <Badge tone="neutral">Terminal</Badge>
                                 </Show>
                               </div>
@@ -332,12 +360,12 @@ export default function ConceptStatuses(): JSX.Element {
                               <div class="flex items-center gap-4">
                                 <Checkbox
                                   checked={s.is_active}
-                                  onChange={(v) => void toggleFlag(s, 'is_active', v)}
+                                  onChange={(v) => void toggleActive(s, v)}
                                   label="Activo"
                                 />
                                 <Checkbox
                                   checked={s.is_cancelled}
-                                  onChange={(v) => void toggleFlag(s, 'is_cancelled', v)}
+                                  onChange={(v) => void toggleCancelled(s, v)}
                                   label="Cancelado"
                                 />
                                 <div class="flex gap-1">
