@@ -13,6 +13,7 @@ import type {
   Category,
   CategoryDetail,
   Cfdi,
+  CfdiCronStatus,
   CfdiDetailResponse,
   CfdiJob,
   CfdiList,
@@ -445,7 +446,7 @@ const CFDIS: Cfdi[] = [
   { uuid: 'a1b2c3d4-0001-4a1a-9b2c-000000000005', folio: 'CFE-771', tipo: 'I', fecha: '2026-03-15', total: 41800, moneda: 'MXN', emisor_nombre: 'CFE Suministrador', receptor_nombre: 'Aurora Manufactura', es_emitido: false },
   { uuid: 'a1b2c3d4-0001-4a1a-9b2c-000000000006', folio: 'A-1040', tipo: 'I', fecha: '2026-02-05', total: 415000, moneda: 'MXN', emisor_nombre: 'Aurora Manufactura', receptor_nombre: 'Grupo Automotriz Delta', es_emitido: true },
   { uuid: 'a1b2c3d4-0001-4a1a-9b2c-000000000007', folio: 'A-1039', tipo: 'I', fecha: '2026-01-14', total: 320000, moneda: 'MXN', emisor_nombre: 'Aurora Manufactura', receptor_nombre: 'Aeropartes del Norte SA', es_emitido: true },
-  { uuid: 'a1b2c3d4-0001-4a1a-9b2c-000000000008', folio: 'E-0007', tipo: 'E', fecha: '2026-03-28', total: 12000, moneda: 'MXN', emisor_nombre: 'Aurora Manufactura', receptor_nombre: 'Grupo Automotriz Delta', es_emitido: true },
+  { uuid: 'a1b2c3d4-0001-4a1a-9b2c-000000000008', folio: 'E-0007', tipo: 'E', fecha: '2026-03-28', total: 12000, moneda: 'MXN', emisor_nombre: 'Aurora Manufactura', receptor_nombre: 'Grupo Automotriz Delta', es_emitido: true, estatus: 'cancelado' },
   { uuid: 'a1b2c3d4-0001-4a1a-9b2c-000000000009', folio: 'A-1043', tipo: 'I', fecha: '2026-05-16', total: 118000, moneda: 'MXN', emisor_nombre: 'Aurora Manufactura', receptor_nombre: 'Maquinaria Agrícola Sinaloa', es_emitido: true },
   { uuid: 'a1b2c3d4-0001-4a1a-9b2c-000000000010', folio: 'A-1038', tipo: 'I', fecha: '2025-10-27', total: 224000, moneda: 'MXN', emisor_nombre: 'Aurora Manufactura', receptor_nombre: 'Dispositivos Médicos Vértice', es_emitido: true },
   { uuid: 'a1b2c3d4-0001-4a1a-9b2c-000000000011', folio: 'A-1035', tipo: 'I', fecha: '2025-08-19', total: 298000, moneda: 'MXN', emisor_nombre: 'Aurora Manufactura', receptor_nombre: 'Turbinas Energía del Golfo', es_emitido: true },
@@ -464,9 +465,17 @@ const CFDI_LIST: CfdiList = {
 }
 
 const CFDI_JOBS: CfdiJob[] = [
-  { job_id: 'job-2026-04', label: 'Abril 2026', chunk_start: '2026-04-01', started_at: '2026-05-01T05:00:00Z', status: { status: 'done', imported: 34, transactions_created: 12, transactions_updated: 3, transactions_skipped: 19, errors: [] } },
-  { job_id: 'job-2026-03', label: 'Marzo 2026', chunk_start: '2026-03-01', started_at: '2026-04-01T05:00:00Z', status: { status: 'done', imported: 41, transactions_created: 15, transactions_updated: 1, transactions_skipped: 25, errors: [] } },
+  { job_id: 'job-2026-04', label: 'Abril 2026', chunk_start: '2026-04-01', started_at: '2026-05-01T05:00:00Z', source: 'cron', status: { status: 'done', imported: 34, transactions_created: 12, transactions_updated: 3, transactions_skipped: 19, errors: [] } },
+  { job_id: 'job-2026-03', label: 'Marzo 2026', chunk_start: '2026-03-01', started_at: '2026-04-01T05:00:00Z', source: 'manual', status: { status: 'done', imported: 41, transactions_created: 15, transactions_updated: 1, transactions_skipped: 25, errors: [] } },
 ]
+
+const CFDI_CRON: CfdiCronStatus = {
+  enabled: true,
+  mode: 'Diario 05:00 (hora central de México)',
+  next_run: '2026-07-09T05:00:00',
+  last_run: '2026-07-08',
+  last_new: 7,
+}
 
 // --- timeline (tiempo) -------------------------------------------------------
 
@@ -651,8 +660,16 @@ const resourceDetail = (id: string): ResourceDetail => {
 }
 const cfdiDetail = (uuid: string): CfdiDetailResponse => {
   const c = CFDIS.find((x) => x.uuid === uuid) ?? CFDIS[0]
+  const subtotal = Math.round((c.total / 1.16) * 100) / 100
   return {
     ...c,
+    subtotal,
+    iva: Math.round((c.total - subtotal) * 100) / 100,
+    forma_pago: '03',
+    metodo_pago: 'PUE',
+    uso_cfdi: 'G03',
+    emisor_rfc: c.es_emitido ? 'AMA160101AB2' : 'PROV850101QX7',
+    receptor_rfc: c.es_emitido ? 'CLI900202MN4' : 'AMA160101AB2',
     conceptos: [
       { descripcion: 'Servicio de maquinado CNC', cantidad: 1, valor_unitario: c.total, importe: c.total, clave_prod_serv: '81111500', unidad: 'Servicio' },
     ],
@@ -673,8 +690,10 @@ function resolve(path: string): unknown {
 
   // fiscal (non-conventional /data + nested jobs)
   if (path === '/api/admin/cfdis/data') return CFDI_LIST
-  if (path.startsWith('/api/admin/cfdis/')) return cfdiDetail(seg(path).pop() as string)
   if (path.includes('/cfdi/jobs')) return CFDI_JOBS
+  if (path.endsWith('/cfdi/cron')) return CFDI_CRON
+  if (path.endsWith('/cfdis/archived')) return { count: CFDIS.length }
+  if (path.startsWith('/api/admin/cfdis/')) return cfdiDetail(seg(path).pop() as string)
   if (path === '/api/admin/sat-configs') return SAT_CONFIGS
   if (path.startsWith('/api/admin/sat-configs/')) return SAT_CONFIGS[0]
 

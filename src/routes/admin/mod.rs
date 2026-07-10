@@ -14,10 +14,11 @@ pub mod users_api;
 
 pub use account::*;
 pub use cfdi_download::{
-    company_cfdi_download, company_cfdi_download_api, company_cfdi_job_status,
-    company_cfdi_jobs_list, company_cfdi_upload_api,
+    company_cfdi_archived_count, company_cfdi_cron_status, company_cfdi_download,
+    company_cfdi_download_api, company_cfdi_job_status, company_cfdi_jobs_list,
+    company_cfdi_upload_api,
 };
-pub use cfdis::{cfdi_data_api, cfdis_data_api, cfdis_index};
+pub use cfdis::{cfdi_check_status_api, cfdi_data_api, cfdis_data_api, cfdis_index};
 pub use companies::*;
 pub use finance::*;
 pub use onboarding::onboarding_status_api;

@@ -640,6 +640,28 @@ export interface CfdiJob {
   chunk_start?: string
   started_at?: string
   status: CfdiJobStatus
+  /** "manual" (HTTP request) or "cron" (daily scheduled pass). */
+  source?: string
+}
+
+export interface CfdiCronStatus {
+  enabled: boolean
+  mode: string
+  next_run: string
+  last_run: string | null
+  last_new: number
+}
+
+export interface CfdiArchivedCount {
+  count: number
+}
+
+export interface CfdiEstatusResponse {
+  /** "vigente" | "cancelado" | "no_encontrado" */
+  estatus: string
+  es_cancelable?: string | null
+  estatus_cancelacion?: string | null
+  codigo?: string | null
 }
 
 export interface StartedJobs {
@@ -653,10 +675,19 @@ export interface Cfdi {
   folio?: string
   tipo?: string
   fecha?: string
+  subtotal?: number
+  iva?: number
   total: number
   moneda?: string
+  forma_pago?: string
+  metodo_pago?: string
+  emisor_rfc?: string
   emisor_nombre?: string
+  receptor_rfc?: string
   receptor_nombre?: string
+  concepto?: string
+  /** "vigente" | "cancelado" — defaults to "vigente" until a status check. */
+  estatus?: string
   es_emitido: boolean
 }
 
@@ -675,6 +706,9 @@ export interface CfdiList {
 }
 
 export interface CfdiDetailResponse extends Cfdi {
+  company_id?: string
+  serie?: string
+  uso_cfdi?: string
   conceptos: CfdiConceptData[]
 }
 

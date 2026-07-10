@@ -149,6 +149,9 @@ pub struct CfdiApiItem {
     pub receptor_rfc: String,
     pub receptor_nombre: String,
     pub concepto: String,
+    /// "vigente" | "cancelado" — SAT status, defaults to "vigente" until a
+    /// status check proves otherwise (see the check-status endpoint).
+    pub estatus: String,
     /// true if the company is the emisor (issued = income), false if receptor (received = expense)
     pub es_emitido: bool,
 }
@@ -181,12 +184,24 @@ pub struct CfdiDetailResponse {
     pub moneda: String,
     pub forma_pago: String,
     pub metodo_pago: String,
+    pub uso_cfdi: String,
     pub emisor_rfc: String,
     pub emisor_nombre: String,
     pub receptor_rfc: String,
     pub receptor_nombre: String,
     pub conceptos: Vec<CfdiConceptData>,
+    /// "vigente" | "cancelado" — see [`CfdiApiItem::estatus`].
+    pub estatus: String,
     pub es_emitido: bool,
+}
+
+/// Read the stored SAT status of a CFDI doc, defaulting to "vigente" (a freshly
+/// downloaded/uploaded CFDI is presumed vigente until a status check says else).
+fn cfdi_estatus(doc: &bson::Document) -> String {
+    match doc.get_str("estatus") {
+        Ok(s) if !s.trim().is_empty() => s.to_string(),
+        _ => "vigente".to_string(),
+    }
 }
 
 fn parse_f64(s: &str) -> f64 {
@@ -315,6 +330,7 @@ pub async fn cfdis_data_api(
             receptor_rfc,
             receptor_nombre,
             concepto,
+            estatus: cfdi_estatus(&doc),
             es_emitido,
         });
     }
@@ -436,11 +452,94 @@ fn cfdi_detail_response(
         metodo_pago: comp
             .map(|comp| str_field(comp, "metodoPago"))
             .unwrap_or_default(),
+        uso_cfdi: nested_str(doc, "receptor", "usoCFDI"),
         emisor_rfc,
         emisor_nombre: nested_str(doc, "emisor", "nombre"),
         receptor_rfc: nested_str(doc, "receptor", "rfc"),
         receptor_nombre: nested_str(doc, "receptor", "nombre"),
         conceptos,
+        estatus: cfdi_estatus(doc),
         es_emitido,
     }
+}
+
+#[derive(Serialize)]
+pub struct CfdiEstatusResponse {
+    /// "vigente" | "cancelado" | "no_encontrado"
+    pub estatus: String,
+    pub es_cancelable: Option<String>,
+    pub estatus_cancelacion: Option<String>,
+    pub codigo: Option<String>,
+}
+
+/// Live SAT status check for one CFDI (`POST /api/admin/cfdis/{uuid}/check-status`).
+/// Queries the public ConsultaCFDIService with the CFDI's RFCs + total + UUID,
+/// and persists a definitive `vigente`/`cancelado` result back onto the document
+/// (a `no_encontrado` is returned but not stored, so it can't clobber a known
+/// state with noise).
+#[utoipa::path(
+    post,
+    path = "/api/admin/cfdis/{uuid}/check-status",
+    tag = "cfdi",
+    params(("uuid" = String, Path, description = "CFDI UUID")),
+    responses(
+        (status = 200, description = "SAT status"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found"),
+        (status = 502, description = "SAT service unavailable")
+    ),
+    security(("session" = []))
+)]
+pub async fn cfdi_check_status_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(uuid): Path<String>,
+) -> Result<Json<CfdiEstatusResponse>, StatusCode> {
+    if !session_user.is_admin() {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    let active_company = session_user.active_company_id();
+
+    let doc = state
+        .cfdis
+        .find_one(bson::doc! {
+            "company_id": active_company.to_hex(),
+            "uuid": uuid.trim(),
+        })
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let emisor_rfc = nested_str(&doc, "emisor", "rfc");
+    let receptor_rfc = nested_str(&doc, "receptor", "rfc");
+    let total = doc
+        .get_document("comprobante")
+        .ok()
+        .and_then(|c| c.get_str("total").ok())
+        .unwrap_or("")
+        .to_string();
+    let uuid_val = str_field(&doc, "uuid");
+
+    let result =
+        crate::sat_consulta::consulta_estatus(&emisor_rfc, &receptor_rfc, &total, &uuid_val)
+            .await
+            .map_err(|_| StatusCode::BAD_GATEWAY)?;
+
+    if result.estado == "vigente" || result.estado == "cancelado" {
+        let _ = state
+            .cfdis
+            .update_one(
+                bson::doc! { "company_id": active_company.to_hex(), "uuid": &uuid_val },
+                bson::doc! { "$set": { "estatus": &result.estado } },
+            )
+            .await;
+    }
+
+    Ok(Json(CfdiEstatusResponse {
+        estatus: result.estado,
+        es_cancelable: result.es_cancelable,
+        estatus_cancelacion: result.estatus_cancelacion,
+        codigo: result.codigo,
+    }))
 }

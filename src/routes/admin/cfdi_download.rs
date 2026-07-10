@@ -268,6 +268,138 @@ pub async fn company_cfdi_upload_api(
     (StatusCode::OK, Json(result)).into_response()
 }
 
+#[derive(Serialize)]
+pub struct CfdiCronStatus {
+    /// The daily cron always runs; there is no per-company toggle today.
+    pub enabled: bool,
+    /// Human-readable schedule description.
+    pub mode: String,
+    /// Next scheduled run (naive ISO-8601, Mexico time).
+    pub next_run: String,
+    /// Date of the most recent cron pass that touched this company, if any.
+    pub last_run: Option<String>,
+    /// CFDIs imported by that last cron pass.
+    pub last_new: usize,
+}
+
+/// Cron status for the "Actualización automática" card
+/// (`GET /api/admin/companies/{id}/cfdi/cron`). Derived from the persisted
+/// `cfdi_jobs` (source = "cron") — no extra state is stored.
+pub async fn company_cfdi_cron_status(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(company_id): Path<String>,
+) -> impl IntoResponse {
+    let company_object_id = match ObjectId::from_str(&company_id) {
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    if let Err(status) = require_company_admin(&session_user, &company_object_id) {
+        return status.into_response();
+    }
+
+    let cron_jobs: Vec<CfdiJob> = list_cfdi_jobs(&state, &company_id)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|j| j.source == "cron")
+        .collect();
+    // started_at is a YYYY-MM-DD date, so a lexicographic max is the latest run.
+    let last_run = cron_jobs.iter().map(|j| j.started_at.clone()).max();
+    let last_new: usize = match &last_run {
+        Some(day) => cron_jobs
+            .iter()
+            .filter(|j| &j.started_at == day)
+            .map(|j| match &j.status {
+                CfdiJobStatus::Done { imported, .. } => *imported,
+                _ => 0,
+            })
+            .sum(),
+        None => 0,
+    };
+
+    Json(CfdiCronStatus {
+        enabled: true,
+        mode: "Diario 05:00 (hora central de México)".to_string(),
+        next_run: next_cron_run(),
+        last_run,
+        last_new,
+    })
+    .into_response()
+}
+
+/// The next scheduled 05:00 Mexico-time cron run as a naive ISO-8601 string
+/// (UTC-6 convention, matching `cron.rs`). Inlined here so the handler stays in
+/// the lib crate (the `cron` module lives only in the binary).
+fn next_cron_run() -> String {
+    let now = (chrono::Utc::now() - chrono::Duration::hours(6)).naive_utc();
+    let today_five = now.date().and_hms_opt(5, 0, 0).unwrap();
+    let next = if now < today_five {
+        today_five
+    } else {
+        (now.date() + chrono::Duration::days(1))
+            .and_hms_opt(5, 0, 0)
+            .unwrap()
+    };
+    next.format("%Y-%m-%dT%H:%M:%S").to_string()
+}
+
+#[derive(Serialize)]
+pub struct CfdiArchivedCount {
+    /// Number of raw `.xml` files archived on disk for this tenant.
+    pub count: usize,
+}
+
+/// Count archived CFDI XML files for the "Respaldo XML activo" indicator
+/// (`GET /api/admin/companies/{id}/cfdis/archived`).
+pub async fn company_cfdi_archived_count(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(company_id): Path<String>,
+) -> impl IntoResponse {
+    let company_object_id = match ObjectId::from_str(&company_id) {
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    if let Err(status) = require_company_admin(&session_user, &company_object_id) {
+        return status.into_response();
+    }
+
+    let store_root = std::path::PathBuf::from(
+        std::env::var("CFDI_STORE_DIR").unwrap_or_else(|_| "data/cfdi_store".to_string()),
+    );
+    let slug = match get_company_by_id(&state, &company_object_id).await {
+        Ok(Some(c)) if !c.slug.is_empty() => c.slug,
+        _ => company_id.clone(),
+    };
+    let dir = store_root.join(slug);
+
+    // Walk the tree off the async runtime — best-effort, missing dir => 0.
+    let count = tokio::task::spawn_blocking(move || count_xml_files(&dir))
+        .await
+        .unwrap_or(0);
+
+    Json(CfdiArchivedCount { count }).into_response()
+}
+
+/// Recursively count `*.xml` files under `dir` (best-effort; unreadable dirs
+/// contribute 0).
+fn count_xml_files(dir: &std::path::Path) -> usize {
+    let mut total = 0;
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            total += count_xml_files(&path);
+        } else if path.extension().and_then(|e| e.to_str()) == Some("xml") {
+            total += 1;
+        }
+    }
+    total
+}
+
 /// Shared core: validate, split the range into monthly chunks, and spawn one
 /// background download job per chunk. Used by both the HTML form handler and
 /// the JSON API handler.

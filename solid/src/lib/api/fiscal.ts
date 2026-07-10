@@ -1,8 +1,11 @@
 import { apiGet, apiPost, apiPostForm } from './client'
 import type {
   Cfdi,
+  CfdiArchivedCount,
+  CfdiCronStatus,
   CfdiDetailResponse,
   CfdiDownloadPayload,
+  CfdiEstatusResponse,
   CfdiJob,
   CfdiJobStatus,
   CfdiList,
@@ -24,6 +27,18 @@ export const listCfdiJobs = (companyId: string) =>
 
 export const getCfdiJob = (companyId: string, jobId: string) =>
   apiGet<CfdiJobStatus>(`/api/admin/companies/${companyId}/cfdi/jobs/${jobId}`)
+
+// Cron status for the "Actualización automática" card, and the archived-XML
+// count for the "Respaldo XML activo" indicator (both company-scoped, admin).
+export const getCfdiCron = (companyId: string) =>
+  apiGet<CfdiCronStatus>(`/api/admin/companies/${companyId}/cfdi/cron`)
+
+export const getCfdiArchivedCount = (companyId: string) =>
+  apiGet<CfdiArchivedCount>(`/api/admin/companies/${companyId}/cfdis/archived`)
+
+// Live SAT status check for one CFDI (vigente/cancelado); persists the result.
+export const checkCfdiStatus = (uuid: string) =>
+  apiPost<CfdiEstatusResponse>(`/api/admin/cfdis/${uuid}/check-status`)
 
 // --- CFDIs (read-only listing) -------------------------------------------------------
 

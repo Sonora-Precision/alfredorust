@@ -30,6 +30,7 @@ mod models;
 mod openapi;
 mod routes;
 mod sat;
+mod sat_consulta;
 mod session;
 mod state;
 mod totp;
@@ -123,6 +124,14 @@ async fn main() {
             get(routes::company_cfdi_jobs_list),
         )
         .route(
+            "/api/admin/companies/{id}/cfdi/cron",
+            get(routes::company_cfdi_cron_status),
+        )
+        .route(
+            "/api/admin/companies/{id}/cfdis/archived",
+            get(routes::company_cfdi_archived_count),
+        )
+        .route(
             "/api/admin/companies/{id}/cfdi/jobs/{job_id}",
             get(routes::company_cfdi_job_status),
         )
@@ -147,6 +156,10 @@ async fn main() {
         .route("/admin/cfdis", get(routes::cfdis_index))
         .route("/api/admin/cfdis/data", get(routes::cfdis_data_api))
         .route("/api/admin/cfdis/{uuid}", get(routes::cfdi_data_api))
+        .route(
+            "/api/admin/cfdis/{uuid}/check-status",
+            post(routes::cfdi_check_status_api),
+        )
         .route(
             "/admin/companies/{id}/sat_configs",
             post(routes::sat_configs_create),

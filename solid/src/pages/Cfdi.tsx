@@ -126,6 +126,15 @@ function jobStatusBadge(status: string): JSX.Element {
 function isActiveStatus(status: string): boolean {
   return status === 'queued' || status === 'running'
 }
+function estatusBadge(estatus: string | undefined): JSX.Element {
+  const e = (estatus ?? 'vigente').toLowerCase()
+  if (e === 'cancelado') return <Badge tone="danger">Cancelado</Badge>
+  if (e === 'no_encontrado') return <Badge tone="neutral">No encontrado</Badge>
+  return <Badge tone="success">Vigente</Badge>
+}
+function jobSourceLabel(source: string | undefined): string {
+  return source === 'cron' ? 'Automático' : 'Manual'
+}
 function isDateInput(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(value)
 }
@@ -370,7 +379,36 @@ export default function Cfdi(): JSX.Element {
     queryFn: () => fiscalApi.getCfdi(detailBase()!.uuid),
     enabled: detailBase() !== null,
   }))
-  const openDetail = (c: Cfdi) => setDetailBase(c)
+  const openDetail = (c: Cfdi) => {
+    setStatusResult(null)
+    setDetailBase(c)
+  }
+
+  // --- SAT status check (drawer) ---------------------------------------------
+  const [statusResult, setStatusResult] = createSignal<string | null>(null)
+  const statusMutation = createMutation(() => ({
+    mutationFn: (uuid: string) => fiscalApi.checkCfdiStatus(uuid),
+    onSuccess: (res) => {
+      setStatusResult(res.estatus)
+      void qc.invalidateQueries({ queryKey: ['cfdis'] })
+      void qc.invalidateQueries({ queryKey: ['cfdi-detail'] })
+    },
+  }))
+  // Effective estatus shown in the drawer: latest check → detail → list default.
+  const drawerEstatus = () =>
+    statusResult() ?? detailQuery.data?.estatus ?? detailBase()?.estatus ?? 'vigente'
+
+  // --- cron status + archived-XML count (Sincronización) ---------------------
+  const cronQuery = createQuery(() => ({
+    queryKey: ['cfdi-cron', companyId()],
+    queryFn: () => fiscalApi.getCfdiCron(companyId()),
+    enabled: isAdmin() && companyId() !== '',
+  }))
+  const archivedQuery = createQuery(() => ({
+    queryKey: ['cfdi-archived', companyId()],
+    queryFn: () => fiscalApi.getCfdiArchivedCount(companyId()),
+    enabled: isAdmin() && companyId() !== '',
+  }))
 
   const exportCsv = () => {
     const header = ['Folio', 'Tipo', 'Fecha', 'Emisor', 'Receptor', 'Total', 'Moneda', 'Dirección']
@@ -415,7 +453,11 @@ export default function Cfdi(): JSX.Element {
               <ShieldCheck class="h-5 w-5" />
             </span>
             <div class="leading-tight">
-              <div class="text-[12px] font-semibold">Respaldo XML activo</div>
+              <div class="text-[12px] font-semibold">
+                <Show when={archivedQuery.data} fallback="Respaldo XML activo">
+                  {int(archivedQuery.data!.count)} XML archivados
+                </Show>
+              </div>
               <div class="text-[11px] text-muted-foreground">deduplicado por UUID</div>
             </div>
           </div>
@@ -753,7 +795,12 @@ export default function Cfdi(): JSX.Element {
                               {money(c.total)} <span class="text-[11px] font-normal text-muted-foreground">{c.moneda ?? ''}</span>
                             </td>
                             <td class="whitespace-nowrap px-3 py-2.5">
-                              <Badge tone={c.es_emitido ? 'success' : 'info'}>{c.es_emitido ? 'Emitido' : 'Recibido'}</Badge>
+                              <div class="flex items-center gap-1.5">
+                                <Badge tone={c.es_emitido ? 'success' : 'info'}>{c.es_emitido ? 'Emitido' : 'Recibido'}</Badge>
+                                <Show when={(c.estatus ?? 'vigente').toLowerCase() === 'cancelado'}>
+                                  <Badge tone="danger">Cancelado</Badge>
+                                </Show>
+                              </div>
                             </td>
                           </tr>
                         )}
@@ -972,6 +1019,26 @@ export default function Cfdi(): JSX.Element {
                     </p>
                   </div>
                 </div>
+                <Show when={cronQuery.data}>
+                  {(cron) => (
+                    <div class="mt-3 grid grid-cols-3 gap-2">
+                      <div class="rounded-lg bg-muted/40 p-2.5">
+                        <div class="text-[10px] uppercase tracking-wide text-muted-foreground">Última</div>
+                        <div class="mt-0.5 text-[12px] font-semibold tnum">{cron().last_run ?? '—'}</div>
+                      </div>
+                      <div class="rounded-lg bg-muted/40 p-2.5">
+                        <div class="text-[10px] uppercase tracking-wide text-muted-foreground">Nuevos</div>
+                        <div class="mt-0.5 text-[12px] font-semibold tnum">{int(cron().last_new)}</div>
+                      </div>
+                      <div class="rounded-lg bg-muted/40 p-2.5">
+                        <div class="text-[10px] uppercase tracking-wide text-muted-foreground">Próxima</div>
+                        <div class="mt-0.5 text-[12px] font-semibold tnum">
+                          {cron().next_run.slice(5, 10)} {cron().next_run.slice(11, 16)}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </Show>
                 <div class="mt-3 flex items-start gap-2 rounded-lg bg-muted/40 p-2.5 text-[11px] text-muted-foreground">
                   <CalendarDays class="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   <span>
@@ -1032,6 +1099,7 @@ export default function Cfdi(): JSX.Element {
                           <div class="flex flex-wrap items-center gap-2">
                             <span class="text-[15px] font-semibold">{j.label ?? j.chunk_start ?? '—'}</span>
                             {jobStatusBadge(s.status)}
+                            <Badge tone={j.source === 'cron' ? 'info' : 'neutral'}>{jobSourceLabel(j.source)}</Badge>
                           </div>
                           <Show when={j.started_at}>
                             <span class="text-[11px] text-muted-foreground tnum">{rfc3339ToDate(j.started_at!)}</span>
@@ -1081,13 +1149,35 @@ export default function Cfdi(): JSX.Element {
           {(base) => (
             <div class="space-y-5 p-5">
               <div class="rounded-xl border border-border bg-muted/30 p-4">
-                <div class="text-[12px] text-muted-foreground">Total</div>
+                <div class="flex items-center justify-between gap-2">
+                  <div class="text-[12px] text-muted-foreground">Total</div>
+                  {estatusBadge(drawerEstatus())}
+                </div>
                 <div
                   class="mt-1 text-[28px] font-bold tnum"
                   classList={{ 'text-emerald-600': base().es_emitido, 'text-rose-600': !base().es_emitido }}
                 >
                   {money(base().total)} <span class="text-[15px] font-medium text-muted-foreground">{base().moneda ?? ''}</span>
                 </div>
+                <Show when={isAdmin()}>
+                  <div class="mt-2.5 flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      class="h-7 gap-1 px-2 text-xs"
+                      disabled={statusMutation.isPending}
+                      onClick={() => statusMutation.mutate(base().uuid)}
+                    >
+                      <ShieldCheck class="h-3.5 w-3.5" />
+                      {statusMutation.isPending ? 'Verificando…' : 'Verificar estatus SAT'}
+                    </Button>
+                    <Show when={statusMutation.isError}>
+                      <span class="text-[11px] text-destructive">No se pudo verificar</span>
+                    </Show>
+                    <Show when={statusResult()}>
+                      <span class="text-[11px] text-muted-foreground">Consultado al SAT</span>
+                    </Show>
+                  </div>
+                </Show>
               </div>
 
               <div class="flex items-center gap-3 rounded-xl border border-border bg-emerald-500/[.06] p-3">
@@ -1147,16 +1237,30 @@ export default function Cfdi(): JSX.Element {
 
               <div>
                 <h3 class="mb-1 text-[13px] font-semibold">Datos fiscales</h3>
-                <dl class="divide-y divide-border/60">
-                  <div class="flex items-start justify-between gap-3 py-2">
-                    <dt class="text-[12px] text-muted-foreground">UUID (folio fiscal)</dt>
-                    <dd class="break-all text-right text-[11px] font-medium tnum">{base().uuid}</dd>
-                  </div>
-                  <div class="flex items-start justify-between gap-3 py-2">
-                    <dt class="text-[12px] text-muted-foreground">Moneda</dt>
-                    <dd class="text-right text-[13px] font-medium tnum">{base().moneda ?? '—'}</dd>
-                  </div>
-                </dl>
+                {(() => {
+                  const d = () => detailQuery.data
+                  const row = (label: string, value: JSX.Element | string | undefined) => (
+                    <Show when={value !== undefined && value !== '' && value !== null}>
+                      <div class="flex items-start justify-between gap-3 py-2">
+                        <dt class="text-[12px] text-muted-foreground">{label}</dt>
+                        <dd class="break-all text-right text-[13px] font-medium tnum">{value}</dd>
+                      </div>
+                    </Show>
+                  )
+                  return (
+                    <dl class="divide-y divide-border/60">
+                      {row('UUID (folio fiscal)', <span class="text-[11px]">{base().uuid}</span>)}
+                      {row('Subtotal', d()?.subtotal !== undefined ? money(d()!.subtotal!) : undefined)}
+                      {row('IVA', d()?.iva ? money(d()!.iva!) : undefined)}
+                      {row('Moneda', base().moneda ?? d()?.moneda)}
+                      {row('Forma de pago', d()?.forma_pago)}
+                      {row('Método de pago', d()?.metodo_pago)}
+                      {row('Uso CFDI', d()?.uso_cfdi)}
+                      {row('RFC emisor', d()?.emisor_rfc)}
+                      {row('RFC receptor', d()?.receptor_rfc)}
+                    </dl>
+                  )
+                })()}
               </div>
             </div>
           )}
