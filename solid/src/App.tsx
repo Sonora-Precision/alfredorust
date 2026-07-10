@@ -7,39 +7,40 @@
 // components/ui/*, components/layout/* are read-only for page agents — they
 // only fill in their placeholder under src/pages/.
 import { Route } from '@solidjs/router'
-import { type JSX, lazy } from 'solid-js'
+import type { JSX } from 'solid-js'
 
 import { AppShell } from './components/layout/AppShell'
 import { RequireAuth } from './lib/auth/RequireAuth'
+import { lazyWithReload } from './lib/lazyWithReload'
 
 // DELETABLE — design-approval gate only, see src/preview/DesignPreview.tsx.
 // Remove this import + the <Route path="/preview/design" .../> below when
 // Dashboard/Accounts are approved (GATE A in docs/solid-migration/PROGRESS.md).
-const DesignPreview = lazy(() => import('./preview/DesignPreview'))
+const DesignPreview = lazyWithReload(() => import('./preview/DesignPreview'))
 
-const Login = lazy(() => import('./pages/Login'))
-const Dashboard = lazy(() => import('./pages/Dashboard'))
-const Onboarding = lazy(() => import('./pages/Onboarding'))
-const Accounts = lazy(() => import('./pages/Accounts'))
-const Categories = lazy(() => import('./pages/Categories'))
-const Contacts = lazy(() => import('./pages/Contacts'))
-const Transactions = lazy(() => import('./pages/Transactions'))
-const RecurringPlans = lazy(() => import('./pages/RecurringPlans'))
-const PlannedEntries = lazy(() => import('./pages/PlannedEntries'))
-const Forecasts = lazy(() => import('./pages/Forecasts'))
-const Cfdi = lazy(() => import('./pages/Cfdi'))
-const SatConfigs = lazy(() => import('./pages/SatConfigs'))
-const Account = lazy(() => import('./pages/Account'))
-const Companies = lazy(() => import('./pages/Companies'))
-const Users = lazy(() => import('./pages/Users'))
-const Orders = lazy(() => import('./pages/Orders'))
-const Projects = lazy(() => import('./pages/Projects'))
-const ProjectDetail = lazy(() => import('./pages/ProjectDetail'))
-const ConceptStatuses = lazy(() => import('./pages/ConceptStatuses'))
-const Resources = lazy(() => import('./pages/Resources'))
-const ResourceLogs = lazy(() => import('./pages/ResourceLogs'))
-const ResourceUsages = lazy(() => import('./pages/ResourceUsages'))
-const Tiempo = lazy(() => import('./pages/Tiempo'))
+const Login = lazyWithReload(() => import('./pages/Login'))
+const Dashboard = lazyWithReload(() => import('./pages/Dashboard'))
+const Onboarding = lazyWithReload(() => import('./pages/Onboarding'))
+const Accounts = lazyWithReload(() => import('./pages/Accounts'))
+const Categories = lazyWithReload(() => import('./pages/Categories'))
+const Contacts = lazyWithReload(() => import('./pages/Contacts'))
+const Transactions = lazyWithReload(() => import('./pages/Transactions'))
+const RecurringPlans = lazyWithReload(() => import('./pages/RecurringPlans'))
+const PlannedEntries = lazyWithReload(() => import('./pages/PlannedEntries'))
+const Forecasts = lazyWithReload(() => import('./pages/Forecasts'))
+const Cfdi = lazyWithReload(() => import('./pages/Cfdi'))
+const SatConfigs = lazyWithReload(() => import('./pages/SatConfigs'))
+const Account = lazyWithReload(() => import('./pages/Account'))
+const Companies = lazyWithReload(() => import('./pages/Companies'))
+const Users = lazyWithReload(() => import('./pages/Users'))
+const Orders = lazyWithReload(() => import('./pages/Orders'))
+const Projects = lazyWithReload(() => import('./pages/Projects'))
+const ProjectDetail = lazyWithReload(() => import('./pages/ProjectDetail'))
+const ConceptStatuses = lazyWithReload(() => import('./pages/ConceptStatuses'))
+const Resources = lazyWithReload(() => import('./pages/Resources'))
+const ResourceLogs = lazyWithReload(() => import('./pages/ResourceLogs'))
+const ResourceUsages = lazyWithReload(() => import('./pages/ResourceUsages'))
+const Tiempo = lazyWithReload(() => import('./pages/Tiempo'))
 
 function ProtectedLayout(props: { children?: JSX.Element }): JSX.Element {
   return (

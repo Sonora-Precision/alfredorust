@@ -1,0 +1,22 @@
+# alfredodev
+
+Plataforma de gestión financiera y de operaciones para PyMEs en México: CFDIs y
+SAT, cuentas, categorías, transacciones, proyectos, recursos y flujo de efectivo.
+Multiempresa. Esta URL pública es un demo interactivo de solo lectura con datos
+de ejemplo.
+
+## Secciones
+
+- [Inicio](https://demo.alfredorivera.dev/)
+- [CFDIs y SAT](https://demo.alfredorivera.dev/cfdi)
+- [Cuentas](https://demo.alfredorivera.dev/accounts)
+- [Movimientos](https://demo.alfredorivera.dev/transactions)
+- [Entradas planificadas](https://demo.alfredorivera.dev/planned-entries)
+- [Proyectos](https://demo.alfredorivera.dev/projects)
+- [Recursos](https://demo.alfredorivera.dev/resources)
+- [Tiempo (flujo de efectivo)](https://demo.alfredorivera.dev/tiempo)
+
+## Notas
+
+- Los datos son ficticios; los cambios no se guardan.
+- Para acceso real con datos propios, solicita acceso desde el sitio.

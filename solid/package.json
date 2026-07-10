@@ -10,6 +10,8 @@
     "lint": "eslint \"src/**/*.{ts,tsx}\""
   },
   "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.2.7",
+    "@fontsource/ibm-plex-sans": "^5.2.8",
     "@kobalte/core": "^0.13.12",
     "@solidjs/router": "^0.16.1",
     "@tanstack/solid-query": "^5.101.2",

@@ -571,7 +571,7 @@ export default function Cfdi(): JSX.Element {
                 <Card glass glow class="p-4 lg:col-span-2">
                   <div class="flex flex-wrap items-center justify-between gap-2">
                     <div>
-                      <h3 class="text-[14px] font-semibold">Mensual · emitidos vs recibidos</h3>
+                      <h2 class="text-[14px] font-semibold">Mensual · emitidos vs recibidos</h2>
                       <p class="text-[12px] text-muted-foreground">Por mes en el rango</p>
                     </div>
                     <div class="flex items-center gap-3 text-[12px]">
@@ -588,7 +588,7 @@ export default function Cfdi(): JSX.Element {
                   </div>
                 </Card>
                 <Card glass glow class="p-4">
-                  <h3 class="text-[14px] font-semibold">Dirección</h3>
+                  <h2 class="text-[14px] font-semibold">Dirección</h2>
                   <div class="mx-auto mt-2 h-40 w-40">
                     <Donut
                       segments={[
@@ -606,7 +606,7 @@ export default function Cfdi(): JSX.Element {
               {/* Currency totals + tops */}
               <div class="grid gap-3 lg:grid-cols-3">
                 <Card glass glow class="p-4">
-                  <h3 class="text-[14px] font-semibold">Totales por moneda</h3>
+                  <h2 class="text-[14px] font-semibold">Totales por moneda</h2>
                   <div class="mt-3 space-y-3">
                     <For
                       each={analytics().currencies}
@@ -629,9 +629,9 @@ export default function Cfdi(): JSX.Element {
                   </div>
                 </Card>
                 <Card glass glow class="p-4">
-                  <h3 class="text-[14px] font-semibold">
+                  <h2 class="text-[14px] font-semibold">
                     Top emisores <span class="text-[11px] font-normal text-muted-foreground">(gastos)</span>
-                  </h3>
+                  </h2>
                   <div class="mt-3 space-y-2.5">
                     <For
                       each={analytics().topEmisores}
@@ -652,9 +652,9 @@ export default function Cfdi(): JSX.Element {
                   </div>
                 </Card>
                 <Card glass glow class="p-4">
-                  <h3 class="text-[14px] font-semibold">
+                  <h2 class="text-[14px] font-semibold">
                     Top receptores <span class="text-[11px] font-normal text-muted-foreground">(ingresos)</span>
-                  </h3>
+                  </h2>
                   <div class="mt-3 space-y-2.5">
                     <For
                       each={analytics().topReceptores}
@@ -1010,7 +1010,7 @@ export default function Cfdi(): JSX.Element {
                   </span>
                   <div class="flex-1">
                     <div class="flex items-center gap-2">
-                      <h3 class="text-[14px] font-semibold">Actualización automática</h3>
+                      <h2 class="text-[14px] font-semibold">Actualización automática</h2>
                       <Badge tone="success">● En línea</Badge>
                     </div>
                     <p class="mt-0.5 text-[12px] text-muted-foreground">
