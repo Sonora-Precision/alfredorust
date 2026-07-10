@@ -2,7 +2,7 @@ use std::{str::FromStr, sync::Arc, time::Duration};
 
 use axum::{
     Json,
-    extract::{Form, Path, State},
+    extract::{Form, Multipart, Path, State},
     http::StatusCode,
     response::IntoResponse,
 };
@@ -22,7 +22,7 @@ use crate::{
         AppState, CfdiJob, CfdiJobStatus, create_or_update_planned_entry_from_cfdi,
         get_cfdi_job, get_company_by_id, get_or_create_category, get_or_create_contact_by_rfc,
         get_or_create_sat_account, get_sat_config, insert_cfdi_job, list_cfdi_jobs,
-        pay_planned_entry, set_cfdi_job_status,
+        list_sat_configs, pay_planned_entry, set_cfdi_job_status,
     },
 };
 
@@ -124,6 +124,148 @@ pub async fn company_cfdi_download_api(
     Json(form): Json<CfdiDownloadForm>,
 ) -> impl IntoResponse {
     start_cfdi_download(session_user, state, company_id, form).await
+}
+
+/// Per-uploaded-file cap. CFDI XMLs are a few KB; a ZIP of a whole month can be
+/// larger, so allow up to 25 MB per file (the route also raises the request
+/// body limit to match — see `main.rs`).
+const MAX_CFDI_UPLOAD_BYTES: usize = 25 * 1024 * 1024;
+
+#[derive(Serialize)]
+pub struct CfdiUploadResult {
+    /// Files received in the multipart body.
+    pub files: usize,
+    /// CFDIs upserted into the DB + on-disk store (new or updated).
+    pub imported: usize,
+    /// Files that could not be parsed / stored.
+    pub failed: usize,
+    /// Human-readable reasons for the failed files.
+    pub errors: Vec<String>,
+}
+
+/// Manual CFDI upload (`POST /api/admin/companies/{id}/cfdis/upload`). Accepts a
+/// multipart body with one or more `files` fields, each a `.xml` CFDI or a
+/// `.zip` of XMLs. Every CFDI is upserted by UUID and its raw XML persisted to
+/// the on-disk store — the same DB + file path the SAT download uses, so a
+/// repeated UUID just updates the existing record.
+#[utoipa::path(
+    post,
+    path = "/api/admin/companies/{id}/cfdis/upload",
+    tag = "cfdi",
+    params(("id" = String, Path, description = "Company id")),
+    responses(
+        (status = 200, description = "Upload processed"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 400, description = "Invalid input"),
+        (status = 413, description = "File too large")
+    ),
+    security(("session" = []))
+)]
+pub async fn company_cfdi_upload_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(company_id): Path<String>,
+    mut multipart: Multipart,
+) -> impl IntoResponse {
+    let company_object_id = match ObjectId::from_str(&company_id) {
+        Ok(id) => id,
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error":"company_id inválido"})),
+            )
+                .into_response();
+        }
+    };
+
+    if let Err(status) = require_company_admin(&session_user, &company_object_id) {
+        return status.into_response();
+    }
+
+    // Store root + this company's slug (fall back to the id hex), matching the
+    // SAT download path so manual + downloaded XML share one on-disk tree.
+    let store_root = std::path::PathBuf::from(
+        std::env::var("CFDI_STORE_DIR").unwrap_or_else(|_| "data/cfdi_store".to_string()),
+    );
+    let slug = match get_company_by_id(&state, &company_object_id).await {
+        Ok(Some(c)) if !c.slug.is_empty() => c.slug,
+        _ => company_id.clone(),
+    };
+    // The company's own RFC (from any SAT config) decides emitido vs recibido.
+    // Empty is fine — import_upload falls back to the receptor RFC folder.
+    let company_rfc = match list_sat_configs(&state, &company_object_id).await {
+        Ok(cfgs) => cfgs
+            .into_iter()
+            .map(|c| c.rfc)
+            .find(|r| !r.trim().is_empty())
+            .unwrap_or_default(),
+        Err(_) => String::new(),
+    };
+
+    let mut result = CfdiUploadResult {
+        files: 0,
+        imported: 0,
+        failed: 0,
+        errors: Vec::new(),
+    };
+
+    while let Ok(Some(field)) = multipart.next_field().await {
+        // Only consume file parts; ignore stray text fields.
+        if field.file_name().is_none() && field.name().unwrap_or("") != "files" {
+            continue;
+        }
+        let filename = field
+            .file_name()
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "upload.xml".to_string());
+        let bytes = match field.bytes().await {
+            Ok(b) => b,
+            Err(_) => {
+                result.files += 1;
+                result.failed += 1;
+                result.errors.push(format!("{filename}: no se pudo leer"));
+                continue;
+            }
+        };
+        if bytes.is_empty() {
+            continue;
+        }
+        result.files += 1;
+        if bytes.len() > MAX_CFDI_UPLOAD_BYTES {
+            result.failed += 1;
+            result
+                .errors
+                .push(format!("{filename}: excede el tamaño máximo (25 MB)"));
+            continue;
+        }
+
+        match cfdi::import_upload(
+            &state.cfdis,
+            &company_id,
+            &filename,
+            &bytes,
+            &store_root,
+            &slug,
+            &company_rfc,
+        )
+        .await
+        {
+            Ok(imported) if !imported.is_empty() => result.imported += imported.len(),
+            Ok(_) => {
+                result.failed += 1;
+                result
+                    .errors
+                    .push(format!("{filename}: no contiene CFDI válidos"));
+            }
+            Err(e) => {
+                result.failed += 1;
+                result.errors.push(format!("{filename}: {e}"));
+            }
+        }
+    }
+
+    (StatusCode::OK, Json(result)).into_response()
 }
 
 /// Shared core: validate, split the range into monthly chunks, and spawn one

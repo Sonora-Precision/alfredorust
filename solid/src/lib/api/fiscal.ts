@@ -30,6 +30,23 @@ export const getCfdiJob = (companyId: string, jobId: string) =>
 export const listCfdis = () => apiGet<CfdiList>('/api/admin/cfdis/data')
 export const getCfdi = (uuid: string) => apiGet<CfdiDetailResponse>(`/api/admin/cfdis/${uuid}`)
 
+// --- Manual CFDI upload (per company) ------------------------------------------------
+// Drop `.xml` CFDIs or a `.zip` of XMLs; each is upserted by UUID into the same
+// DB + on-disk store the SAT download uses, so re-uploading a UUID just updates it.
+
+export interface CfdiUploadResult {
+  files: number
+  imported: number
+  failed: number
+  errors: string[]
+}
+
+export function uploadCfdis(companyId: string, files: File[]): Promise<CfdiUploadResult> {
+  const form = new FormData()
+  for (const f of files) form.append('files', f)
+  return apiPostForm<CfdiUploadResult>(`/api/admin/companies/${companyId}/cfdis/upload`, form)
+}
+
 // --- SAT fiscal configs ---------------------------------------------------------------
 
 export const listSatConfigs = () => apiGet<SatConfigData[]>('/api/admin/sat-configs')

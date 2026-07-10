@@ -9,7 +9,9 @@
 // - GET  /secret?bytes=20      -> generates a new Base32 secret (no persistence)
 
 use axum::{
-    Router, middleware,
+    Router,
+    extract::DefaultBodyLimit,
+    middleware,
     routing::{get, post},
 };
 use dotenvy::dotenv;
@@ -108,6 +110,13 @@ async fn main() {
         .route(
             "/api/admin/companies/{id}/cfdi/download",
             post(routes::company_cfdi_download_api),
+        )
+        .route(
+            "/api/admin/companies/{id}/cfdis/upload",
+            // Raise the body limit above the 2 MB default so a month-sized ZIP
+            // of CFDIs can be dropped in one go (per-file cap enforced in-handler).
+            post(routes::company_cfdi_upload_api)
+                .layer(DefaultBodyLimit::max(30 * 1024 * 1024)),
         )
         .route(
             "/api/admin/companies/{id}/cfdi/jobs",

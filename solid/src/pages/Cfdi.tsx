@@ -27,6 +27,7 @@ import {
   Scale,
   Search,
   ShieldCheck,
+  UploadCloud,
 } from 'lucide-solid'
 import { type JSX, Show, createEffect, createMemo, createSignal, For } from 'solid-js'
 
@@ -38,6 +39,7 @@ import { Card } from '../components/ui/Card'
 import { Checkbox } from '../components/ui/Checkbox'
 import { DateField } from '../components/ui/DateField'
 import { Drawer } from '../components/ui/Drawer'
+import { Dropzone } from '../components/ui/Dropzone'
 import { Modal } from '../components/ui/Modal'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Pagination } from '../components/ui/Pagination'
@@ -250,6 +252,30 @@ export default function Cfdi(): JSX.Element {
     setStart(r.start)
     setEnd(r.end)
     setDlError(null)
+  }
+
+  // --- manual XML/ZIP upload -------------------------------------------------
+  const [uploadResult, setUploadResult] = createSignal<fiscalApi.CfdiUploadResult | null>(null)
+  const [uploadError, setUploadError] = createSignal<string | null>(null)
+  const uploadMutation = createMutation(() => ({
+    mutationFn: (files: File[]) => fiscalApi.uploadCfdis(companyId(), files),
+    onSuccess: (res) => {
+      setUploadError(null)
+      setUploadResult(res)
+      // Refresh the explorer list (and job history, for consistency).
+      void qc.invalidateQueries({ queryKey: ['cfdis'] })
+      void qc.invalidateQueries({ queryKey: ['cfdi-jobs', companyId()] })
+    },
+    onError: (err) => {
+      setUploadResult(null)
+      setUploadError(humanizeError(err, 'No se pudieron subir los CFDIs'))
+    },
+  }))
+  const onDropCfdis = (files: File[]) => {
+    if (!files.length) return
+    setUploadResult(null)
+    setUploadError(null)
+    uploadMutation.mutate(files)
   }
 
   const jobAgg = createMemo(() =>
@@ -868,6 +894,62 @@ export default function Cfdi(): JSX.Element {
                       </Button>
                     </form>
                   </Show>
+                </Show>
+              </div>
+            </Card>
+
+            {/* Manual upload card — drop XML/ZIP; same DB + file store as SAT
+                download, deduped/updated by UUID. */}
+            <Card glass class="overflow-hidden">
+              <div class="flex items-center justify-between border-b border-border px-4 py-3">
+                <div class="flex items-center gap-2">
+                  <UploadCloud class="h-[18px] w-[18px] text-primary" />
+                  <h2 class="text-[15px] font-semibold">Subir CFDIs manualmente</h2>
+                </div>
+                <Badge tone="neutral">Solo admin</Badge>
+              </div>
+              <div class="space-y-3 p-4">
+                <Dropzone
+                  accept=".xml,.zip,text/xml,application/xml,application/zip"
+                  multiple
+                  disabled={uploadMutation.isPending || companyId() === ''}
+                  onFiles={onDropCfdis}
+                  label={
+                    uploadMutation.isPending
+                      ? 'Subiendo…'
+                      : 'Arrastra XML o ZIP aquí, o haz clic para elegir'
+                  }
+                  hint="Se guardan igual que las descargas del SAT; si el UUID ya existe, se actualiza."
+                />
+                <Show when={uploadMutation.isPending}>
+                  <div class="flex items-center gap-2 text-[12px] text-muted-foreground">
+                    <Spinner />
+                    <span>Procesando archivos…</span>
+                  </div>
+                </Show>
+                <Show when={uploadError()}>
+                  <div class="text-[12px] text-destructive">{uploadError()}</div>
+                </Show>
+                <Show when={uploadResult()}>
+                  {(res) => (
+                    <div class="space-y-2 rounded-lg border border-border bg-glass p-3 text-[12px]">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <Badge tone="success">{res().imported} importados/actualizados</Badge>
+                        <Show when={res().failed > 0}>
+                          <Badge tone="danger">{res().failed} con error</Badge>
+                        </Show>
+                        <span class="text-muted-foreground">de {res().files} archivo(s)</span>
+                      </div>
+                      <Show when={res().errors.length > 0}>
+                        <ul class="list-disc space-y-0.5 pl-4 text-muted-foreground">
+                          <For each={res().errors.slice(0, 8)}>{(e) => <li>{e}</li>}</For>
+                          <Show when={res().errors.length > 8}>
+                            <li>… y {res().errors.length - 8} más</li>
+                          </Show>
+                        </ul>
+                      </Show>
+                    </div>
+                  )}
                 </Show>
               </div>
             </Card>

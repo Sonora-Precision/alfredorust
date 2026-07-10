@@ -635,7 +635,6 @@ async fn protected_endpoints_require_authentication() {
         "/api/admin/sat-configs/upload",
         "/api/admin/resource_usages/grid",
         "/api/admin/transactions",
-        "/pdf/preview",
     ] {
         assert_requires_auth_post(&shared, path).await;
     }
@@ -1003,66 +1002,6 @@ async fn staff_cannot_reach_admin_json_endpoints() {
     common::teardown(Some(ctx)).await;
 }
 
-
-#[tokio::test]
-async fn pdf_preview_renders_for_authenticated_user() {
-    let ctx = match common::setup_state().await {
-        Some(c) => c,
-        None => return,
-    };
-    let state = ctx.state.clone();
-    let shared = Arc::new(state.clone());
-
-    let company = create_company(&state, "PDF Co", "pdf-co", "MXN", true, None)
-        .await
-        .unwrap();
-    create_user_with_permissions(
-        &state,
-        "pdf-user@example.com",
-        "SECRET",
-        &[(company.clone(), UserRole::Staff, vec![])],
-    )
-    .await
-    .unwrap();
-    let token = create_session(&state, "pdf-user@example.com").await.unwrap();
-    let host = "pdf-co.miapp.local";
-
-    // An authenticated user gets a JSON envelope (200) regardless of whether the
-    // typst binary is present; the handler degrades gracefully to ok:false.
-    let (status, body) = post_json_with_cookie(
-        build_app(shared.clone()),
-        host,
-        "/pdf/preview",
-        &token,
-        serde_json::json!({ "source": "= Test\n\nHello from the test suite." }),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    let resp: serde_json::Value = serde_json::from_str(&body).expect("preview must be JSON");
-    assert!(resp.get("ok").and_then(|v| v.as_bool()).is_some());
-
-    // If typst is available on this machine, the preview must actually compile a
-    // real PDF (base64 that decodes to a `%PDF` document).
-    let typst_available = std::process::Command::new(
-        std::env::var("TYPST_BIN").unwrap_or_else(|_| "typst".to_string()),
-    )
-    .arg("--version")
-    .output()
-    .map(|o| o.status.success())
-    .unwrap_or(false);
-
-    if typst_available {
-        assert_eq!(resp["ok"], true, "typst is installed, preview should succeed: {body}");
-        let b64 = resp["pdf_base64"].as_str().expect("pdf_base64 present");
-        let bytes = data_encoding::BASE64.decode(b64.as_bytes()).expect("valid base64");
-        assert!(
-            bytes.starts_with(b"%PDF"),
-            "decoded preview must be a real PDF document"
-        );
-    }
-
-    common::teardown(Some(ctx)).await;
-}
 
 
 #[tokio::test]

@@ -83,22 +83,7 @@ pub async fn import_zip(
     zip_bytes: &[u8],
     store: Option<&CfdiStoreTarget>,
 ) -> Result<Vec<ImportedCfdi>> {
-    let cursor = std::io::Cursor::new(zip_bytes);
-    let mut archive = ZipArchive::new(cursor).context("Opening ZIP")?;
-
-    let mut xml_files: Vec<(String, String)> = Vec::new();
-    for i in 0..archive.len() {
-        let mut entry = archive.by_index(i).context("Reading ZIP entry")?;
-        let name = entry.name().to_lowercase();
-        if !name.ends_with(".xml") {
-            continue;
-        }
-        let mut xml = String::new();
-        entry
-            .read_to_string(&mut xml)
-            .with_context(|| format!("Reading {name} from ZIP"))?;
-        xml_files.push((name, xml));
-    }
+    let xml_files = extract_zip_xmls(zip_bytes)?;
 
     let mut imported = Vec::new();
     for (name, xml) in xml_files {
@@ -135,6 +120,106 @@ pub async fn import_xml(
         .context("MongoDB upsert")?;
 
     Ok(summary)
+}
+
+/// Extract every `.xml` entry from a ZIP as `(name, contents)` pairs.
+fn extract_zip_xmls(zip_bytes: &[u8]) -> Result<Vec<(String, String)>> {
+    let cursor = std::io::Cursor::new(zip_bytes);
+    let mut archive = ZipArchive::new(cursor).context("Opening ZIP")?;
+
+    let mut xml_files: Vec<(String, String)> = Vec::new();
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i).context("Reading ZIP entry")?;
+        let name = entry.name().to_lowercase();
+        if !name.ends_with(".xml") {
+            continue;
+        }
+        let mut xml = String::new();
+        entry
+            .read_to_string(&mut xml)
+            .with_context(|| format!("Reading {name} from ZIP"))?;
+        xml_files.push((name, xml));
+    }
+    Ok(xml_files)
+}
+
+/// Import one CFDI XML (DB upsert by UUID) and also persist the raw XML to the
+/// on-disk store, deriving `emitido`/`recibido` from the company's own RFC.
+///
+/// The direction (and therefore the store subfolder) is decided by which party
+/// of the CFDI matches `company_rfc`: emisor → emitido, receptor → recibido.
+/// When `company_rfc` is empty (no SAT config yet) or matches neither party, we
+/// fall back to the receptor's RFC folder as `recibido` — the DB record is
+/// unaffected either way (it is keyed purely by UUID).
+pub async fn import_xml_with_store(
+    collection: &Collection<bson::Document>,
+    company_id: &str,
+    xml: &str,
+    store_root: &std::path::Path,
+    slug: &str,
+    company_rfc: &str,
+) -> Result<ImportedCfdi> {
+    let summary = import_xml(collection, company_id, xml).await?;
+
+    let crfc = company_rfc.trim().to_uppercase();
+    let (direction, store_rfc): (&'static str, String) = if !crfc.is_empty()
+        && summary.emisor_rfc.trim().to_uppercase() == crfc
+    {
+        ("emitido", company_rfc.trim().to_string())
+    } else if !crfc.is_empty() && summary.receptor_rfc.trim().to_uppercase() == crfc {
+        ("recibido", company_rfc.trim().to_string())
+    } else if !crfc.is_empty() {
+        // Company RFC known but matches neither party — still keep it under the
+        // tenant's own folder so all of a company's XML stays together.
+        ("recibido", company_rfc.trim().to_string())
+    } else {
+        ("recibido", summary.receptor_rfc.trim().to_string())
+    };
+
+    let target = CfdiStoreTarget {
+        root: store_root.to_path_buf(),
+        slug: slug.to_string(),
+        rfc: store_rfc,
+        direction,
+    };
+    // Strip the BOM so the stored bytes match what we parsed.
+    let clean = xml.strip_prefix('\u{FEFF}').unwrap_or(xml);
+    store_raw_xml(&target, &summary, clean);
+
+    Ok(summary)
+}
+
+/// Import CFDI(s) from a manually-uploaded file: either a single `.xml` or a
+/// `.zip` of XMLs. Each CFDI is upserted by UUID and its raw XML persisted to
+/// the on-disk store (deduped by UUID), exactly like the SAT download path.
+/// Per-file parse errors are logged and skipped so one bad file never aborts a
+/// multi-file upload. Returns the CFDIs that imported successfully.
+pub async fn import_upload(
+    collection: &Collection<bson::Document>,
+    company_id: &str,
+    filename: &str,
+    bytes: &[u8],
+    store_root: &std::path::Path,
+    slug: &str,
+    company_rfc: &str,
+) -> Result<Vec<ImportedCfdi>> {
+    let xmls: Vec<(String, String)> = if filename.to_lowercase().ends_with(".zip") {
+        extract_zip_xmls(bytes)?
+    } else {
+        let xml = std::str::from_utf8(bytes).context("El XML del CFDI no es UTF-8 válido")?;
+        vec![(filename.to_string(), xml.to_string())]
+    };
+
+    let mut imported = Vec::new();
+    for (name, xml) in xmls {
+        match import_xml_with_store(collection, company_id, &xml, store_root, slug, company_rfc)
+            .await
+        {
+            Ok(cfdi) => imported.push(cfdi),
+            Err(e) => eprintln!("[cfdi] upload skip {name}: {e}"),
+        }
+    }
+    Ok(imported)
 }
 
 fn parse_cfdi(doc: &Document) -> Result<(String, bson::Document, ImportedCfdi)> {
