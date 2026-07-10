@@ -6,6 +6,7 @@
 // frontend/src/pages/charts.rs. See docs/solid-migration/pages-part1.md
 // "TransactionsPage".
 import { createMutation, createQuery, useQueryClient } from '@tanstack/solid-query'
+import { createVirtualizer } from '@tanstack/solid-virtual'
 import { ArrowLeftRight, Pencil, Trash2 } from 'lucide-solid'
 import { type JSX, Show, createMemo, createSignal, For } from 'solid-js'
 
@@ -20,10 +21,11 @@ import { Modal } from '../components/ui/Modal'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Select } from '../components/ui/Select'
 import { Spinner } from '../components/ui/Spinner'
-import { Table, TableBody, TableCell, TableHead, TableHeadCell, TableRow } from '../components/ui/Table'
 import { toast } from '../components/ui/Toast'
 import { humanizeError } from '../lib/api/client'
 import * as financeApi from '../lib/api/finance'
+import { useMediaQuery } from '../lib/media'
+import { remeasureAfterLayout } from '../lib/virtual'
 import { dateToRfc3339, money, rfc3339ToDate } from '../lib/format'
 import type { Transaction, TransactionPayload, TransactionType } from '../lib/api/types'
 import { useAuth } from '../lib/auth/AuthContext'
@@ -72,6 +74,26 @@ export default function Transactions(): JSX.Element {
     queryKey: ['plannedEntries'],
     queryFn: financeApi.listPlannedEntries,
   }))
+
+  // --- virtualized list: only the visible ~15 rows are in the DOM, so the list
+  // loads instantly however long it gets. One virtualizer drives the desktop
+  // table OR the mobile cards (whichever the viewport shows). ---------------
+  const rows = () => transactionsQuery.data ?? []
+  const isDesktop = useMediaQuery('(min-width: 768px)')
+  const [scrollEl, setScrollEl] = createSignal<HTMLElement>()
+  const rowVirt = createVirtualizer({
+    get count() {
+      return rows().length
+    },
+    getScrollElement: () => scrollEl() ?? null,
+    estimateSize: () => (isDesktop() ? 45 : 100),
+    overscan: 10,
+  })
+  const vItems = () => rowVirt.getVirtualItems()
+  // eslint-disable-next-line solid/reactivity -- scrollEl is read inside the helper's onMount (a tracked scope)
+  remeasureAfterLayout(scrollEl, setScrollEl)
+  const padTop = () => vItems()[0]?.start ?? 0
+  const padBottom = () => rowVirt.getTotalSize() - (vItems()[vItems().length - 1]?.end ?? 0)
 
   // --- client-side analytics, mirrors `tx_charts` in transactions.rs ------
   const charts = createMemo(() => {
@@ -314,6 +336,9 @@ export default function Transactions(): JSX.Element {
       </Show>
 
       <Card glass>
+        {/* The scroll container must exist at mount (before the query resolves)
+            so the virtualizer's size observer attaches to a real element. */}
+        <div ref={setScrollEl} class="h-[65vh] overflow-auto">
         <Show when={!transactionsQuery.isLoading} fallback={
           <CardContent class="flex items-center justify-center gap-2 py-16 text-muted-foreground">
             <Spinner />
@@ -342,88 +367,101 @@ export default function Transactions(): JSX.Element {
                 </CardContent>
               }
             >
-              {/* Desktop: table. Mobile (<md): stacked cards. */}
-              <div class="hidden md:block">
-                <Table>
-                  <TableHead>
-                    <TableRow>
-                      <TableHeadCell>Fecha</TableHeadCell>
-                      <TableHeadCell>Descripción</TableHeadCell>
-                      <TableHeadCell>Tipo</TableHeadCell>
-                      <TableHeadCell>Monto</TableHeadCell>
-                      <TableHeadCell>Categoría</TableHeadCell>
-                      <Show when={isAdmin()}>
-                        <TableHeadCell class="text-right">Acciones</TableHeadCell>
-                      </Show>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    <For each={transactionsQuery.data ?? []}>{(t) => (
-                      <TableRow>
-                        <TableCell class="tnum text-muted-foreground">{t.date}</TableCell>
-                        <TableCell class="font-medium text-foreground">{t.description}</TableCell>
-                        <TableCell>
-                          <Badge tone={txTypeBadgeTone(t.tx_type) as BadgeTone}>{txLabel(t.tx_type)}</Badge>
-                        </TableCell>
-                        <TableCell class="tnum">{money(t.amount)}</TableCell>
-                        <TableCell class="text-muted-foreground">{t.category ?? ''}</TableCell>
-                        <Show when={isAdmin()}>
-                          <TableCell class="text-right">
-                            <div class="flex justify-end gap-1">
-                              <Button variant="ghost" onClick={() => void openEdit(t)} aria-label="Editar">
-                                <Pencil class="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                class="text-destructive hover:bg-destructive/10"
-                                onClick={() => setDeleteTarget(t)}
-                                aria-label="Eliminar"
-                              >
-                                <Trash2 class="h-4 w-4" />
-                              </Button>
+              {/* Virtualized: only the visible rows live in the DOM (instant load
+                  however long the list gets). One virtualizer drives the desktop
+                  table OR the mobile cards; spacer rows/padding reserve the rest. */}
+                <Show
+                  when={isDesktop()}
+                  fallback={
+                    <div style={{ 'padding-top': `${padTop()}px`, 'padding-bottom': `${padBottom()}px` }}>
+                      <For each={vItems()}>
+                        {(vi) => {
+                          const t = rows()[vi.index]
+                          return (
+                            <div class="mb-2 rounded-lg border border-border p-3">
+                              <div class="flex items-start justify-between gap-2">
+                                <p class="min-w-0 flex-1 font-medium text-foreground">{t.description}</p>
+                                <Show when={isAdmin()}>
+                                  <div class="flex shrink-0 gap-1">
+                                    <Button variant="ghost" onClick={() => void openEdit(t)} aria-label="Editar">
+                                      <Pencil class="h-4 w-4" />
+                                    </Button>
+                                    <Button variant="ghost" class="text-destructive hover:bg-destructive/10" onClick={() => setDeleteTarget(t)} aria-label="Eliminar">
+                                      <Trash2 class="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                </Show>
+                              </div>
+                              <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                                <Badge tone={txTypeBadgeTone(t.tx_type) as BadgeTone}>{txLabel(t.tx_type)}</Badge>
+                                <span class="font-medium text-foreground tnum">{money(t.amount)}</span>
+                                <span class="text-muted-foreground tnum">{t.date}</span>
+                                <Show when={t.category}>
+                                  <span class="text-muted-foreground">{t.category}</span>
+                                </Show>
+                              </div>
                             </div>
-                          </TableCell>
+                          )
+                        }}
+                      </For>
+                    </div>
+                  }
+                >
+                  <table class="w-full border-collapse text-sm">
+                    <thead class="sticky top-0 z-10 bg-card text-left text-muted-foreground">
+                      <tr class="border-b border-border">
+                        <th class="px-3 py-2 text-xs font-semibold uppercase tracking-wide">Fecha</th>
+                        <th class="px-3 py-2 text-xs font-semibold uppercase tracking-wide">Descripción</th>
+                        <th class="px-3 py-2 text-xs font-semibold uppercase tracking-wide">Tipo</th>
+                        <th class="px-3 py-2 text-xs font-semibold uppercase tracking-wide">Monto</th>
+                        <th class="px-3 py-2 text-xs font-semibold uppercase tracking-wide">Categoría</th>
+                        <Show when={isAdmin()}>
+                          <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide">Acciones</th>
                         </Show>
-                      </TableRow>
-                    )}</For>
-                  </TableBody>
-                </Table>
-              </div>
-              <div class="space-y-2 md:hidden">
-                <For each={transactionsQuery.data ?? []}>{(t) => (
-                  <div class="rounded-lg border border-border p-3">
-                    <div class="flex items-start justify-between gap-2">
-                      <p class="min-w-0 flex-1 font-medium text-foreground">{t.description}</p>
-                      <Show when={isAdmin()}>
-                        <div class="flex shrink-0 gap-1">
-                          <Button variant="ghost" onClick={() => void openEdit(t)} aria-label="Editar">
-                            <Pencil class="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            class="text-destructive hover:bg-destructive/10"
-                            onClick={() => setDeleteTarget(t)}
-                            aria-label="Eliminar"
-                          >
-                            <Trash2 class="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </Show>
-                    </div>
-                    <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                      <Badge tone={txTypeBadgeTone(t.tx_type) as BadgeTone}>{txLabel(t.tx_type)}</Badge>
-                      <span class="font-medium text-foreground tnum">{money(t.amount)}</span>
-                      <span class="text-muted-foreground tnum">{t.date}</span>
-                      <Show when={t.category}>
-                        <span class="text-muted-foreground">{t.category}</span>
-                      </Show>
-                    </div>
-                  </div>
-                )}</For>
-              </div>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td colspan={isAdmin() ? 6 : 5} style={{ padding: 0, height: `${padTop()}px` }} />
+                      </tr>
+                      <For each={vItems()}>
+                        {(vi) => {
+                          const t = rows()[vi.index]
+                          return (
+                            <tr class="border-b border-border hover:bg-muted/40">
+                              <td class="px-3 py-2 align-middle tnum text-muted-foreground">{t.date}</td>
+                              <td class="px-3 py-2 align-middle font-medium text-foreground">{t.description}</td>
+                              <td class="px-3 py-2 align-middle">
+                                <Badge tone={txTypeBadgeTone(t.tx_type) as BadgeTone}>{txLabel(t.tx_type)}</Badge>
+                              </td>
+                              <td class="px-3 py-2 align-middle tnum">{money(t.amount)}</td>
+                              <td class="px-3 py-2 align-middle text-muted-foreground">{t.category ?? ''}</td>
+                              <Show when={isAdmin()}>
+                                <td class="px-3 py-2 align-middle text-right">
+                                  <div class="flex justify-end gap-1">
+                                    <Button variant="ghost" onClick={() => void openEdit(t)} aria-label="Editar">
+                                      <Pencil class="h-4 w-4" />
+                                    </Button>
+                                    <Button variant="ghost" class="text-destructive hover:bg-destructive/10" onClick={() => setDeleteTarget(t)} aria-label="Eliminar">
+                                      <Trash2 class="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                </td>
+                              </Show>
+                            </tr>
+                          )
+                        }}
+                      </For>
+                      <tr>
+                        <td colspan={isAdmin() ? 6 : 5} style={{ padding: 0, height: `${padBottom()}px` }} />
+                      </tr>
+                    </tbody>
+                  </table>
+                </Show>
             </Show>
           </Show>
         </Show>
+        </div>
       </Card>
 
       {/* Create / edit modal */}

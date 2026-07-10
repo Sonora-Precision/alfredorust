@@ -7,6 +7,7 @@
 // Accounts.tsx pattern (solid-query + Modal + Table + toast + Badge). See
 // docs/solid-migration/pages-part1.md "PlannedEntriesPage" for the spec.
 import { createMutation, createQuery, useQueryClient } from '@tanstack/solid-query'
+import { createVirtualizer } from '@tanstack/solid-virtual'
 import { Banknote, ListChecks, Pencil, Plus, Trash2 } from 'lucide-solid'
 import { type JSX, Show, createSignal, For } from 'solid-js'
 
@@ -18,11 +19,12 @@ import { Modal } from '../components/ui/Modal'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Select } from '../components/ui/Select'
 import { Spinner } from '../components/ui/Spinner'
-import { Table, TableBody, TableCell, TableHead, TableHeadCell, TableRow } from '../components/ui/Table'
 import { toast } from '../components/ui/Toast'
 import { humanizeError } from '../lib/api/client'
 import * as financeApi from '../lib/api/finance'
 import { listProjectOptions } from '../lib/api/operations'
+import { useMediaQuery } from '../lib/media'
+import { remeasureAfterLayout } from '../lib/virtual'
 import type {
   FlowType,
   PlannedEntry,
@@ -75,6 +77,27 @@ export default function PlannedEntries(): JSX.Element {
   const projectsQuery = createQuery(() => ({ queryKey: ['project-options'], queryFn: listProjectOptions }))
 
   const invalidateEntries = () => qc.invalidateQueries({ queryKey: ['planned-entries'] })
+
+  // --- virtualized list: only the visible ~15 rows are in the DOM, so the list
+  // loads instantly however long it gets. One virtualizer drives the desktop
+  // table OR the mobile cards (whichever the viewport shows). ---------------
+  const rows = () => entriesQuery.data ?? []
+  const isDesktop = useMediaQuery('(min-width: 768px)')
+  const [scrollEl, setScrollEl] = createSignal<HTMLElement>()
+  const rowVirt = createVirtualizer({
+    get count() {
+      return rows().length
+    },
+    getScrollElement: () => scrollEl() ?? null,
+    estimateSize: () => (isDesktop() ? 45 : 110),
+    overscan: 10,
+  })
+  const vItems = () => rowVirt.getVirtualItems()
+  // eslint-disable-next-line solid/reactivity -- scrollEl is read inside the helper's onMount (a tracked scope)
+  remeasureAfterLayout(scrollEl, setScrollEl)
+  const padTop = () => vItems()[0]?.start ?? 0
+  const padBottom = () => rowVirt.getTotalSize() - (vItems()[vItems().length - 1]?.end ?? 0)
+  const colCount = () => (isAdmin() ? 7 : 5)
 
   // === 1) main CRUD ========================================================
   const [modalOpen, setModalOpen] = createSignal(false)
@@ -313,6 +336,9 @@ export default function PlannedEntries(): JSX.Element {
       </Show>
 
       <Card glass>
+        {/* The scroll container must exist at mount (before the query resolves)
+            so the virtualizer's size observer attaches to a real element. */}
+        <div ref={setScrollEl} class="h-[65vh] overflow-auto">
         <Show when={!entriesQuery.isLoading} fallback={
           <CardContent class="flex items-center justify-center gap-2 py-16 text-muted-foreground">
             <Spinner />
@@ -341,126 +367,152 @@ export default function PlannedEntries(): JSX.Element {
                 </CardContent>
               }
             >
-              <div class="hidden md:block">
-                <Table>
-                  <TableHead>
-                    <TableRow>
-                      <Show when={isAdmin()}>
-                        <TableHeadCell class="w-8" />
-                      </Show>
-                      <TableHeadCell>Nombre</TableHeadCell>
-                      <TableHeadCell>Flujo</TableHeadCell>
-                      <TableHeadCell>Monto</TableHeadCell>
-                      <TableHeadCell>Vence</TableHeadCell>
-                      <TableHeadCell>Estado</TableHeadCell>
-                      <Show when={isAdmin()}>
-                        <TableHeadCell class="text-right">Acciones</TableHeadCell>
-                      </Show>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    <For each={entriesQuery.data ?? []}>{(e) => (
-                      <TableRow>
-                        <Show when={isAdmin()}>
-                          <TableCell>
-                            <input
-                              type="checkbox"
-                              class="h-4 w-4 rounded border-input"
-                              checked={selected().has(e.id)}
-                              onChange={() => toggleSelected(e.id)}
-                            />
-                          </TableCell>
-                        </Show>
-                        <TableCell class="font-medium text-foreground">{e.name}</TableCell>
-                        <TableCell>
-                          <Badge tone={flowBadgeProps(e.flow_type).tone}>{flowBadgeProps(e.flow_type).label}</Badge>
-                        </TableCell>
-                        <TableCell class="tnum">{money(e.amount_estimated)}</TableCell>
-                        <TableCell class="tnum text-muted-foreground">{e.due_date}</TableCell>
-                        <TableCell>
-                          <Badge tone={statusBadgeTone(statusLabel(e))}>{statusLabel(e)}</Badge>
-                        </TableCell>
-                        <Show when={isAdmin()}>
-                          <TableCell class="text-right">
-                            <div class="flex justify-end gap-1">
-                              <Button
-                                variant="ghost"
-                                class="text-emerald-600 hover:bg-emerald-500/10"
-                                onClick={() => beginPay(e)}
-                                aria-label="Pagar"
-                              >
-                                <Banknote class="h-4 w-4" />
-                              </Button>
-                              <Button variant="ghost" onClick={() => void openEdit(e)} aria-label="Editar">
-                                <Pencil class="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                class="text-destructive hover:bg-destructive/10"
-                                onClick={() => setDeleteTarget(e)}
-                                aria-label="Eliminar"
-                              >
-                                <Trash2 class="h-4 w-4" />
-                              </Button>
+              {/* Virtualized: only the visible rows live in the DOM (instant load
+                  however long the list gets). One virtualizer drives the desktop
+                  table OR the mobile cards; spacer rows/padding reserve the rest. */}
+                <Show
+                  when={isDesktop()}
+                  fallback={
+                    <div class="space-y-2">
+                      <div style={{ height: `${padTop()}px` }} />
+                      <For each={vItems()}>
+                        {(vi) => {
+                          const e = rows()[vi.index]
+                          return (
+                            <div class="rounded-lg border border-border p-3">
+                              <div class="flex items-start justify-between gap-2">
+                                <div class="flex min-w-0 flex-1 items-start gap-2">
+                                  <Show when={isAdmin()}>
+                                    <input
+                                      type="checkbox"
+                                      class="mt-0.5 h-4 w-4 shrink-0 rounded border-input"
+                                      checked={selected().has(e.id)}
+                                      onChange={() => toggleSelected(e.id)}
+                                    />
+                                  </Show>
+                                  <p class="min-w-0 flex-1 font-medium text-foreground">{e.name}</p>
+                                </div>
+                                <Show when={isAdmin()}>
+                                  <div class="flex shrink-0 gap-1">
+                                    <Button
+                                      variant="ghost"
+                                      class="text-emerald-600 hover:bg-emerald-500/10"
+                                      onClick={() => beginPay(e)}
+                                      aria-label="Pagar"
+                                    >
+                                      <Banknote class="h-4 w-4" />
+                                    </Button>
+                                    <Button variant="ghost" onClick={() => void openEdit(e)} aria-label="Editar">
+                                      <Pencil class="h-4 w-4" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      class="text-destructive hover:bg-destructive/10"
+                                      onClick={() => setDeleteTarget(e)}
+                                      aria-label="Eliminar"
+                                    >
+                                      <Trash2 class="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                </Show>
+                              </div>
+                              <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                                <Badge tone={flowBadgeProps(e.flow_type).tone}>{flowBadgeProps(e.flow_type).label}</Badge>
+                                <Badge tone={statusBadgeTone(statusLabel(e))}>{statusLabel(e)}</Badge>
+                                <span class="tnum font-medium text-foreground">{money(e.amount_estimated)}</span>
+                                <span class="tnum text-muted-foreground">Vence {e.due_date}</span>
+                              </div>
                             </div>
-                          </TableCell>
-                        </Show>
-                      </TableRow>
-                    )}</For>
-                  </TableBody>
-                </Table>
-              </div>
-              <div class="space-y-2 md:hidden">
-                <For each={entriesQuery.data ?? []}>{(e) => (
-                  <div class="rounded-lg border border-border p-3">
-                    <div class="flex items-start justify-between gap-2">
-                      <div class="flex min-w-0 flex-1 items-start gap-2">
+                          )
+                        }}
+                      </For>
+                      <div style={{ height: `${padBottom()}px` }} />
+                    </div>
+                  }
+                >
+                  <table class="w-full text-sm">
+                    <thead class="sticky top-0 z-10 bg-card">
+                      <tr class="border-b border-border text-left text-muted-foreground">
                         <Show when={isAdmin()}>
-                          <input
-                            type="checkbox"
-                            class="mt-0.5 h-4 w-4 shrink-0 rounded border-input"
-                            checked={selected().has(e.id)}
-                            onChange={() => toggleSelected(e.id)}
-                          />
+                          <th class="w-8 px-3 py-2" />
                         </Show>
-                        <p class="min-w-0 flex-1 font-medium text-foreground">{e.name}</p>
-                      </div>
-                      <Show when={isAdmin()}>
-                        <div class="flex shrink-0 gap-1">
-                          <Button
-                            variant="ghost"
-                            class="text-emerald-600 hover:bg-emerald-500/10"
-                            onClick={() => beginPay(e)}
-                            aria-label="Pagar"
-                          >
-                            <Banknote class="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" onClick={() => void openEdit(e)} aria-label="Editar">
-                            <Pencil class="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            class="text-destructive hover:bg-destructive/10"
-                            onClick={() => setDeleteTarget(e)}
-                            aria-label="Eliminar"
-                          >
-                            <Trash2 class="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </Show>
-                    </div>
-                    <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                      <Badge tone={flowBadgeProps(e.flow_type).tone}>{flowBadgeProps(e.flow_type).label}</Badge>
-                      <Badge tone={statusBadgeTone(statusLabel(e))}>{statusLabel(e)}</Badge>
-                      <span class="tnum font-medium text-foreground">{money(e.amount_estimated)}</span>
-                      <span class="tnum text-muted-foreground">Vence {e.due_date}</span>
-                    </div>
-                  </div>
-                )}</For>
-              </div>
+                        <th class="px-3 py-2 font-medium">Nombre</th>
+                        <th class="px-3 py-2 font-medium">Flujo</th>
+                        <th class="px-3 py-2 font-medium">Monto</th>
+                        <th class="px-3 py-2 font-medium">Vence</th>
+                        <th class="px-3 py-2 font-medium">Estado</th>
+                        <Show when={isAdmin()}>
+                          <th class="px-3 py-2 text-right font-medium">Acciones</th>
+                        </Show>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td colspan={colCount()} style={{ padding: 0, height: `${padTop()}px` }} />
+                      </tr>
+                      <For each={vItems()}>
+                        {(vi) => {
+                          const e = rows()[vi.index]
+                          return (
+                            <tr class="border-b border-border hover:bg-muted/40">
+                              <Show when={isAdmin()}>
+                                <td class="px-3 py-2 align-middle">
+                                  <input
+                                    type="checkbox"
+                                    class="h-4 w-4 rounded border-input"
+                                    checked={selected().has(e.id)}
+                                    onChange={() => toggleSelected(e.id)}
+                                  />
+                                </td>
+                              </Show>
+                              <td class="px-3 py-2 align-middle font-medium text-foreground">{e.name}</td>
+                              <td class="px-3 py-2 align-middle">
+                                <Badge tone={flowBadgeProps(e.flow_type).tone}>{flowBadgeProps(e.flow_type).label}</Badge>
+                              </td>
+                              <td class="px-3 py-2 align-middle tnum">{money(e.amount_estimated)}</td>
+                              <td class="px-3 py-2 align-middle tnum text-muted-foreground">{e.due_date}</td>
+                              <td class="px-3 py-2 align-middle">
+                                <Badge tone={statusBadgeTone(statusLabel(e))}>{statusLabel(e)}</Badge>
+                              </td>
+                              <Show when={isAdmin()}>
+                                <td class="px-3 py-2 align-middle text-right">
+                                  <div class="flex justify-end gap-1">
+                                    <Button
+                                      variant="ghost"
+                                      class="text-emerald-600 hover:bg-emerald-500/10"
+                                      onClick={() => beginPay(e)}
+                                      aria-label="Pagar"
+                                    >
+                                      <Banknote class="h-4 w-4" />
+                                    </Button>
+                                    <Button variant="ghost" onClick={() => void openEdit(e)} aria-label="Editar">
+                                      <Pencil class="h-4 w-4" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      class="text-destructive hover:bg-destructive/10"
+                                      onClick={() => setDeleteTarget(e)}
+                                      aria-label="Eliminar"
+                                    >
+                                      <Trash2 class="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                </td>
+                              </Show>
+                            </tr>
+                          )
+                        }}
+                      </For>
+                      <tr>
+                        <td colspan={colCount()} style={{ padding: 0, height: `${padBottom()}px` }} />
+                      </tr>
+                    </tbody>
+                  </table>
+                </Show>
             </Show>
           </Show>
         </Show>
+        </div>
       </Card>
 
       {/* 1) Create / edit modal */}
