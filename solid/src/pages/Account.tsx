@@ -87,6 +87,7 @@ export default function Account(): JSX.Element {
                 value={username()}
                 onInput={setUsername}
                 autocomplete="username"
+                aria-label="Usuario"
                 required
                 disabled={profileQuery.isLoading}
               />

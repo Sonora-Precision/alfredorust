@@ -185,11 +185,11 @@ export default function ResourceUsages(): JSX.Element {
         <form onSubmit={applyFilters} class="flex flex-wrap items-end gap-3">
           <div>
             <label class="block text-xs font-semibold text-muted-foreground">Fecha</label>
-            <Input value={date()} onInput={setDate} type="date" />
+            <Input value={date()} onInput={setDate} type="date" aria-label="Fecha" />
           </div>
           <div>
             <label class="block text-xs font-semibold text-muted-foreground">Estado</label>
-            <Select value={statusFilter()} onChange={setStatusFilter}>
+            <Select value={statusFilter()} onChange={setStatusFilter} aria-label="Filtrar por estado">
               <option value="all">Todos</option>
               <For each={gridQuery.data?.statuses ?? []}>{(s) => <option value={s.id}>{s.name}</option>}</For>
             </Select>
@@ -257,7 +257,7 @@ export default function ResourceUsages(): JSX.Element {
                             >
                               <A
                                 href={`/projects/${row.project_id ?? ''}`}
-                                class="text-sky-700 hover:text-sky-900 hover:underline"
+                                class="text-primary hover:underline"
                               >
                                 {row.project_title ?? ''}
                               </A>
@@ -267,12 +267,12 @@ export default function ResourceUsages(): JSX.Element {
                         <tr class="hover:bg-muted/60">
                           <th class="sticky left-0 z-10 border-b border-r border-border bg-card px-4 py-4 text-left align-middle">
                             <div class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                              <A href={`/projects/${row.project_id ?? ''}`} class="hover:text-sky-700 hover:underline">
+                              <A href={`/projects/${row.project_id ?? ''}`} class="hover:text-primary hover:underline">
                                 {row.project_title ?? ''}
                               </A>
                             </div>
                             <div class="mt-1 flex flex-wrap items-center gap-2">
-                              <span class="font-semibold text-sky-900">{row.concept_name}</span>
+                              <span class="font-semibold text-foreground">{row.concept_name}</span>
                               <span class="rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                                 {row.status_name ?? ''}
                               </span>
@@ -324,7 +324,7 @@ export default function ResourceUsages(): JSX.Element {
                               const onPointerLeave = () => clearTimer()
                               return (
                                 <td class={cn('h-20 border-b border-r border-border p-1 align-top', !cell.is_work_hour && 'bg-muted/70')}>
-                                  <div class={cn('group relative h-full rounded-xl transition', ids().length > 0 && 'bg-sky-50')}>
+                                  <div class={cn('group relative h-full rounded-xl transition', ids().length > 0 && 'bg-primary/15')}>
                                     <button
                                       type="button"
                                       disabled={!canEdit()}

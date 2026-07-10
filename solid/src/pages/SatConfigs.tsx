@@ -134,15 +134,15 @@ export default function SatConfigs(): JSX.Element {
             </div>
             <div class="space-y-1">
               <label class="block text-sm font-medium text-foreground">Certificado (.cer)</label>
-              <input type="file" accept=".cer" ref={cerInput} class={FILE_INPUT_CLASS} />
+              <input type="file" accept=".cer" ref={cerInput} class={FILE_INPUT_CLASS} aria-label="Certificado (.cer)" />
             </div>
             <div class="space-y-1">
               <label class="block text-sm font-medium text-foreground">Llave privada (.key)</label>
-              <input type="file" accept=".key" ref={keyInput} class={FILE_INPUT_CLASS} />
+              <input type="file" accept=".key" ref={keyInput} class={FILE_INPUT_CLASS} aria-label="Llave privada (.key)" />
             </div>
             <div class="space-y-1 sm:col-span-2">
               <label class="block text-sm font-medium text-foreground">Contraseña de la llave privada</label>
-              <Input value={password()} onInput={setPassword} type="password" required />
+              <Input value={password()} onInput={setPassword} type="password" required aria-label="Contraseña de la llave privada" />
             </div>
             <div class="flex items-end gap-2 sm:col-span-2">
               <Button type="submit" disabled={uploadMutation.isPending}>
