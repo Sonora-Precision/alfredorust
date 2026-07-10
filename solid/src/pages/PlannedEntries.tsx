@@ -386,6 +386,7 @@ export default function PlannedEntries(): JSX.Element {
                                     <input
                                       type="checkbox"
                                       class="mt-0.5 h-4 w-4 shrink-0 rounded border-input"
+                                      aria-label={`Seleccionar ${e.name}`}
                                       checked={selected().has(e.id)}
                                       onChange={() => toggleSelected(e.id)}
                                     />
@@ -460,6 +461,7 @@ export default function PlannedEntries(): JSX.Element {
                                   <input
                                     type="checkbox"
                                     class="h-4 w-4 rounded border-input"
+                                    aria-label={`Seleccionar ${e.name}`}
                                     checked={selected().has(e.id)}
                                     onChange={() => toggleSelected(e.id)}
                                   />
