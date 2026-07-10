@@ -72,21 +72,17 @@ export function Topbar(): JSX.Element {
             <CompanySwitcher />
           </div>
           <Dropdown
+            label="Cuenta"
+            class="flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-muted-foreground transition hover:bg-muted hover:text-foreground"
             items={[
               { label: 'Mi cuenta', onSelect: () => navigate('/account') },
               { label: 'Salir', onSelect: doLogout, destructive: true },
             ]}
           >
-            <button
-              type="button"
-              class="flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-muted-foreground transition hover:bg-muted hover:text-foreground"
-              aria-label="Cuenta"
-            >
-              <span class="grid h-7 w-7 place-items-center rounded-full bg-muted text-[11px] font-semibold text-foreground">
-                {initials()}
-              </span>
-              <ChevronDown class="h-4 w-4" />
-            </button>
+            <span class="grid h-7 w-7 place-items-center rounded-full bg-muted text-[11px] font-semibold text-foreground">
+              {initials()}
+            </span>
+            <ChevronDown class="h-4 w-4" />
           </Dropdown>
         </div>
       </div>

@@ -15,13 +15,16 @@ export interface DropdownItem {
 interface DropdownProps extends ParentProps {
   items: DropdownItem[]
   class?: string
+  /** Accessible name for the trigger. Pass this instead of nesting a `<button>`
+      inside — the Trigger IS the button, so its children must be non-interactive. */
+  label?: string
 }
 
-/** `props.children` is the trigger content (usually a Button). */
+/** `props.children` is the trigger's (non-interactive) content. */
 export function Dropdown(props: DropdownProps): JSX.Element {
   return (
     <DropdownMenu>
-      <DropdownMenu.Trigger class={cn('inline-flex', props.class)}>
+      <DropdownMenu.Trigger class={cn('inline-flex', props.class)} aria-label={props.label}>
         {props.children}
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
