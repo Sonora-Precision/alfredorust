@@ -17,6 +17,65 @@ async fn main() -> anyhow::Result<()> {
     dotenv().ok();
 
     let args = env::args().collect::<Vec<_>>();
+    if args.len() < 2 {
+        eprintln!(
+            "Usage:\n  {} list\n  {} run <sat_config_id> <start YYYY-MM-DD> <end YYYY-MM-DD> [issued|received] [max_attempts] [poll_seconds]\n  {} resume <sat_config_id> <request_id> [issued|received] [max_attempts] [poll_seconds]\n  {} envresume <request_id> [issued|received] [max_attempts] [poll_seconds]",
+            args[0], args[0], args[0], args[0]
+        );
+        std::process::exit(2);
+    }
+
+    if args.get(1).map(String::as_str) == Some("envresume") {
+        if args.len() < 3 {
+            eprintln!(
+                "Usage:\n  {} envresume <request_id> [issued|received] [max_attempts] [poll_seconds]",
+                args[0]
+            );
+            std::process::exit(2);
+        }
+        let request_id = args[2].clone();
+        let download_type = match args.get(3).map(String::as_str) {
+            Some("received") => DownloadType::Received,
+            _ => DownloadType::Issued,
+        };
+        let max_attempts = args.get(4).and_then(|value| value.parse::<u32>().ok());
+        let poll_seconds = args.get(5).and_then(|value| value.parse::<u64>().ok());
+        let rfc = env::var("SAT_RFC")?;
+        let output_dir = PathBuf::from("data/cfdi_probe")
+            .join(rfc.to_lowercase())
+            .join(download_type.env_value())
+            .join(Utc::now().format("%Y%m%d%H%M%S").to_string());
+
+        println!(
+            "SAT probe envresume rfc={} request_id={} type={} max_attempts={} poll_seconds={}",
+            rfc,
+            request_id,
+            download_type.env_value(),
+            max_attempts.unwrap_or_else(default_max_attempts),
+            poll_seconds.unwrap_or_else(default_poll_seconds)
+        );
+
+        let result = resume_cfdis(
+            &rfc,
+            &request_id,
+            CfdiResumeRequest {
+                cer_path: env::var("SAT_CER_PATH").ok(),
+                key_path: env::var("SAT_KEY_PATH").ok(),
+                key_password: env::var("SAT_KEY_PASSWORD").ok(),
+                rfc: Some(rfc.clone()),
+                download_type,
+                request_type: RequestType::Xml,
+                output_dir: Some(output_dir.to_string_lossy().to_string()),
+                poll_seconds,
+                max_attempts,
+            },
+        )
+        .await?;
+
+        print_result("SAT probe envresume done", &result);
+        return Ok(());
+    }
+
     let state = init_state().await?;
 
     if args.get(1).map(String::as_str) == Some("list") {
@@ -31,14 +90,6 @@ async fn main() -> anyhow::Result<()> {
             );
         }
         return Ok(());
-    }
-
-    if args.len() < 5 {
-        eprintln!(
-            "Usage:\n  {} list\n  {} run <sat_config_id> <start YYYY-MM-DD> <end YYYY-MM-DD> [issued|received] [max_attempts] [poll_seconds]\n  {} resume <sat_config_id> <request_id> [issued|received] [max_attempts] [poll_seconds]",
-            args[0], args[0], args[0]
-        );
-        std::process::exit(2);
     }
 
     if args.get(1).map(String::as_str) == Some("resume") {
@@ -93,8 +144,8 @@ async fn main() -> anyhow::Result<()> {
 
     if args.get(1).map(String::as_str) != Some("run") || args.len() < 5 {
         eprintln!(
-            "Usage:\n  {} list\n  {} run <sat_config_id> <start YYYY-MM-DD> <end YYYY-MM-DD> [issued|received] [max_attempts] [poll_seconds]\n  {} resume <sat_config_id> <request_id> [issued|received] [max_attempts] [poll_seconds]",
-            args[0], args[0], args[0]
+            "Usage:\n  {} list\n  {} run <sat_config_id> <start YYYY-MM-DD> <end YYYY-MM-DD> [issued|received] [max_attempts] [poll_seconds]\n  {} resume <sat_config_id> <request_id> [issued|received] [max_attempts] [poll_seconds]\n  {} envresume <request_id> [issued|received] [max_attempts] [poll_seconds]",
+            args[0], args[0], args[0], args[0]
         );
         std::process::exit(2);
     }
