@@ -1,7 +1,8 @@
 # SolidJS migration notes — pages, part 1
 
-Source: `frontend/src/pages/*.rs` (Leptos/WASM SPA). Router: `frontend/src/app.rs`.
-All routes are mounted under a `<Router base="/v2">`, i.e. actual paths are `/v2/...`.
+Source: original `frontend/src/pages/*.rs` (Leptos/WASM SPA). Router: `frontend/src/app.rs`.
+The source app was mounted under `<Router base="/v2">`; the current Solid app is served under `/v3`.
+Route tables below use route-relative paths unless a full historical `/v2/...` URL is called out.
 
 ---
 
@@ -55,7 +56,7 @@ Left: username + company name (stacked), role `Badge` (Info tone for admin, Neut
 Right: theme toggle button (🌙/☀️ emoji, persisted via `crate::theme` to localStorage + `<html>` class), `CompanySwitcher`, "Salir" (logout) button — logout calls `api::logout()` then sets auth to `Anon`.
 
 ### CompanySwitcher
-Hidden entirely if the user belongs to ≤1 company. Otherwise a `<Select>` of `me.companies`; changing it triggers `window.location.href` full navigation to `switch_company_href(slug)` = `{protocol}//{slug}.{root-domain}/v2/` (subdomain swap, lands on `/v2/` of the target tenant). Session cookie is shared cross-subdomain so no re-login needed.
+Hidden entirely if the user belongs to ≤1 company. Otherwise a `<Select>` of `me.companies`; changing it triggers `window.location.href` full navigation to `switch_company_href(slug)` = `{protocol}//{slug}.{root-domain}/v3/` (subdomain swap, lands on `/v3/` of the target tenant). Session cookie is shared cross-subdomain so no re-login needed.
 
 ---
 
@@ -206,14 +207,18 @@ Hidden entirely if the user belongs to ≤1 company. Otherwise a `<Select>` of `
   - `GET /api/admin/cfdis/data` → `CfdiList { items: Vec<Cfdi> }` for the table + charts.
   - Admin-only: `GET /api/admin/sat-configs` → populates the SAT-config `<Select>` in the download form, auto-selects the first config.
   - Admin-only: immediately starts `poll_jobs()` to surface any in-flight download jobs from a previous visit (`GET /api/admin/companies/{cid}/cfdi/jobs`, polled every 4s while any job is `queued`/`running`).
-- **Download form fields** (admin, only shown if `configs` non-empty — else an amber "no SAT config" hint): Configuración SAT (select, label falls back to RFC if no label), Tipo (`both`/`issued`/`received`), Desde/Hasta (dates, defaulting to 5-years-ago-Jan-1 → today, computed via `js_sys::Date`), Crear pagos automáticamente (`Checkbox`).
-- **Download action**: `POST /api/admin/companies/{cid}/cfdi/download` with `CfdiDownloadPayload`; on success starts polling; submit button disabled while `busy`. Backend "splits it into one background job per month" per file header comment.
-- **Jobs table** (shown only once `jobs` non-empty): Período, Estado (`status_badge`: queued="En cola"/muted, running="● Descargando"/sky, done="✓ Listo"/emerald, failed="✗ Error"/rose), Encontrados, Creados, Actualizados, Omitidos, Errores (count, with a `title` tooltip concatenating error + errors[] messages).
+- **Download form fields** (admin, only shown if `configs` non-empty — else an amber "no SAT config" hint): Configuración SAT (select, label falls back to RFC if no label), Tipo (`both`/`issued`/`received`), Desde/Hasta (dates, defaulting to 5-years-ago-Jan-1 → today), Crear pagos automáticamente (`Checkbox`).
+- **Client validation**: Solid validates dates as exact `YYYY-MM-DD` and `Desde <= Hasta` before calling the backend. This prevents browser date inputs or manual edits from sending extended-year strings like `20206-06-01`.
+- **Download action**: `POST /api/admin/companies/{cid}/cfdi/download` with `CfdiDownloadPayload`; on success starts polling; submit button disabled while the mutation is pending or any job is active. Backend splits the range into one background job per month. `both` means each monthly job calls SAT twice: issued + received.
+- **Jobs table** (shown only once `jobs` non-empty): Período, Estado (`status_badge`: queued="En cola"/muted, running="● Descargando"/sky, done="✓ Listo"/emerald, failed="✗ Error"/rose), Encontrados, Creados, Actualizados, Omitidos, Errores.
+  - Job status shape is discriminated: `queued`/`running` only include `{ status }`; `done` includes counters plus `errors[]`; `failed` includes `error`.
+  - Counters render as `0` until `done`.
+  - Errores renders `0` when empty; otherwise the count is a button that opens a Kobalte `Modal` with every error message.
 - **Charts** (`cfdi_charts`, shown when `data.items` non-empty): same shape as `tx_charts` in transactions.rs — filters out payment-complement CFDIs (`tipo == "P"`) and non-positive totals, buckets by month into emitidos(issued)/recibidos(received) sums, renders 3 KPI cards + `line_area_chart` + `donut` (green emitidos / rose recibidos, center = net).
 - **Table columns**: Folio, Tipo, Fecha (`rfc3339_to_date`), Emisor, Receptor, Total (`money(total) + moneda`), Dirección (Badge: Emitido=Success / Recibido=Info).
 - **No create/edit/delete** on this page — CFDIs are only imported via the download flow, never hand-entered.
 - **Components reused**: Badge, Card, Checkbox, Input, Select, Button — plus the `charts.rs` SVG helpers.
-- **Tricky bits**: the async job-polling loop (`set_timeout` self-recursion every 4s while jobs active) needs a Solid equivalent (`setInterval`/`setTimeout` + cleanup on unmount — Leptos version doesn't appear to explicitly cancel on unmount either, worth deciding whether Solid port should fix that); date defaults computed from `js_sys::Date` (years-ago-Jan-1, today) need a JS `Date` equivalent; the two-tier admin-gating (`if is_admin { ... }` wraps both the whole download Card and the two data-fetch `spawn_local`s) matters for staff-view parity.
+- **Tricky bits**: the async job-polling loop is implemented with `solid-query` `refetchInterval`, active only while any job is `queued`/`running`, so it cleans up with the component observer. Backend job data is in-memory only (`AppState.jobs`) and disappears on restart/deploy; do not promise historical job/error visibility unless persistence is added. SAT rejection `5002` ("Se han agotado las solicitudes de por vida") is definitive for that criterion and the backend must not retry it.
 
 ---
 

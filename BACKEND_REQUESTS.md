@@ -1,5 +1,10 @@
 # Backend ⇄ UI session coordination
 
+> Archived status, 2026-07-08: this file records the earlier Leptos `/v2`
+> coordination. Current production serves the Solid SPA from `solid/dist` under
+> `/v3`; `/v2`/`frontend/dist`/`SPA_DIST` references below are historical unless
+> a new unchecked item is added after this note.
+
 Two Claude Code sessions are working this repo in parallel:
 
 - **UI session** — owns `frontend/` only (Leptos SPA). Does **not** edit backend code.
@@ -98,6 +103,17 @@ the `publish-test-reports.yml` workflow can be extended to copy your artifact to
 - **What I need from you:** confirm the `alfredorust.service` runs with `WorkingDirectory=/home/<user>/alfredorust` so the backend's default `SPA_DIST="frontend/dist"` resolves to that same path. If WorkingDirectory is anything else, please set `SPA_DIST=/home/<user>/alfredorust/frontend/dist` in the env file. Once the dist lands there (CI deploy or a manual rsync), `/v2/` will serve.
 - **No code change needed** beyond confirming/adjusting the service path/env.
 - **Filed:** 2026-06-18
+
+### [ ] CFDI: extra fields for the /v3 redesign (detail drawer, cron status, job origin, XML count)
+- **Need (all optional, degrade gracefully — the UI already hides what's missing):**
+  1. **CFDI detail** (`GET /api/admin/cfdis/{uuid}` → `CfdiDetailResponse`): add `subtotal`, `iva`, `metodo_pago`, `forma_pago`, `uso_cfdi`, `emisor_rfc`, `receptor_rfc`, and an `estatus` (`vigente`/`cancelado`). Today it returns only the base `Cfdi` + `conceptos[]`, so the drawer omits the fiscal breakdown and the cancelled badge.
+  2. **CFDI list** (`GET /api/admin/cfdis/data`): add `estatus` per row so the explorer can show/filter cancelled invoices.
+  3. **Download job** (`CfdiJob`, `GET /api/admin/companies/{id}/cfdi/jobs`): expose the existing `source` field (`manual`/`cron`) so the history can label + filter by origin (the backend already stores it; the frontend type just doesn't receive it).
+  4. **Cron status** (new, small): a `GET /api/admin/companies/{id}/cfdi/cron` returning `{ enabled, last_run, last_new, next_run, mode }` so the "Actualización automática" card shows real last/next-run stats instead of only describing the schedule.
+  5. **Archived-XML count** (new, small): total XML archived in the `cfdi_store` for the tenant, so the "Respaldo XML activo" indicator can show a real number.
+- **Why / UI context:** the CFDI screen was redesigned (space-glass, Fase 1) with a detail drawer, a daily-cron status card, and a job-history panel. These fields exist conceptually (or already in Mongo) but aren't in the API responses yet; the UI ships now with honest empty/omitted states and will light them up when the fields arrive.
+- **Suggested endpoint/shape:** extend the DTOs above; the two new GETs are read-only, company-scoped like the current CFDI routes.
+- **Filed:** 2026-07-08 (UI session — /v3 SolidJS only; no `frontend/` or `src/` edits made for this)
 
 When the UI session needs a backend change or hits a backend bug, it appends an
 item here with: what's needed, why, and the endpoint/file involved. Format:

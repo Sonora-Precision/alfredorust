@@ -103,7 +103,15 @@ SAT/CFDI entities:
 
 - `SatConfig` stores per-company FIEL configuration references.
 - CFDIs are imported into the `cfdis` collection and keyed by UUID.
-- SAT download jobs are stored in-memory in `AppState.jobs`; do not assume persistence across restarts.
+- SAT download jobs are persisted in MongoDB (`cfdi_jobs`) and scoped by
+  `company_id`; do not depend on in-memory state for job history or status.
+- CFDI job statuses are discriminated: `queued`/`running` only carry the status, while `done` carries counters plus `errors[]`, and `failed` carries `error`. Frontends must not read counters/errors from active jobs.
+- CFDI downloads are chunked by month. Choosing `both` creates one issued and one received SAT request per monthly chunk.
+- The backend validates download dates strictly as `YYYY-MM-DD` before creating jobs. Do not fall back to raw user strings or send malformed dates to SAT.
+- SAT `verify` can legitimately take longer than 60s. Keep verify/resume HTTP
+  timeouts at least 300s and distinguish slow HTTP timeouts from
+  `EstadoSolicitud=2` (SAT responded, still processing).
+- SAT rejection code `5002` / `solicitud SAT rechazada` is treated as definitive and must not be retried automatically, because retries can consume additional SAT request quota without changing the outcome.
 
 ## Environment
 

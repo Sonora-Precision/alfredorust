@@ -14,17 +14,17 @@
 
 ## 1. Objetivo y principios
 
-Reconstruir el SPA actual (Leptos 0.8 CSR, servido en `/v2`) en **SolidJS**, servido en
-paralelo bajo **`/v3`**, sin borrar ni tocar el `/v2` existente hasta el cutover final.
+Reconstruir el SPA original (Leptos 0.8 CSR, antes servido en `/v2`) en **SolidJS**.
+Estado actual: SolidJS está desplegado bajo **`/v3`** y `/v2` ya fue retirado del
+serving/build; `frontend/` queda en el repo como referencia histórica.
 
 **Principios rectores:**
 1. **Paridad primero, mejora después.** La base replica exactamente lo que hay hoy
    (mismas rutas, mismos datos, mismas acciones). Sobre esa base sólida se mejora UX,
    fluidez y animaciones. No mezclar "portar" con "rediseñar" en el mismo paso.
-2. **El backend NO cambia** (salvo añadir el serving de `/v3`). El Solid app consume
-   los mismos `/api/...` absolutos que el `/v2`.
+2. El Solid app consume los mismos `/api/...` absolutos que usaba `/v2`.
 3. **No replicar bugs conocidos.** Se documentan aparte (§13) y se corrigen conscientemente.
-4. **Convivencia sin riesgo.** `/v2` sigue vivo; comparamos página a página; cutover al final.
+4. **Convivencia sin riesgo.** Durante la migración `/v2` y `/v3` convivieron; el cutover ya dejó `/v3` como SPA activa.
 
 ---
 
@@ -49,8 +49,7 @@ paralelo bajo **`/v3`**, sin borrar ni tocar el `/v2` existente hasta el cutover
 ## 3. Convivencia y serving
 
 ### 3.1 Backend (Axum)
-Espejo exacto del serving de `/v2` (ver `backend-and-api.md §1`). En `src/main.rs`, junto al
-`nest_service("/v2", …)` existente, añadir:
+Estado actual: `src/main.rs` sirve Solid en `/v3` desde `solid/dist`. `/v2` ya no se sirve.
 
 ```rust
 .nest_service(
@@ -60,7 +59,7 @@ Espejo exacto del serving de `/v2` (ver `backend-and-api.md §1`). En `src/main.
 )
 ```
 
-- Fuera del router protegido por sesión (igual que `/v2`).
+- Fuera del router protegido por sesión.
 - El SPA llama `/api/...` **absolutos** (nunca `/v3/api/...`) → los mismos handlers protegidos.
 - `/v3/<ruta-cliente>` inexistente cae a `index.html` (client-side routing).
 
@@ -70,8 +69,8 @@ Espejo exacto del serving de `/v2` (ver `backend-and-api.md §1`). En `src/main.
 - **Dev server** con proxy a Axum `:8090` para `/api`, `/login`, `/logout` (igual que hace `Trunk.toml` hoy). Las cookies siguen necesitando un host de tenant real (`slug.localhost:8090`); documentar en el README del `solid/`.
 
 ### 3.3 CI/CD
-- Extender `.github/workflows/deploy.yml`: paso `npm ci && npm run build` en `solid/` antes del build del binario; subir `solid/dist` junto al binario.
-- Mientras dure la migración, ambos (`/v2` y `/v3`) se despliegan.
+- `.github/workflows/deploy.yml` ya corre `npm ci && npm run build` en `solid/` antes del build del binario y sube `solid/dist` junto al binario.
+- Estado actual: sólo `/v3` se sirve y se despliega; `/v2`/`frontend/` ya no se construye en CI.
 
 ---
 
@@ -284,9 +283,9 @@ Nadie edita `App.tsx`/`ui/`/`api client` (solo-lectura): cada agente **rellena s
 Aplica el mapeo §11 sobre páginas ya funcionando. Empezar por dashboard/modales/tablas/rutas.
 
 ### Fase D — Serving + cutover (backend)
-1. `nest_service("/v3", …)` en `src/main.rs`.
-2. Script de build + CI (`solid/` → `solid/dist`).
-3. Verificación de paridad `/v2` vs `/v3` (§14). Cutover: apuntar el path principal a Solid, retirar `/v2` cuando estés conforme.
+1. `nest_service("/v3", …)` en `src/main.rs` completado.
+2. Script de build + CI (`solid/` → `solid/dist`) completado.
+3. Cutover completado: `/v2` retirado del serving/build. Queda pendiente sólo QA formal adicional si se necesita.
 
 **Regla de correctness (de mi CLAUDE.md):** solo se paraleliza *escribir* archivos disjuntos.
 Nada de paralelizar builds/benchmarks o el registro de rutas compartido.
@@ -308,7 +307,7 @@ Nada de paralelizar builds/benchmarks o el registro de rutas compartido.
 
 ## 14. Verificación y testing
 
-- **Paridad visual/funcional:** con `/v2` y `/v3` corriendo, comparar pantalla a pantalla (light y dark).
+- **Paridad visual/funcional:** `/v2` ya no está servido; usar `frontend/` como referencia histórica de código y validar `/v3` contra flujos reales (light y dark).
 - **e2e:** el repo ya tiene `e2e/` — adaptar/duplicar los flujos críticos apuntando a `/v3`
   (login, CRUD de una entidad, planned-entry pay, grid de usage, tiempo).
 - **Smoke:** flujo de login → bootstrap `/api/me` → navegación por cada ruta → una mutación por dominio.
@@ -323,7 +322,7 @@ Nada de paralelizar builds/benchmarks o el registro de rutas compartido.
 | Cookies/tenant en dev (subdominio) | Documentar correr contra `slug.localhost:8090` vía proxy Vite; igual que Trunk hoy. |
 | `tiempo` y `resource-usages` (lógica no trivial) | Asignados a agente Opus / rebuild dedicado, con su sección de anexo como spec. |
 | Deriva de contrato entre agentes | Contrato (api/types/components/router) congelado en Fase A y solo-lectura en B. |
-| Regresiones de paridad | `/v2` intacto como referencia + e2e + gates por fase. |
+| Regresiones de paridad | `frontend/` queda como referencia histórica + e2e enfocados en `/v3`. |
 | Bundle/perf de animaciones | transform/opacity, reduced-motion, no animar tablas grandes fila a fila. |
 
 ---
@@ -332,7 +331,8 @@ Nada de paralelizar builds/benchmarks o el registro de rutas compartido.
 
 - [x] Inventario completo (backend+api, páginas ×2, diseño, animaciones).
 - [x] Decisiones de stack cerradas (§2) + serving `/v3` (§3).
-- [ ] **Aprobación de este plan** ← estamos aquí.
+- [x] Migración Solid implementada y desplegada en producción bajo `/v3`.
+- [ ] QA/e2e formal adicional contra tenant real si se retoma.
 - [ ] Fase A (scaffold + diseño) → **gate de aprobación de look**.
 - [ ] Fase B (fan-out de páginas en paralelo).
 - [ ] Fase C (animaciones).

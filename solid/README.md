@@ -1,7 +1,8 @@
 # alfredodev SPA (SolidJS, `/v3`)
 
-SolidJS rewrite of the Leptos SPA at `frontend/` (served at `/v2`). Built in
-parallel, side by side, until cutover — see `docs/solid-migration/PLAN.md`.
+SolidJS rewrite of the Leptos SPA at `frontend/` (historically served at `/v2`).
+Current production serves this app at `/v3` and CI deploys `solid/dist` — see
+`docs/solid-migration/PLAN.md`.
 
 ## Usage
 

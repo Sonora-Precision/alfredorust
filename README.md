@@ -58,6 +58,29 @@ http://0.0.0.0:8090
   - `/pdf`
   - `/tiempo`
 
+## CFDI / SAT
+
+La pantalla Solid en `/v3/cfdi` permite iniciar descargas masivas desde el SAT
+para una configuración FIEL guardada. El backend divide el rango en jobs
+mensuales persistidos en MongoDB (`cfdi_jobs`), y los CFDIs importados quedan en
+`cfdis`.
+
+Notas operativas:
+
+- Las fechas de descarga se validan estrictamente como `YYYY-MM-DD`.
+- El `verify` del SAT puede tardar más de un minuto aun cuando el SAT sí
+  responde. El cliente HTTP usa timeout de 300s para no cortar falsamente
+  verificaciones lentas.
+- Tipo `both` hace dos solicitudes SAT por mes: emitidos y recibidos.
+- Los jobs `queued`/`running` sólo traen estado; los contadores y `errors[]`
+  aparecen cuando el job queda `done`.
+- La UI muestra el detalle de errores desde el contador de la tabla de descargas.
+- Rechazos SAT definitivos como `5002 Se han agotado las solicitudes de por vida`
+  no se reintentan automáticamente.
+- Los logs de verify registran intento, timeout configurado, duración real,
+  `EstadoSolicitud`, código SAT, cantidad de paquetes y si el fallo fue timeout
+  HTTP o una respuesta SAT en proceso/terminal.
+
 ## Development workflow
 
 This repository uses OpenSpec-style spec-driven workflow for non-trivial changes. See:

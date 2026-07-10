@@ -10,17 +10,18 @@ Leyenda estado: `[ ]` pendiente · `[~]` en curso · `[x]` hecho · `[!]` bloque
 
 ## 🔖 RESUME HERE  (leer esto primero al reabrir sesión)
 
-- **Fecha última actualización:** 2026-07-07
-- **Fase actual:** **Fase B COMPLETA** ✅ (19 páginas, build 0 errores) + **Fase C COMPLETA** ✅ (animaciones, single-pass, ver detalle abajo, `npm run build` 0 errores) + **Fase D1/D2 hechas** (`/v3` wired en `src/main.rs`, `cargo check` limpio; CI construye+envía `solid/dist`, Node 22 — NO pusheado aún). Falta: feedback de look del usuario, y **D3 (verificar paridad, requiere backend+.env) / D4 (cutover)**. Push a `main` = deploy a prod → pedir OK antes.
+- **Fecha última actualización:** 2026-07-08
+- **Fase actual:** **Fase B COMPLETA** ✅ (19 páginas, build 0 errores) + **Fase C COMPLETA** ✅ (animaciones, single-pass, ver detalle abajo) + **Fase D desplegada en producción** ✅ (`/v3` es la SPA servida, CI construye+envía `solid/dist`, `/v2` retirado del serving/build). Pendiente: feedback de look del usuario y paridad e2e formal contra tenant real. Push a `main` dispara deploy prod vía GitHub Actions.
+- **CFDI/SAT producción (2026-07-07/08):** se corrigió crash de la tabla de descargas por asumir campos inexistentes en jobs `queued`/`running`; los errores ahora se abren en Modal desde el contador; frontend y backend validan fechas estrictas `YYYY-MM-DD`; el backend ya no reintenta rechazos SAT definitivos (`5002` / `solicitud SAT rechazada`). Hallazgo operativo: `both` = issued+received por chunk mensual; jobs persistidos en MongoDB. Verify del SAT puede tardar ~77-88s o más, por eso el cliente mantiene timeout de 300s y logs de duración/estado por intento.
 - **GATE A:** presentado con screenshots reales light/dark de Dashboard+Accounts (se ven muy bien). **Aprobación DIFERIDA** — el usuario estaba fuera; pidió NO frenar; revisará después y pedirá cambios. **NO borrar `solid/src/preview/` ni la ruta `/preview/design`** hasta que apruebe. El preview acepta `?theme=light|dark&tab=dashboard|accounts` para capturas headless.
 - **Puntos de diseño pendientes de feedback del usuario:** (1) el sidebar se mantiene oscuro en tema claro (patrón intencional) — confirmar si lo quiere claro; (2) el toggle de tema muestra luna en ambos temas (posible sol/luna).
 - **Cosas a verificar contra backend real (reportadas por agentes B):** ¿renombrar `username` en Account invalida sesión? (B4 hace `auth.refresh()` tras guardar); reserved-slugs de Companies ahora dependen del mensaje de error del server; bulk-pay de Tiempo usa el endpoint JSON `POST /api/admin/planned-entries/bulk-pay` (account_id+paid_at recogidos en modal in-SPA).
-- **Siguiente acción concreta:** esperar feedback de look del usuario. Luego: **Fase D** (verificación de paridad `/v2` vs `/v3` + cutover). Para verificar `/v3` de verdad se necesita backend corriendo + login TOTP contra un tenant real.
+- **Siguiente acción concreta:** esperar feedback de look del usuario. Si se retoma QA formal: adaptar/verificar e2e contra `/v3` y un tenant real.
 - **Dashboard.tsx / Accounts.tsx:** puerto fiel de `dashboard.rs`/`accounts.rs` (ver pages-part1.md) + pulido. Dashboard conserva el switcher de "Compañías" real (único dato que trae `dashboard.rs`) y añade KPIs (Ingresos/Egresos/Neto/Cuentas activas) + gráficos `LineArea`/`Donut` calculados client-side desde `listTransactions()` + `listAccounts()` — mismo patrón que `tx_charts` de `transactions.rs`, aplicado a la landing ya que `dashboard.rs` en sí no trae datos financieros propios. Accounts es CRUD completo real (Modal crear/editar + Modal confirmar borrar, `createQuery`/`createMutation` de solid-query, toasts, badges, gate admin-only) sobre `lib/api/finance.ts` sin añadir funciones nuevas al api layer.
 - **Preview de diseño (`solid/src/preview/`, deletable):** `DesignPreview.tsx` en la ruta pública `/preview/design` (fuera de `RequireAuth`). En vez de props "mock" sueltos, instala un interceptor de `window.fetch` (`mockFetch.ts`) que responde `/api/me`, `/api/admin/accounts[/:id[/update|delete]]` y `/api/admin/transactions/data` con datos de `sampleData.ts`, y luego llama al `auth.refresh()` real del `AuthContext` ya existente — así Dashboard/Accounts corren con el código real sin ninguna rama especial, CRUD de Accounts incluido (store en memoria). `onCleanup` desinstala el mock y refresca auth si el usuario navega fuera sin recargar. `npm run build` (tsc+vite) pasa con 0 errores; `npm run dev` sirve `/v3/preview/design` correctamente (verificado con un server local en :5173).
 - **A1–A15 completos:** scaffold Vite+Solid+TS+Tailwind+Kobalte+solid-query+router, `lib/api/{client,types,auth,finance,fiscal,admin,operations,misc}.ts`, `lib/{theme,format,cn,tenant}.ts`, `lib/auth/{AuthContext,RequireAuth}.tsx`, `components/ui/*` (Badge/Button/Card/Input/Select/Checkbox + Kobalte Modal/Dropdown/Toast/Tabs/Accordion/Table/Spinner), `components/layout/*` (AppShell/Sidebar/NavGroup/Topbar/CompanySwitcher/ThemeToggle), `components/charts/{LineArea,Donut}`, `App.tsx` + `main.tsx`, página `Login` real, 20 páginas placeholder. `npm run build` pasa limpio (tsc + vite build, 0 errores).
-- **`solid/` en construcción.** El frontend Leptos sigue en `frontend/` (servido en `/v2`), intacto.
-- **Cómo se sirve hoy:** `frontend/` (Leptos) en `/v2`. El nuevo Solid irá en `solid/` servido en `/v3` (backend intacto hasta cutover).
+- **`solid/` es la SPA activa.** El frontend Leptos sigue en `frontend/` como referencia histórica, pero ya no se sirve ni se construye en CI.
+- **Cómo se sirve hoy:** `solid/dist` se sirve en `/v3` por Axum; `/v2` fue retirado del serving/build.
 - **Contratos congelados (se definen en Fase A, luego solo-lectura para Fase B):** `solid/src/lib/api/client.ts`, `lib/api/types.ts`, `components/ui/*`, `components/layout/*`, `App.tsx` (rutas con lazy imports). Los agentes de página NO editan estos; solo rellenan su archivo en `src/pages/`.
 - **Principio:** paridad primero, mejora/animaciones después. No replicar bugs (ver PLAN §13).
 
@@ -67,7 +68,7 @@ cd solid && npm install && npm run dev     # Vite dev en proxy a Axum :8090
 - [x] recurring-plans (campo oculto `version`) · [x] planned-entries (**3 flujos**: CRUD + Pagar + bulk-pay) · [x] forecasts (`generated_at`)
 
 ### B3 — Fiscal (Sonnet)
-- [x] cfdi (**job async + poll**, `onCleanup` — bug de fuga corregido) · [x] sat-configs (**upload multipart** 2 archivos)
+- [x] cfdi (**job async + poll** con `solid-query`, active jobs no tienen counters/errors; contador de errores abre Modal; fechas validadas; no retry de SAT 5002) · [x] sat-configs (**upload multipart** 2 archivos)
 
 ### B4 — Admin (Sonnet)
 - [x] companies (slugs reservados) · [x] users (**form compuesto** membresías/rol/permisos + QR/secreto TOTP) · [x] account (perfil)
@@ -98,10 +99,10 @@ cd solid && npm install && npm run dev     # Vite dev en proxy a Axum :8090
 
 ## FASE D — Serving `/v3` + cutover  (backend)
 
-- [x] D1 · `nest_service("/v3", ServeDir::new("solid/dist").fallback(index.html))` en `src/main.rs` (env override `SOLID_DIST`, default `solid/dist`). `cargo check` limpio. `/v2` intacto.
-- [x] D2 · CI (`.github/workflows/deploy.yml`): Node 22 + `npm ci && npm run build` en `solid/` + rsync de `solid/dist` al server. **Aún NO pusheado** (push a `main` dispara deploy a prod — pedir OK antes).
-- [ ] D3 · Verificación de paridad `/v2` vs `/v3` (visual + e2e adaptados de `e2e/`). Requiere backend con `.env` real (no está en el repo) + login TOTP contra un tenant.
-- [x] D4 (parcial) · **`/v2` retirado del serving (main.rs) y del build/deploy (CI)** — `frontend/` (Leptos) se queda en el repo pero ya no se sirve ni se compila; el deploy es más rápido. `/v3` es la única SPA. **Deploy endurecido:** swap atómico del binario (scp a `.new` + `mv`) para no corromper el proceso vivo (fix del SIGILL). Pendiente: e2e/ aún apunta a `/v2` (actualizar a `/v3`); mover `/v3` a `/` si se quiere (opcional).
+- [x] D1 · `nest_service("/v3", ServeDir::new("solid/dist").fallback(index.html))` en `src/main.rs` (env override `SOLID_DIST`, default `solid/dist`). `cargo check` limpio.
+- [x] D2 · CI (`.github/workflows/deploy.yml`): Node 22 + `npm ci && npm run build` en `solid/` + rsync de `solid/dist` al server. Ya fue pusheado a `main` y desplegado en producción.
+- [ ] D3 · QA/e2e formal adicional contra `/v3` (visual + flujos adaptados de `e2e/`). Requiere backend con `.env` real (no está en el repo) + login TOTP contra un tenant.
+- [x] D4 · **`/v2` retirado del serving (main.rs) y del build/deploy (CI)** — `frontend/` (Leptos) se queda en el repo pero ya no se sirve ni se compila; el deploy es más rápido. `/v3` es la única SPA. **Deploy endurecido:** swap atómico del binario (scp a `.new` + `mv`) para no corromper el proceso vivo (fix del SIGILL). `e2e/tests/cfdi-download-mocked.spec.ts` ya apunta a `/v3` para CFDI; revisar el resto de e2e si se retoma paridad formal. Mover `/v3` a `/` sigue opcional.
 
 **Nota:** `.env` no está en el repo (gitignored). Para correr/verificar en local el usuario usa su `.env`. `solid/dist/index.html` referencia `/v3/assets/...` correctamente.
 
@@ -110,6 +111,10 @@ cd solid && npm install && npm run dev     # Vite dev en proxy a Axum :8090
 ## 🗒️ Log de decisiones / cambios
 
 - **2026-07-07** — Inventario completo (5 docs) vía 4 subagentes paralelos. Stack cerrado: Solid+Vite+TS+Tailwind+Kobalte+solid-query+solid-transition-group+solid-motionone. Servicio en `/v3`, lado a lado con `/v2`. Plan maestro en `PLAN.md`. Este PROGRESS.md creado como fuente de verdad del avance.
+- **2026-07-07** — Fix producción CFDI: `CfdiJobStatus` en Solid pasó a union discriminada, la tabla ya no crashea con `queued`/`running`, y `StartedJobs` refleja `{ jobs: [...] }` del backend.
+- **2026-07-07** — Fix seguridad: el arranque del backend ya no imprime la URI completa de MongoDB en journald; se redacted credenciales.
+- **2026-07-07/08** — UX/robustez CFDI: errores de descarga visibles en Modal, validación estricta de fechas en Solid y backend, test de rechazo de fecha `20206-06-01`, y no reintentar rechazos SAT definitivos `5002`.
+- **2026-07-08** — Verify SAT lento: confirmado que `EstadoSolicitud=3` puede tardar ~77-88s; mantener timeout HTTP 300s, loggear duración real por intento y diferenciar timeout HTTP de `EstadoSolicitud=2` (SAT respondió, sigue en proceso).
 
 ---
 

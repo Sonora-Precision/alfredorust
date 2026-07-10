@@ -480,8 +480,8 @@ API involved) — this is the simplest component in the whole system to port 1:1
   "Operaciones" (staff subset), "Finanzas", "Operaciones" (admin full),
   "Fiscal", "Administración" — all admin-only except a reduced "Operaciones"
   group shown to staff with specific permissions. Two ungated top-level links
-  always shown: "Inicio" (`/v2/`) and "Mi cuenta" (`/v2/account`); "Tiempo"
-  (`/v2/tiempo`) shown conditionally by permission.
+  always shown: "Inicio" (`/v3/`) and "Mi cuenta" (`/v3/account`); "Tiempo"
+  (`/v3/tiempo`) shown conditionally by permission.
 
 ---
 
@@ -523,7 +523,7 @@ Right side (`<div class="flex items-center gap-2">`), in order:
 - Switching is **not** an SPA route change — it's a full page navigation via
   `window().location().set_href(...)` to another tenant subdomain, computed by
   `switch_company_href(slug)`: swaps the leftmost host label for the new slug,
-  preserves protocol/port, and always lands on `/v2/` on the destination
+  preserves protocol/port, and always lands on `/v3/` on the destination
   tenant. An `Effect` watches the select's `RwSignal<String>` and triggers
   navigation only when it differs from the initial/current slug (so mounting
   doesn't cause a reload loop).

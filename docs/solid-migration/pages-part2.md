@@ -1,6 +1,7 @@
 # SPA pages — part 2 (admin/ops pages)
 
-Source: `frontend/src/pages/*.rs`, routed from `frontend/src/app.rs` under `<Router base="/v2">`.
+Source: original `frontend/src/pages/*.rs`, routed from `frontend/src/app.rs` under `<Router base="/v2">`.
+Those `/v2/...` route labels are historical source references; the current Solid equivalents are served under `/v3/...`.
 All routes are session-protected (rendered only inside `AuthedApp`); `Me` (role, permissions, company)
 is provided via Leptos context and is read with `use_context::<Me>()` in every page. Admin-only UI is
 gated with `me.role == "admin"`; some pages also check `me.can("<permission>")` (see `Sidebar` gating in
