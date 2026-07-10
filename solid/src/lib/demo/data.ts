@@ -21,6 +21,7 @@ import type {
   ConceptStatusFull,
   Contact,
   ContactDetail,
+  FlowType,
   Forecast,
   ForecastDetail,
   GridView,
@@ -28,6 +29,8 @@ import type {
   Order,
   OrderDetail,
   PlannedEntry,
+  PlannedItem,
+  PlannedStatus,
   ProfileData,
   ProjectConcept,
   ProjectRow,
@@ -38,6 +41,8 @@ import type {
   ResourceLog,
   SatConfigData,
   Transaction,
+  TransactionType,
+  TxItem,
   TimelineBucket,
   UserRowData,
 } from '../api/types'
@@ -157,43 +162,127 @@ const CONTACTS: Contact[] = [
   { id: 'ct-seguros', name: 'Seguros Monterrey Empresarial', kind: 'service', email: 'polizas@segmty.mx' },
 ]
 
-// Spread across 2026 months so the dashboard trend chart has shape.
-const TRANSACTIONS: Transaction[] = [
-  { id: 'tx-01', date: '2026-01-14', description: 'Anticipo lote flechas — Aeropartes', tx_type: 'income', amount: 320000, category: 'Ventas de maquinado', account_to: 'BBVA MXN', is_confirmed: true },
-  { id: 'tx-02', date: '2026-01-22', description: 'Compra acero 4140', tx_type: 'expense', amount: 88500, category: 'Materia prima', account_from: 'BBVA MXN', is_confirmed: true },
-  { id: 'tx-03', date: '2026-01-31', description: 'Nómina enero', tx_type: 'expense', amount: 210000, category: 'Nómina', account_from: 'BBVA MXN', is_confirmed: true },
-  { id: 'tx-04', date: '2026-02-05', description: 'Finiquito proyecto molde — Delta', tx_type: 'income', amount: 415000, category: 'Ventas de maquinado', account_to: 'BBVA MXN', is_confirmed: true },
-  { id: 'tx-05', date: '2026-02-12', description: 'Insertos y herramienta Sandvik', tx_type: 'expense', amount: 63200, category: 'Materia prima', account_from: 'Amex Corporativa', is_confirmed: true },
-  { id: 'tx-06', date: '2026-02-18', description: 'Renta nave industrial', tx_type: 'expense', amount: 72000, category: 'Renta de nave', account_from: 'BBVA MXN', is_confirmed: true },
-  { id: 'tx-07', date: '2026-02-28', description: 'Nómina febrero', tx_type: 'expense', amount: 214500, category: 'Nómina', account_from: 'BBVA MXN', is_confirmed: true },
-  { id: 'tx-08', date: '2026-03-08', description: 'Servicio de ingeniería inversa', tx_type: 'income', amount: 95000, category: 'Servicios de ingeniería', account_to: 'Santander USD', is_confirmed: true },
-  { id: 'tx-09', date: '2026-03-15', description: 'Recibo CFE', tx_type: 'expense', amount: 41800, category: 'Energía (CFE)', account_from: 'BBVA MXN', is_confirmed: true },
-  { id: 'tx-10', date: '2026-03-20', description: 'Anticipo herramental — Delta', tx_type: 'income', amount: 260000, category: 'Ventas de maquinado', account_to: 'BBVA MXN', is_confirmed: true },
-  { id: 'tx-11', date: '2026-03-31', description: 'Nómina marzo', tx_type: 'expense', amount: 218000, category: 'Nómina', account_from: 'BBVA MXN', is_confirmed: true },
-  { id: 'tx-12', date: '2026-04-10', description: 'Pago provisional ISR', tx_type: 'expense', amount: 54300, category: 'Impuestos', account_from: 'BBVA MXN', is_confirmed: true },
-  { id: 'tx-13', date: '2026-04-18', description: 'Traspaso a caja chica', tx_type: 'transfer', amount: 15000, account_from: 'BBVA MXN', account_to: 'Caja chica', is_confirmed: true },
-  { id: 'tx-14', date: '2026-04-24', description: 'Venta refacciones CNC', tx_type: 'income', amount: 132000, category: 'Ventas de maquinado', account_to: 'BBVA MXN', is_confirmed: true },
-  { id: 'tx-15', date: '2026-04-30', description: 'Honorarios contables', tx_type: 'expense', amount: 18500, category: 'Impuestos', account_from: 'Caja chica', is_confirmed: false },
-  // 2025 history
-  { id: 'tx-16', date: '2025-07-11', description: 'Anticipo carcasas — Vértice Médico', tx_type: 'income', amount: 185000, category: 'Ventas de maquinado', account_to: 'BBVA MXN', is_confirmed: true },
-  { id: 'tx-17', date: '2025-07-31', description: 'Nómina julio', tx_type: 'expense', amount: 198000, category: 'Nómina', account_from: 'BBVA MXN', is_confirmed: true },
-  { id: 'tx-18', date: '2025-08-08', description: 'Compra aluminio 6061', tx_type: 'expense', amount: 74200, category: 'Materia prima', account_from: 'BBVA MXN', is_confirmed: true },
-  { id: 'tx-19', date: '2025-08-19', description: 'Maquinado engranes — Turbinas Golfo', tx_type: 'income', amount: 298000, category: 'Ventas de maquinado', account_to: 'Santander USD', is_confirmed: true },
-  { id: 'tx-20', date: '2025-08-30', description: 'Recibo CFE', tx_type: 'expense', amount: 38900, category: 'Energía (CFE)', account_from: 'BBVA MXN', is_confirmed: true },
-  { id: 'tx-21', date: '2025-09-15', description: 'Servicio de dibujo CAD/CAM', tx_type: 'income', amount: 62000, category: 'Servicios de ingeniería', account_to: 'BBVA MXN', is_confirmed: true },
-  { id: 'tx-22', date: '2025-09-30', description: 'Nómina septiembre', tx_type: 'expense', amount: 205000, category: 'Nómina', account_from: 'BBVA MXN', is_confirmed: true },
-  { id: 'tx-23', date: '2025-10-14', description: 'Tratamiento térmico lote engranes', tx_type: 'expense', amount: 46500, category: 'Materia prima', account_from: 'Amex Corporativa', is_confirmed: true },
-  { id: 'tx-24', date: '2025-10-27', description: 'Finiquito carcasas — Vértice Médico', tx_type: 'income', amount: 224000, category: 'Ventas de maquinado', account_to: 'BBVA MXN', is_confirmed: true },
-  { id: 'tx-25', date: '2025-11-12', description: 'Renta nave industrial', tx_type: 'expense', amount: 72000, category: 'Renta de nave', account_from: 'BBVA MXN', is_confirmed: true },
-  { id: 'tx-26', date: '2025-12-05', description: 'Anticipo válvulas — Turbinas Golfo', tx_type: 'income', amount: 275000, category: 'Ventas de maquinado', account_to: 'BBVA MXN', is_confirmed: true },
-  { id: 'tx-27', date: '2025-12-20', description: 'Aguinaldos', tx_type: 'expense', amount: 165000, category: 'Nómina', account_from: 'BBVA MXN', is_confirmed: true },
-  // 2026 continued
-  { id: 'tx-28', date: '2026-05-09', description: 'Traspaso fondeo Amex', tx_type: 'transfer', amount: 80000, account_from: 'BBVA MXN', account_to: 'Amex Corporativa', is_confirmed: true },
-  { id: 'tx-29', date: '2026-05-16', description: 'Refacciones agrícolas — Agrícola Sinaloa', tx_type: 'income', amount: 118000, category: 'Ventas de maquinado', account_to: 'BBVA MXN', is_confirmed: true },
-  { id: 'tx-30', date: '2026-05-31', description: 'Nómina mayo', tx_type: 'expense', amount: 221000, category: 'Nómina', account_from: 'BBVA MXN', is_confirmed: true },
-  { id: 'tx-31', date: '2026-06-18', description: 'Gases industriales Infra', tx_type: 'expense', amount: 24800, category: 'Materia prima', account_from: 'Amex Corporativa', is_confirmed: true },
-  { id: 'tx-32', date: '2026-06-30', description: 'Anticipo molde prototipo — Delta', tx_type: 'income', amount: 210000, category: 'Ventas de maquinado', account_to: 'BBVA MXN', is_confirmed: false },
-]
+// --- generated finance pool (shared by lists + timeline) ---------------------
+// Transactions and planned entries are ONE coherent pool: the Transactions and
+// Planned-Entries pages list these rows directly, and the Tiempo timeline
+// (buildTimelineRange) aggregates the SAME rows into buckets — the two views can
+// never disagree. Generation is fully deterministic (tlSeed, no Math.random) so
+// the demo reads identically on every reload. Amounts/labels model a CNC shop.
+
+// Deterministic 0..1 pseudo-random (stable across reloads — no Math.random).
+function tlSeed(n: number): number {
+  const x = Math.sin(n * 12.9898 + 78.233) * 43758.5453
+  return x - Math.floor(x)
+}
+const dateMs = (s: string): number => new Date(s).getTime()
+const round100 = (n: number): number => Math.round(n / 100) * 100
+const pick = <T>(arr: T[], r: number): T => arr[Math.floor(r * arr.length) % arr.length]
+const MONTHS_ES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+const NOW = new Date()
+const NOW_Y = NOW.getUTCFullYear()
+const NOW_M = NOW.getUTCMonth()
+const NOW_MS = NOW.getTime()
+const TODAY_STR = NOW.toISOString().slice(0, 10)
+const DAY_MS = 86_400_000
+
+const SALE_CUSTOMERS = ['Aeropartes del Norte', 'Grupo Automotriz Delta', 'Dispositivos Médicos Vértice', 'Turbinas Energía del Golfo', 'Maquinaria Agrícola Sinaloa']
+const SALE_PHRASES = ['Anticipo lote flechas', 'Finiquito molde de inyección', 'Venta refacciones CNC', 'Maquinado de herramental', 'Venta de piezas torneadas', 'Maquinado de engranes', 'Lote de carcasas de aluminio', 'Válvulas de alta presión', 'Fixtures de sujeción']
+const SERVICE_PHRASES = ['Servicio de ingeniería inversa', 'Dibujo CAD/CAM', 'Consultoría de manufactura', 'Programación CNC a terceros']
+const BUY_PHRASES = ['Compra de acero 4140', 'Compra de aluminio 6061', 'Insertos y herramienta Sandvik', 'Gases industriales Infra', 'Tratamiento térmico', 'Placa de acero para fixtures', 'Barra inoxidable 316', 'Consumibles de taller', 'Refacciones de máquina']
+
+// ~340 transactions over the past ~30 months, newest-first. This is exactly what
+// the Transactions page lists and what the timeline aggregates as "real".
+function genTransactions(): Transaction[] {
+  const out: Transaction[] = []
+  let n = 0
+  let sc = 1000
+  const s = () => tlSeed(sc++)
+  const add = (date: string, description: string, tx_type: TransactionType, amount: number, extra: Partial<Transaction>) => {
+    out.push({ id: `tx-${String(++n).padStart(4, '0')}`, date, description, tx_type, amount, is_confirmed: true, ...extra })
+  }
+  for (let mi = -29; mi <= 0; mi++) {
+    const base = new Date(Date.UTC(NOW_Y, NOW_M + mi, 1))
+    const y = base.getUTCFullYear()
+    const m = base.getUTCMonth()
+    const mn = MONTHS_ES[m]
+    const d = (day: number) => `${y}-${String(m + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    const recent = mi >= -1
+    const conf = () => (recent ? s() > 0.25 : true)
+    // recurring expenses
+    add(d(1), 'Renta de nave industrial', 'expense', 72000, { category: 'Renta de nave', account_from: 'BBVA MXN' })
+    add(d(15), `Nómina 1ª quincena ${mn}`, 'expense', round100(100000 + s() * 12000), { category: 'Nómina', account_from: 'BBVA MXN', is_confirmed: conf() })
+    add(d(28), `Nómina 2ª quincena ${mn}`, 'expense', round100(100000 + s() * 12000), { category: 'Nómina', account_from: 'BBVA MXN', is_confirmed: conf() })
+    add(d(16), `Recibo CFE ${mn}`, 'expense', round100(35000 + s() * 13000), { category: 'Energía (CFE)', account_from: 'BBVA MXN', is_confirmed: conf() })
+    add(d(5), 'Honorarios contables', 'expense', round100(14000 + s() * 3000), { category: 'Impuestos', account_from: 'Caja chica', is_confirmed: conf() })
+    add(d(17), `Pago provisional ISR ${mn}`, 'expense', round100(45000 + s() * 20000), { category: 'Impuestos', account_from: 'BBVA MXN', is_confirmed: conf() })
+    // materia prima 1..3
+    const buys = 1 + Math.floor(s() * 3)
+    for (let i = 0; i < buys; i++) {
+      const acc = s() > 0.5 ? 'BBVA MXN' : 'Amex Corporativa'
+      add(d(6 + Math.floor(s() * 18)), pick(BUY_PHRASES, s()), 'expense', round100(6000 + s() * 94000), { category: 'Materia prima', account_from: acc, is_confirmed: conf() })
+    }
+    // ventas 2..4
+    const sales = 2 + Math.floor(s() * 3)
+    for (let i = 0; i < sales; i++) {
+      const acc = s() > 0.8 ? 'Santander USD' : 'BBVA MXN'
+      if (s() > 0.78) {
+        add(d(4 + Math.floor(s() * 22)), pick(SERVICE_PHRASES, s()), 'income', round100(40000 + s() * 80000), { category: 'Servicios de ingeniería', account_to: acc, is_confirmed: conf() })
+      } else {
+        add(d(4 + Math.floor(s() * 22)), `${pick(SALE_PHRASES, s())} — ${pick(SALE_CUSTOMERS, s())}`, 'income', round100(50000 + s() * 300000), { category: 'Ventas de maquinado', account_to: acc, is_confirmed: conf() })
+      }
+    }
+    // occasional transfer (contributes 0 to net)
+    if (s() < 0.3) {
+      const to = s() > 0.5 ? 'Caja chica' : 'Amex Corporativa'
+      add(d(9 + Math.floor(s() * 12)), `Traspaso a ${to}`, 'transfer', round100(15000 + s() * 65000), { account_from: 'BBVA MXN', account_to: to })
+    }
+  }
+  return out
+    .filter((t) => t.date <= TODAY_STR)
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+}
+
+// ~260 planned entries over the full window (past ~30 + next ~40 months), sorted
+// by due_date ascending. This is what the Planned-Entries page lists and what the
+// timeline aggregates as "plan".
+function genPlannedEntries(): PlannedEntry[] {
+  const out: PlannedEntry[] = []
+  let n = 0
+  let sc = 5000
+  const s = () => tlSeed(sc++)
+  const LABELS: Record<PlannedStatus, string> = {
+    planned: 'Planeado',
+    partially_covered: 'Parcial',
+    covered: 'Cubierto',
+    overdue: 'Vencido',
+    cancelled: 'Cancelado',
+  }
+  const statusFor = (ms: number, r: number): PlannedStatus => {
+    if (ms < NOW_MS - 20 * DAY_MS) return r < 0.08 ? 'cancelled' : r < 0.2 ? 'overdue' : 'covered'
+    if (ms < NOW_MS + 10 * DAY_MS) return r < 0.3 ? 'overdue' : r < 0.65 ? 'partially_covered' : 'planned'
+    return r < 0.12 ? 'partially_covered' : 'planned'
+  }
+  const add = (due_date: string, name: string, flow_type: FlowType, amount_estimated: number) => {
+    const status = statusFor(dateMs(due_date), s())
+    out.push({ id: `pe-${String(++n).padStart(4, '0')}`, name, flow_type, amount_estimated, due_date, status, status_label: LABELS[status] })
+  }
+  for (let mi = -29; mi <= 40; mi++) {
+    const base = new Date(Date.UTC(NOW_Y, NOW_M + mi, 1))
+    const y = base.getUTCFullYear()
+    const m = base.getUTCMonth()
+    const yl = `${MONTHS_ES[m]} ${y}`
+    const d = (day: number) => `${y}-${String(m + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    add(d(1), `Renta de nave — ${yl}`, 'expense', 72000)
+    add(d(15), `Nómina — ${yl}`, 'expense', round100(105000 + s() * 10000))
+    if (s() < 0.5) add(d(16), `Recibo CFE — ${yl}`, 'expense', round100(38000 + s() * 10000))
+    if (s() < 0.45) add(d(17), `ISR provisional — ${yl}`, 'expense', round100(48000 + s() * 18000))
+    if (s() < 0.3) add(d(8 + Math.floor(s() * 14)), `${pick(BUY_PHRASES, s())} (compra planeada)`, 'expense', round100(20000 + s() * 80000))
+    if (s() < 0.4) add(d(6 + Math.floor(s() * 18)), `Cobro ${pick(SALE_PHRASES, s())} — ${pick(SALE_CUSTOMERS, s())}`, 'income', round100(60000 + s() * 280000))
+  }
+  return out.sort((a, b) => (a.due_date < b.due_date ? -1 : a.due_date > b.due_date ? 1 : 0))
+}
+
+const TRANSACTIONS: Transaction[] = genTransactions()
 
 const RECURRING_PLANS: RecurringPlan[] = [
   { id: 'rp-renta', name: 'Renta de nave', flow_type: 'expense', amount_estimated: 72000, frequency: 'monthly', start_date: '2026-01-01', is_active: true },
@@ -206,20 +295,7 @@ const RECURRING_PLANS: RecurringPlan[] = [
   { id: 'rp-mantto-vertice', name: 'Contrato piezas Vértice Médico', flow_type: 'income', amount_estimated: 190000, frequency: 'quarterly', start_date: '2026-01-15', is_active: false },
 ]
 
-const PLANNED_ENTRIES: PlannedEntry[] = [
-  { id: 'pe-01', name: 'Renta mayo', flow_type: 'expense', amount_estimated: 72000, due_date: '2026-05-01', status: 'planned', status_label: 'Planeado' },
-  { id: 'pe-02', name: 'Nómina 1ª quincena mayo', flow_type: 'expense', amount_estimated: 107000, due_date: '2026-05-15', status: 'planned', status_label: 'Planeado' },
-  { id: 'pe-03', name: 'Finiquito herramental — Delta', flow_type: 'income', amount_estimated: 390000, due_date: '2026-05-20', status: 'partially_covered', status_label: 'Parcial' },
-  { id: 'pe-04', name: 'ISR abril', flow_type: 'expense', amount_estimated: 51000, due_date: '2026-04-17', status: 'overdue', status_label: 'Vencido' },
-  { id: 'pe-05', name: 'CFE abril', flow_type: 'expense', amount_estimated: 43000, due_date: '2026-04-15', status: 'covered', status_label: 'Cubierto' },
-  { id: 'pe-06', name: 'Compra acero — cancelada', flow_type: 'expense', amount_estimated: 60000, due_date: '2026-04-05', status: 'cancelled', status_label: 'Cancelado' },
-  { id: 'pe-07', name: 'Anticipo válvulas — Turbinas Golfo', flow_type: 'income', amount_estimated: 275000, due_date: '2026-06-10', status: 'covered', status_label: 'Cubierto' },
-  { id: 'pe-08', name: 'Renta junio', flow_type: 'expense', amount_estimated: 72000, due_date: '2026-06-01', status: 'covered', status_label: 'Cubierto' },
-  { id: 'pe-09', name: 'Nómina 2ª quincena junio', flow_type: 'expense', amount_estimated: 110000, due_date: '2026-06-30', status: 'planned', status_label: 'Planeado' },
-  { id: 'pe-10', name: 'Cobro refacciones — Agrícola Sinaloa', flow_type: 'income', amount_estimated: 118000, due_date: '2026-07-05', status: 'partially_covered', status_label: 'Parcial' },
-  { id: 'pe-11', name: 'ISR mayo', flow_type: 'expense', amount_estimated: 57000, due_date: '2026-06-17', status: 'overdue', status_label: 'Vencido' },
-  { id: 'pe-12', name: 'Póliza seguro industrial julio', flow_type: 'expense', amount_estimated: 18500, due_date: '2026-07-10', status: 'planned', status_label: 'Planeado' },
-]
+const PLANNED_ENTRIES: PlannedEntry[] = genPlannedEntries()
 
 const FORECASTS: Forecast[] = [
   { id: 'fc-q2', currency: 'MXN', projected_net: 486000, start_date: '2026-04-01', end_date: '2026-06-30', scenario_name: 'Q2 base' },
@@ -437,72 +513,41 @@ function tlStep(anchor: Date, mode: TLMode, n: number): Date {
       return new Date(Date.UTC(d.getUTCFullYear() + n, 0, 1))
   }
 }
-// Deterministic 0..1 pseudo-random (stable across reloads — no Math.random).
-function tlSeed(n: number): number {
-  const x = Math.sin(n * 12.9898 + 78.233) * 43758.5453
-  return x - Math.floor(x)
-}
-const TX_INCOME = ['Anticipo lote flechas — Aeropartes', 'Finiquito molde — Delta', 'Venta refacciones CNC', 'Servicio de ingeniería', 'Maquinado herramental', 'Venta de piezas torneadas']
-const TX_EXPENSE = ['Compra acero 4140', 'Nómina', 'Insertos Sandvik', 'Renta de nave', 'Recibo CFE', 'Mantenimiento CNC', 'Honorarios contables', 'Materia prima']
-const PLAN_INCOME = ['Cobro proyecto', 'Anticipo cliente', 'Finiquito orden']
-const PLAN_EXPENSE = ['Nómina quincenal', 'Renta de nave', 'Recibo CFE', 'Compra de acero', 'Pago a proveedores', 'ISR provisional']
+// Per-row timeline index derived from the SHARED pools (TRANSACTIONS /
+// PLANNED_ENTRIES): each row carries its bucket-ms, income/expense split, and the
+// already-mapped Tx/Planned item. Net contribution = inc - exp, so a transfer
+// (inc = exp = 0) contributes 0, an income tx/entry adds +amount and an expense
+// subtracts it — exactly the rule the chart needs.
+interface TLRow<T> { ms: number; inc: number; exp: number; item: T }
+const txTL: TLRow<TxItem>[] = TRANSACTIONS.map((t) => ({
+  ms: dateMs(t.date),
+  inc: t.tx_type === 'income' ? t.amount : 0,
+  exp: t.tx_type === 'expense' ? t.amount : 0,
+  item: { id: t.id, description: t.description, amount: t.amount, date: t.date, type: t.tx_type },
+})).sort((a, b) => a.ms - b.ms)
+const planTL: TLRow<PlannedItem>[] = PLANNED_ENTRIES.map((p) => ({
+  ms: dateMs(p.due_date),
+  inc: p.flow_type === 'income' ? p.amount_estimated : 0,
+  exp: p.flow_type === 'expense' ? p.amount_estimated : 0,
+  item: { id: p.id, name: p.name, amount_estimated: p.amount_estimated, due_date: p.due_date, flow_type: p.flow_type, status: p.status },
+})).sort((a, b) => a.ms - b.ms)
 
-interface TLItem { id: string; ms: number; iso: string; amount: number; income: boolean; label: string }
-
-/** Deterministic item pool spread over [monthsBack ago, monthsFwd ahead). */
-function genTimelineItems(monthsBack: number, monthsFwd: number, density: number, prefix: string, inc: string[], exp: string[]): TLItem[] {
-  const items: TLItem[] = []
-  const now = new Date()
-  const end = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + monthsFwd, 1)
-  const cur = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - monthsBack, 1))
-  let d = 0
-  while (cur.getTime() < end) {
-    if (tlSeed(d * 1.7 + prefix.length) < density) {
-      const n = 1 + Math.floor(tlSeed(d * 2.3) * 2)
-      for (let j = 0; j < n; j++) {
-        const income = tlSeed(d * 3.1 + j * 9.7) > 0.6
-        const amount = income
-          ? Math.round(50_000 + tlSeed(d + j * 5) * 300_000)
-          : Math.round(6_000 + tlSeed(d * 5 + j) * 95_000)
-        const labels = income ? inc : exp
-        items.push({
-          id: `${prefix}-${d}-${j}`,
-          ms: cur.getTime(),
-          iso: cur.toISOString(),
-          amount,
-          income,
-          label: labels[Math.floor(tlSeed(d * 7 + j * 2) * labels.length)],
-        })
-      }
-    }
-    cur.setUTCDate(cur.getUTCDate() + 1)
-    d++
-  }
-  return items
-}
-
-// Actuals span the past ~30 months; the plan/budget spans the FULL ~4.3-year
-// window (past 30 + next 22 months) so every period in range shows both real
-// (past) and plan items — no empty buckets until you scroll past the data.
-const TL_TX = genTimelineItems(42, 0, 0.62, 'dtx', TX_INCOME, TX_EXPENSE)
-const TL_PLAN = genTimelineItems(42, 40, 0.58, 'dpe', PLAN_INCOME, PLAN_EXPENSE)
-
-// Precomputed sorted cumulative nets → O(log n) "net of all items before a time"
+// Precomputed sorted cumulative nets → O(log n) "net of all rows before a time"
 // (called per visible bucket per fetch, so keep it cheap regardless of pool size).
-function tlCum(items: TLItem[]): { ms: number[]; acc: number[] } {
-  const s = [...items].sort((a, b) => a.ms - b.ms)
+function tlCum(rows: { ms: number; inc: number; exp: number }[]): { ms: number[]; acc: number[] } {
+  const s = [...rows].sort((a, b) => a.ms - b.ms)
   const ms: number[] = []
   const acc: number[] = []
   let run = 0
-  for (const it of s) {
-    run += it.income ? it.amount : -it.amount
-    ms.push(it.ms)
+  for (const r of s) {
+    run += r.inc - r.exp
+    ms.push(r.ms)
     acc.push(run)
   }
   return { ms, acc }
 }
-const TX_CUM = tlCum(TL_TX)
-const PLAN_CUM = tlCum(TL_PLAN)
+const TX_CUM = tlCum(txTL)
+const PLAN_CUM = tlCum(planTL)
 function tlNetBefore(cum: { ms: number[]; acc: number[] }, ltMs: number): number {
   let lo = 0
   let hi = cum.ms.length
@@ -514,8 +559,10 @@ function tlNetBefore(cum: { ms: number[]; acc: number[] }, ltMs: number): number
   return lo > 0 ? cum.acc[lo - 1] : 0
 }
 
-/** Aggregate the item pool into buckets for the requested mode/range — so the
- * chart is populated by real items and switching day/week/month/year reflows. */
+/** Aggregate the SHARED transaction/planned-entry pools into buckets for the
+ * requested mode/range — the same rows the list pages show, so the timeline and
+ * the lists can never disagree. Switching day/week/month/year reflows the same
+ * data. */
 function buildTimelineRange(modeRaw: string, fromIso: string, toIso: string): TimelineBucket[] {
   const mode = (['day', 'week', 'month', 'year'].includes(modeRaw) ? modeRaw : 'month') as TLMode
   const to = new Date(toIso).getTime()
@@ -525,17 +572,15 @@ function buildTimelineRange(modeRaw: string, fromIso: string, toIso: string): Ti
   const out: TimelineBucket[] = []
   let cur = tlBucketStart(new Date(fromIso), mode)
   let guard = 0
-  const sumInc = (a: TLItem[]) => a.reduce((s, i) => s + (i.income ? i.amount : 0), 0)
-  const sumExp = (a: TLItem[]) => a.reduce((s, i) => s + (i.income ? 0 : i.amount), 0)
   while (cur.getTime() < to && guard++ < 4000) {
     const bs = cur.getTime()
     const be = tlStep(cur, mode, 1).getTime()
-    const txs = TL_TX.filter((t) => t.ms >= bs && t.ms < be)
-    const pes = TL_PLAN.filter((t) => t.ms >= bs && t.ms < be)
-    const real_income = sumInc(txs)
-    const real_expense = sumExp(txs)
-    const planned_income = sumInc(pes)
-    const planned_expense = sumExp(pes)
+    const txs = txTL.filter((r) => r.ms >= bs && r.ms < be)
+    const pes = planTL.filter((r) => r.ms >= bs && r.ms < be)
+    const real_income = txs.reduce((s, r) => s + r.inc, 0)
+    const real_expense = txs.reduce((s, r) => s + r.exp, 0)
+    const planned_income = pes.reduce((s, r) => s + r.inc, 0)
+    const planned_expense = pes.reduce((s, r) => s + r.exp, 0)
     // Real accumulates through the past then flatlines after now; plan =
     // real-at-now + future plan, so the lines coincide until today then diverge.
     const cumulative_real = Math.round(tlNetBefore(TX_CUM, be))
@@ -553,8 +598,8 @@ function buildTimelineRange(modeRaw: string, fromIso: string, toIso: string): Ti
       net_planned: planned_income - planned_expense,
       cumulative_real,
       cumulative_planned,
-      transactions: txs.map((t) => ({ id: t.id, description: t.label, amount: t.amount, date: t.iso, type: t.income ? 'income' : 'expense' })),
-      planned_entries: pes.map((t) => ({ id: t.id, name: t.label, amount_estimated: t.amount, due_date: t.iso, flow_type: t.income ? 'income' : 'expense', status: 'planned' })),
+      transactions: txs.map((r) => r.item),
+      planned_entries: pes.map((r) => r.item),
     })
     cur = tlStep(cur, mode, 1)
   }
