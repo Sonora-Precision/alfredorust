@@ -556,7 +556,8 @@ export default function Tiempo(): JSX.Element {
                 <For each={cells()}>
                   {(c) => (
                     <div
-                      class="absolute flex flex-col overflow-y-auto border-r border-border px-4 py-3"
+                      tabindex="0"
+                      class="absolute flex flex-col overflow-y-auto border-r border-border px-4 py-3 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                       classList={{
                         'bg-sky-500/10 ring-1 ring-inset ring-sky-500/40': c.isToday,
                         'bg-card': !c.isToday && c.j % 2 === 0,
@@ -633,6 +634,7 @@ export default function Tiempo(): JSX.Element {
                                   <input
                                     type="checkbox"
                                     class="h-4 w-4 shrink-0 rounded border-input"
+                                    aria-label={`Seleccionar ${pe.name}`}
                                     checked={selected().has(pe.id)}
                                     onChange={(ev) => toggleSelected(pe.id, ev.currentTarget.checked)}
                                   />
