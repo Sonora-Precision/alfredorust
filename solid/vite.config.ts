@@ -29,13 +29,34 @@ function inlineEntryCss(): Plugin {
   }
 }
 
+// Preload the body font (IBM Plex Sans 400, latin) so it starts downloading
+// with the HTML instead of after the CSS is parsed — trims the font's critical
+// path and shortens the swap (LCP/FCP). Only the primary weight is preloaded;
+// the rest keep font-display: swap.
+function preloadPrimaryFont(): Plugin {
+  return {
+    name: 'preload-primary-font',
+    apply: 'build',
+    enforce: 'post',
+    transformIndexHtml(html, ctx) {
+      if (!ctx.bundle) return html
+      const font = Object.keys(ctx.bundle).find(
+        (f) => f.includes('ibm-plex-sans-latin-400-normal') && f.endsWith('.woff2'),
+      )
+      if (!font) return html
+      const tag = `<link rel="preload" href="/${font}" as="font" type="font/woff2" crossorigin>`
+      return html.replace('</head>', `    ${tag}\n  </head>`)
+    },
+  }
+}
+
 // The Solid SPA is served by Axum at the site root (fallback_service — it's the
 // primary front-end). The dev server proxies API/auth routes to the local Axum
 // backend so cookies + same-origin fetches behave like production. Tenant
 // subdomains still require running against `slug.localhost:8090` (see solid/README).
 export default defineConfig({
   base: '/',
-  plugins: [solid(), inlineEntryCss()],
+  plugins: [solid(), inlineEntryCss(), preloadPrimaryFont()],
   server: {
     proxy: {
       '/api': {

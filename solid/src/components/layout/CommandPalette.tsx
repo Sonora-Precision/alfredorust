@@ -52,12 +52,9 @@ export function CommandPalette() {
   }
 
   onMount(() => {
+    // ⌘K toggle lives in AppShell (so it works before this lazy component
+    // loads); here we only handle keys while the palette is open.
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault()
-        setCmdkOpen((open) => !open)
-        return
-      }
       if (!cmdkOpen()) return
       if (e.key === 'Escape') close()
       else if (e.key === 'ArrowDown') {

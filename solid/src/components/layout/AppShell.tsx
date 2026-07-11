@@ -3,20 +3,34 @@
 // — its padding tracks the collapse signal, and drops to 0 on mobile (CSS in
 // styles/app-theme.css). The routed <main> is centered at max-w-[1400px] and
 // keeps the ~160ms page cross-fade. CommandPalette mounts once, globally.
-import { ErrorBoundary, Suspense, type JSX, type ParentProps } from 'solid-js'
+import { ErrorBoundary, Show, Suspense, lazy, onCleanup, onMount, type JSX, type ParentProps } from 'solid-js'
 import { Transition } from 'solid-transition-group'
 
-import { useSidebarCollapsed } from '../../lib/layout'
+import { cmdkOpen, setCmdkOpen, useSidebarCollapsed } from '../../lib/layout'
 import { Button } from '../ui/Button'
 import { Spinner } from '../ui/Spinner'
-import { CommandPalette } from './CommandPalette'
 import { DemoBanner } from './DemoBanner'
 import { Sidebar } from './Sidebar'
 import { SpaceBackground } from './SpaceBackground'
 import { Topbar } from './Topbar'
 
+// Deferred: the command palette only appears on ⌘K, so keep it (and its code)
+// out of the initial bundle. The ⌘K hotkey lives here so it works before the
+// palette has ever been loaded.
+const CommandPalette = lazy(() => import('./CommandPalette').then((m) => ({ default: m.CommandPalette })))
+
 export function AppShell(props: ParentProps): JSX.Element {
   const collapsed = useSidebarCollapsed()
+  onMount(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setCmdkOpen((o) => !o)
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    onCleanup(() => document.removeEventListener('keydown', onKey))
+  })
   return (
     <div class="min-h-screen">
       <SpaceBackground />
@@ -59,7 +73,11 @@ export function AppShell(props: ParentProps): JSX.Element {
           </ErrorBoundary>
         </main>
       </div>
-      <CommandPalette />
+      <Show when={cmdkOpen()}>
+        <Suspense>
+          <CommandPalette />
+        </Suspense>
+      </Show>
     </div>
   )
 }
