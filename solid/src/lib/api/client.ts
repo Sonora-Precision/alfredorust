@@ -161,6 +161,27 @@ export async function apiPostForm<T>(path: string, form: FormData): Promise<T> {
   )
 }
 
+export async function apiPostBlob(path: string, body: unknown): Promise<Blob> {
+  if (isDemo()) return new Blob([], { type: 'application/zip' })
+  let resp: Response
+  try {
+    resp = await fetch(path, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { Accept: 'application/zip', 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  } catch (e) {
+    throw new ApiError('transport', e instanceof Error ? e.message : String(e))
+  }
+  if (resp.status === 401) {
+    redirectToLogin()
+    throw new ApiError('unauthorized', 'unauthorized', 401)
+  }
+  if (!isSuccess(resp.status)) throw await errorFromResponse(resp)
+  return resp.blob()
+}
+
 export async function apiGetBlob(path: string): Promise<Blob> {
   if (isDemo()) return demoBlob(path)
   let resp: Response

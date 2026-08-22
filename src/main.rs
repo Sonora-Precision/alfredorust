@@ -155,6 +155,11 @@ async fn main() {
         )
         .route("/admin/cfdis", get(routes::cfdis_index))
         .route("/api/admin/cfdis/data", get(routes::cfdis_data_api))
+        .route("/api/admin/cfdis/archive", post(routes::cfdi_archive_api))
+        .route(
+            "/api/admin/cfdis/transactions/bulk",
+            post(routes::cfdi_transactions_bulk_api),
+        )
         .route("/api/admin/cfdis/{uuid}", get(routes::cfdi_data_api))
         .route(
             "/api/admin/cfdis/{uuid}/check-status",

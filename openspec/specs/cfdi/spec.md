@@ -121,3 +121,54 @@ The system SHALL create automatic transactions only when the user explicitly ena
 - GIVEN a valid CFDI-backed planned entry
 - WHEN automatic payments are enabled
 - THEN the system creates a transaction if one does not already exist for that planned entry
+
+### Requirement: CFDI analytics share one filtered data set
+
+The CFDI explorer SHALL apply search, direction, currency, issuer, and inclusive date filters consistently to KPIs, charts, export, pagination, and bulk selection.
+
+#### Scenario: Admin filters the CFDI explorer
+
+- GIVEN CFDIs from multiple issuers and dates
+- WHEN an admin filters by issuer and date
+- THEN the visible aggregates and selected-all set contain only matching CFDIs
+
+### Requirement: Selected CFDIs synchronize transactions idempotently
+
+The system SHALL maintain at most one transaction per company and CFDI UUID and SHALL classify each synchronization as created, updated, unchanged, skipped, or failed.
+
+#### Scenario: Bulk synchronization is replayed
+
+- GIVEN supported CFDIs whose transactions already match every managed field
+- WHEN an admin synchronizes the same UUIDs again
+- THEN no transaction is written
+- AND each matching item is reported as unchanged
+
+#### Scenario: Credit note direction is inverted
+
+- GIVEN an issued credit note and a received credit note
+- WHEN their transactions are synchronized
+- THEN the issued credit note becomes an expense
+- AND the received credit note becomes income
+
+#### Scenario: Cross-tenant UUID is submitted
+
+- GIVEN an admin for company A and a UUID owned only by company B
+- WHEN the admin submits the UUID
+- THEN no company B record is mutated or disclosed
+
+### Requirement: Selected archived CFDIs can be downloaded as one ZIP
+
+The system SHALL create a ZIP from every selected archived XML across the complete filtered result, not only the current page, without contacting the SAT.
+
+#### Scenario: Admin downloads all filtered CFDIs
+
+- GIVEN a filter matching CFDIs across multiple pages
+- WHEN an admin selects all filtered rows and downloads XML
+- THEN the ZIP contains one XML per selected UUID
+
+#### Scenario: Selected XML is unavailable
+
+- GIVEN a selected CFDI without an archived XML
+- WHEN an admin requests the ZIP
+- THEN the request fails explicitly
+- AND no partial ZIP is returned

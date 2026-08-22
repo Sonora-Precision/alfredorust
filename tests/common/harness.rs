@@ -95,6 +95,11 @@ pub fn build_app(state: Arc<AppState>) -> Router {
         .route("/admin/companies/{id}/edit", get(routes::companies_edit))
         .route("/admin/cfdis", get(routes::cfdis_index))
         .route("/api/admin/cfdis/data", get(routes::cfdis_data_api))
+        .route("/api/admin/cfdis/archive", post(routes::cfdi_archive_api))
+        .route(
+            "/api/admin/cfdis/transactions/bulk",
+            post(routes::cfdi_transactions_bulk_api),
+        )
         .route("/api/admin/cfdis/{uuid}", get(routes::cfdi_data_api))
         .route(
             "/api/admin/companies/{id}/cfdi/download",
@@ -592,6 +597,31 @@ pub async fn post_json_with_cookie(
         .expect("body read failed");
     let body = String::from_utf8_lossy(&body_bytes).to_string();
     (status, body)
+}
+
+pub async fn post_json_with_cookie_bytes(
+    app: Router,
+    host: &str,
+    path: &str,
+    token: &str,
+    payload: serde_json::Value,
+) -> (StatusCode, axum::http::HeaderMap, Vec<u8>) {
+    let req = Request::builder()
+        .method("POST")
+        .uri(path)
+        .header("host", host)
+        .header("cookie", format!("{SESSION_COOKIE_NAME}={token}"))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(payload.to_string()))
+        .unwrap();
+    let res = app.oneshot(req).await.expect("request failed");
+    let status = res.status();
+    let headers = res.headers().clone();
+    let body = to_bytes(res.into_body(), 64 * 1024 * 1024)
+        .await
+        .expect("body read failed")
+        .to_vec();
+    (status, headers, body)
 }
 
 pub async fn post_multipart_with_cookie(

@@ -689,6 +689,25 @@ export interface Cfdi {
   /** "vigente" | "cancelado" — defaults to "vigente" until a status check. */
   estatus?: string
   es_emitido: boolean
+  has_transaction?: boolean
+}
+
+export interface BulkCfdiTransactionsPayload {
+  uuids: string[]
+}
+
+export interface BulkCfdiTransactionError {
+  uuid: string
+  error: string
+}
+
+export interface BulkCfdiTransactionsResponse {
+  requested: number
+  created: number
+  updated: number
+  unchanged: number
+  skipped: number
+  errors: BulkCfdiTransactionError[]
 }
 
 export interface CfdiConceptData {
@@ -702,6 +721,7 @@ export interface CfdiConceptData {
 
 export interface CfdiList {
   company_rfcs: string[]
+  total: number
   items: Cfdi[]
 }
 
@@ -747,4 +767,3 @@ export interface TimelineBucket {
 }
 
 export type TimelineMode = 'day' | 'week' | 'month' | 'year'
-

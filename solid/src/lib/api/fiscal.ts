@@ -1,4 +1,4 @@
-import { apiGet, apiPost, apiPostForm } from './client'
+import { apiGet, apiPost, apiPostBlob, apiPostForm } from './client'
 import type {
   Cfdi,
   CfdiArchivedCount,
@@ -9,6 +9,8 @@ import type {
   CfdiJob,
   CfdiJobStatus,
   CfdiList,
+  BulkCfdiTransactionsPayload,
+  BulkCfdiTransactionsResponse,
   SatConfigData,
   SatConfigPayload,
   StartedJobs,
@@ -44,6 +46,10 @@ export const checkCfdiStatus = (uuid: string) =>
 
 export const listCfdis = () => apiGet<CfdiList>('/api/admin/cfdis/data')
 export const getCfdi = (uuid: string) => apiGet<CfdiDetailResponse>(`/api/admin/cfdis/${uuid}`)
+export const syncCfdiTransactions = (payload: BulkCfdiTransactionsPayload) =>
+  apiPost<BulkCfdiTransactionsResponse>('/api/admin/cfdis/transactions/bulk', payload)
+export const downloadCfdiArchive = (uuids: string[]) =>
+  apiPostBlob('/api/admin/cfdis/archive', { uuids })
 
 // --- Manual CFDI upload (per company) ------------------------------------------------
 // Drop `.xml` CFDIs or a `.zip` of XMLs; each is upserted by UUID into the same
@@ -94,4 +100,4 @@ export function uploadSatConfig(
 }
 
 // Re-exported for convenience so pages don't need to import from ../types too.
-export type { Cfdi }
+export type { BulkCfdiTransactionsResponse, Cfdi }

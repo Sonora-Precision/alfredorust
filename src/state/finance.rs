@@ -705,6 +705,19 @@ pub async fn create_or_update_planned_entry_from_cfdi(
 ) -> Result<(ObjectId, bool)> {
     if let Some(existing) = get_planned_entry_by_cfdi_uuid(state, company_id, cfdi_uuid).await? {
         let id = existing.id.context("planned entry missing _id")?;
+        let is_current = existing.due_date == due_date
+            && existing.name == name
+            && existing.flow_type == flow_type
+            && existing.category_id == *category_id
+            && existing.account_expected_id == *account_expected_id
+            && existing.contact_id == contact_id
+            && existing.amount_estimated == amount_estimated
+            && existing.currency == currency
+            && existing.cfdi_folio == cfdi_folio
+            && existing.notes == notes;
+        if is_current {
+            return Ok((id, false));
+        }
         state
             .planned_entries
             .update_one(
@@ -761,6 +774,127 @@ pub async fn create_or_update_planned_entry_from_cfdi(
         .as_object_id()
         .context("planned entry insert missing _id")?;
     Ok((id, true))
+}
+
+#[derive(Debug)]
+pub struct CfdiTransactionSync {
+    pub date: DateTime,
+    pub description: String,
+    pub transaction_type: TransactionType,
+    pub category_id: ObjectId,
+    pub account_id: ObjectId,
+    pub amount: f64,
+    pub planned_entry_id: ObjectId,
+    pub contact_id: Option<ObjectId>,
+    pub cfdi_uuid: String,
+    pub currency: Option<String>,
+    pub cfdi_folio: Option<String>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum CfdiTransactionSyncOutcome {
+    Created,
+    Updated,
+    Unchanged,
+}
+
+pub async fn sync_transaction_from_cfdi(
+    state: &AppState,
+    company_id: &ObjectId,
+    input: CfdiTransactionSync,
+) -> Result<CfdiTransactionSyncOutcome> {
+    let (account_from_id, account_to_id) = match input.transaction_type {
+        TransactionType::Expense => (Some(input.account_id), None),
+        TransactionType::Income => (None, Some(input.account_id)),
+        TransactionType::Transfer => bail!("CFDI transactions cannot be transfers"),
+    };
+    let existing = state
+        .transactions
+        .find_one(doc! {
+            "company_id": company_id,
+            "cfdi_uuid": &input.cfdi_uuid,
+        })
+        .await?;
+
+    if let Some(existing) = existing {
+        let id = existing.id.context("CFDI transaction missing _id")?;
+        let previous_planned_entry_id = existing.planned_entry_id;
+        let is_current = existing.date == input.date
+            && existing.description == input.description
+            && existing.transaction_type == input.transaction_type
+            && existing.category_id == input.category_id
+            && existing.account_from_id == account_from_id
+            && existing.account_to_id == account_to_id
+            && existing.amount == input.amount
+            && existing.planned_entry_id == Some(input.planned_entry_id)
+            && existing.project_id.is_none()
+            && existing.is_confirmed
+            && existing.notes.is_none()
+            && existing.contact_id == input.contact_id
+            && existing.currency == input.currency
+            && existing.cfdi_folio == input.cfdi_folio;
+        if is_current {
+            return Ok(CfdiTransactionSyncOutcome::Unchanged);
+        }
+
+        state
+            .transactions
+            .update_one(
+                doc! { "_id": &id, "company_id": company_id },
+                doc! { "$set": {
+                    "date": input.date,
+                    "description": &input.description,
+                    "transaction_type": input.transaction_type.as_str(),
+                    "category_id": &input.category_id,
+                    "account_from_id": account_from_id,
+                    "account_to_id": account_to_id,
+                    "amount": input.amount,
+                    "planned_entry_id": &input.planned_entry_id,
+                    "project_id": null,
+                    "is_confirmed": true,
+                    "notes": null,
+                    "contact_id": input.contact_id,
+                    "currency": input.currency,
+                    "cfdi_folio": input.cfdi_folio,
+                    "updated_at": DateTime::from_system_time(SystemTime::now()),
+                }},
+            )
+            .await?;
+        recalculate_planned_entry_status(state, &input.planned_entry_id).await?;
+        if let Some(previous_id) = previous_planned_entry_id {
+            if previous_id != input.planned_entry_id {
+                recalculate_planned_entry_status(state, &previous_id).await?;
+            }
+        }
+        return Ok(CfdiTransactionSyncOutcome::Updated);
+    }
+
+    state
+        .transactions
+        .insert_one(Transaction {
+            id: None,
+            company_id: *company_id,
+            date: input.date,
+            description: input.description,
+            transaction_type: input.transaction_type,
+            category_id: input.category_id,
+            account_from_id,
+            account_to_id,
+            amount: input.amount,
+            planned_entry_id: Some(input.planned_entry_id),
+            project_id: None,
+            is_confirmed: true,
+            created_at: Some(DateTime::from_system_time(SystemTime::now())),
+            updated_at: None,
+            contact_id: input.contact_id,
+            cfdi_uuid: Some(input.cfdi_uuid),
+            currency: input.currency,
+            cfdi_folio: input.cfdi_folio,
+            notes: None,
+        })
+        .await?;
+    recalculate_planned_entry_status(state, &input.planned_entry_id).await?;
+    Ok(CfdiTransactionSyncOutcome::Created)
 }
 
 /// Pay a planned entry: saves original values (first time only), aligns the entry

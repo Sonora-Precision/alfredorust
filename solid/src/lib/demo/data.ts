@@ -461,6 +461,7 @@ const CFDIS: Cfdi[] = [
 
 const CFDI_LIST: CfdiList = {
   company_rfcs: ['AMA160101AB2'],
+  total: CFDIS.length,
   items: CFDIS,
 }
 
@@ -772,11 +773,14 @@ export async function demoGet<T>(path: string, params?: Record<string, string | 
 
 /** Mutations are disabled in the demo — no-op and tell the user (throttled). */
 let mutationToastAt = -100000
-export async function demoMutation<T>(_path: string): Promise<T> {
+export async function demoMutation<T>(path: string): Promise<T> {
   const now = typeof performance !== 'undefined' ? performance.now() : 0
   if (now - mutationToastAt > 1500) {
     mutationToastAt = now
     toast.info('Demo de solo lectura', 'Aquí no se guardan cambios. Solicita acceso para usarlo con tus datos.')
+  }
+  if (path === '/api/admin/cfdis/transactions/bulk') {
+    return { requested: 0, created: 0, updated: 0, unchanged: 0, skipped: 0, errors: [] } as T
   }
   // Resolve with a benign shape; callers that read a field just get undefined.
   return {} as T

@@ -2,6 +2,323 @@
 mod common;
 
 use common::harness::*;
+use std::io::Read;
+
+fn bulk_cfdi_document(
+    company_id: &bson::oid::ObjectId,
+    uuid: &str,
+    company_rfc: &str,
+    tipo: &str,
+    total: &str,
+) -> bson::Document {
+    doc! {
+        "company_id": company_id.to_hex(),
+        "uuid": uuid,
+        "comprobante": {
+            "folio": uuid,
+            "tipoDeComprobante": tipo,
+            "fecha": "2026-03-15T10:30:00",
+            "subTotal": total,
+            "total": total,
+            "moneda": "MXN",
+        },
+        "emisor": { "rfc": company_rfc, "nombre": "Bulk Company" },
+        "receptor": { "rfc": "XAXX010101000", "nombre": "Bulk Customer" },
+    }
+}
+
+#[tokio::test]
+async fn bulk_cfdi_transactions_are_idempotent_and_tenant_scoped() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+    let company_a = create_company(&state, "Bulk A", "bulk-a", "MXN", true, None)
+        .await
+        .unwrap();
+    let company_b = create_company(&state, "Bulk B", "bulk-b", "MXN", true, None)
+        .await
+        .unwrap();
+    create_sat_config(
+        &state,
+        bson::oid::ObjectId::new(),
+        company_a,
+        "AAA010101AAA".into(),
+        "a.cer".into(),
+        "a.key".into(),
+        "secret".into(),
+        None,
+    )
+    .await
+    .unwrap();
+    create_sat_config(
+        &state,
+        bson::oid::ObjectId::new(),
+        company_b,
+        "BBB010101BBB".into(),
+        "b.cer".into(),
+        "b.key".into(),
+        "secret".into(),
+        None,
+    )
+    .await
+    .unwrap();
+    let admin_id = create_user(
+        &state,
+        "bulk-admin@example.com",
+        "SECRET",
+        &[(company_a, UserRole::Admin)],
+    )
+    .await
+    .unwrap();
+    let staff_id = create_user(
+        &state,
+        "bulk-staff@example.com",
+        "SECRET",
+        &[(company_a, UserRole::Staff)],
+    )
+    .await
+    .unwrap();
+    let admin = get_user_by_id(&state, &admin_id).await.unwrap().unwrap();
+    let staff = get_user_by_id(&state, &staff_id).await.unwrap().unwrap();
+    let admin_token = create_session(&state, &admin.username).await.unwrap();
+    let staff_token = create_session(&state, &staff.username).await.unwrap();
+    let invoice_uuid = "aaaaaaaa-1111-2222-3333-444444444444";
+    let credit_uuid = "bbbbbbbb-1111-2222-3333-444444444444";
+    let foreign_uuid = "cccccccc-1111-2222-3333-444444444444";
+    let received_credit_uuid = "dddddddd-1111-2222-3333-444444444444";
+    let cancelled_uuid = "eeeeeeee-1111-2222-3333-444444444444";
+    let mut received_credit = bulk_cfdi_document(
+        &company_a,
+        received_credit_uuid,
+        "VENDOR010101AAA",
+        "E",
+        "10.00",
+    );
+    received_credit.insert(
+        "receptor",
+        doc! { "rfc": "AAA010101AAA", "nombre": "Bulk Company" },
+    );
+    let mut cancelled =
+        bulk_cfdi_document(&company_a, cancelled_uuid, "AAA010101AAA", "I", "80.00");
+    cancelled.insert("estatus", "cancelado");
+    state
+        .cfdis
+        .insert_many([
+            bulk_cfdi_document(&company_a, invoice_uuid, "AAA010101AAA", "I", "116.00"),
+            bulk_cfdi_document(&company_a, credit_uuid, "AAA010101AAA", "E", "25.00"),
+            received_credit,
+            cancelled,
+            bulk_cfdi_document(&company_b, foreign_uuid, "BBB010101BBB", "I", "500.00"),
+        ])
+        .await
+        .unwrap();
+
+    let archive_root = std::path::PathBuf::from("data/cfdi_store/bulk-a");
+    let _ = std::fs::remove_dir_all(&archive_root);
+    let archive_dir = archive_root
+        .join("AAA010101AAA")
+        .join("emitido")
+        .join("2026");
+    std::fs::create_dir_all(&archive_dir).unwrap();
+    std::fs::write(
+        archive_dir.join(format!("{invoice_uuid}.xml")),
+        b"<cfdi>invoice</cfdi>",
+    )
+    .unwrap();
+    std::fs::write(
+        archive_dir.join(format!("{credit_uuid}.xml")),
+        b"<cfdi>credit</cfdi>",
+    )
+    .unwrap();
+    let (archive_status, archive_headers, archive_body) = post_json_with_cookie_bytes(
+        build_app(shared.clone()),
+        "bulk-a.miapp.local",
+        "/api/admin/cfdis/archive",
+        &admin_token,
+        serde_json::json!({ "uuids": [invoice_uuid, credit_uuid] }),
+    )
+    .await;
+    assert_eq!(archive_status, StatusCode::OK);
+    assert_eq!(
+        archive_headers
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok()),
+        Some("application/zip")
+    );
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(archive_body)).unwrap();
+    assert_eq!(archive.len(), 2);
+    let mut invoice_xml = String::new();
+    archive
+        .by_name(&format!("{invoice_uuid}.xml"))
+        .unwrap()
+        .read_to_string(&mut invoice_xml)
+        .unwrap();
+    assert_eq!(invoice_xml, "<cfdi>invoice</cfdi>");
+
+    let (foreign_status, _, _) = post_json_with_cookie_bytes(
+        build_app(shared.clone()),
+        "bulk-a.miapp.local",
+        "/api/admin/cfdis/archive",
+        &admin_token,
+        serde_json::json!({ "uuids": [foreign_uuid] }),
+    )
+    .await;
+    assert_eq!(foreign_status, StatusCode::NOT_FOUND);
+    let (missing_status, _, _) = post_json_with_cookie_bytes(
+        build_app(shared.clone()),
+        "bulk-a.miapp.local",
+        "/api/admin/cfdis/archive",
+        &admin_token,
+        serde_json::json!({ "uuids": [received_credit_uuid] }),
+    )
+    .await;
+    assert_eq!(missing_status, StatusCode::CONFLICT);
+
+    let payload = serde_json::json!({
+        "uuids": [invoice_uuid, credit_uuid, received_credit_uuid, cancelled_uuid, foreign_uuid]
+    });
+    let (status, body) = post_json_with_cookie(
+        build_app(shared.clone()),
+        "bulk-a.miapp.local",
+        "/api/admin/cfdis/transactions/bulk",
+        &admin_token,
+        payload,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let result: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(result["created"], 3);
+    assert_eq!(result["skipped"], 1);
+    assert_eq!(result["errors"].as_array().unwrap().len(), 1);
+    let invoice = state
+        .transactions
+        .find_one(doc! { "company_id": company_a, "cfdi_uuid": invoice_uuid })
+        .await
+        .unwrap()
+        .unwrap();
+    let credit = state
+        .transactions
+        .find_one(doc! { "company_id": company_a, "cfdi_uuid": credit_uuid })
+        .await
+        .unwrap()
+        .unwrap();
+    let received_credit = state
+        .transactions
+        .find_one(doc! { "company_id": company_a, "cfdi_uuid": received_credit_uuid })
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(invoice.transaction_type, TransactionType::Income);
+    assert_eq!(credit.transaction_type, TransactionType::Expense);
+    assert_eq!(received_credit.transaction_type, TransactionType::Income);
+
+    let (status, body) = post_json_with_cookie(
+        build_app(shared.clone()),
+        "bulk-a.miapp.local",
+        "/api/admin/cfdis/transactions/bulk",
+        &admin_token,
+        serde_json::json!({ "uuids": [invoice_uuid, credit_uuid, received_credit_uuid, invoice_uuid] }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let replay: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(replay["requested"], 3);
+    assert_eq!(replay["unchanged"], 3);
+
+    state
+        .cfdis
+        .update_one(
+            doc! { "company_id": company_a.to_hex(), "uuid": invoice_uuid },
+            doc! { "$set": { "comprobante.total": "150.00", "comprobante.subTotal": "150.00" } },
+        )
+        .await
+        .unwrap();
+    let (status, body) = post_json_with_cookie(
+        build_app(shared.clone()),
+        "bulk-a.miapp.local",
+        "/api/admin/cfdis/transactions/bulk",
+        &admin_token,
+        serde_json::json!({ "uuids": [invoice_uuid] }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let updated: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(updated["updated"], 1);
+    let invoice = state
+        .transactions
+        .find_one(doc! { "company_id": company_a, "cfdi_uuid": invoice_uuid })
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(invoice.amount, 150.0);
+    assert_eq!(
+        state
+            .transactions
+            .count_documents(doc! { "company_id": company_a })
+            .await
+            .unwrap(),
+        3
+    );
+
+    let concurrent_uuid = "ffffffff-1111-2222-3333-444444444444";
+    state
+        .cfdis
+        .insert_one(bulk_cfdi_document(
+            &company_a,
+            concurrent_uuid,
+            "AAA010101AAA",
+            "I",
+            "75.00",
+        ))
+        .await
+        .unwrap();
+    let first = post_json_with_cookie(
+        build_app(shared.clone()),
+        "bulk-a.miapp.local",
+        "/api/admin/cfdis/transactions/bulk",
+        &admin_token,
+        serde_json::json!({ "uuids": [concurrent_uuid] }),
+    );
+    let second = post_json_with_cookie(
+        build_app(shared.clone()),
+        "bulk-a.miapp.local",
+        "/api/admin/cfdis/transactions/bulk",
+        &admin_token,
+        serde_json::json!({ "uuids": [concurrent_uuid] }),
+    );
+    let ((first_status, first_body), (second_status, second_body)) = tokio::join!(first, second);
+    assert_eq!(first_status, StatusCode::OK, "{first_body}");
+    assert_eq!(second_status, StatusCode::OK, "{second_body}");
+    let first_result: serde_json::Value = serde_json::from_str(&first_body).unwrap();
+    let second_result: serde_json::Value = serde_json::from_str(&second_body).unwrap();
+    assert_eq!(
+        first_result["created"].as_u64().unwrap() + second_result["created"].as_u64().unwrap(),
+        1
+    );
+    assert_eq!(
+        state
+            .transactions
+            .count_documents(doc! { "company_id": company_a, "cfdi_uuid": concurrent_uuid })
+            .await
+            .unwrap(),
+        1
+    );
+
+    let (status, _) = post_json_with_cookie(
+        build_app(shared),
+        "bulk-a.miapp.local",
+        "/api/admin/cfdis/transactions/bulk",
+        &staff_token,
+        serde_json::json!({ "uuids": [invoice_uuid] }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let _ = std::fs::remove_dir_all(archive_root);
+    common::teardown(Some(ctx)).await;
+}
 
 #[tokio::test]
 async fn cfdi_json_endpoints_scope_to_active_tenant() {

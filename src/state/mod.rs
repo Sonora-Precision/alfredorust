@@ -72,6 +72,8 @@ pub const PLANNED_MONTHS_AHEAD: u32 = 24;
 
 #[derive(Clone)]
 pub struct AppState {
+    pub cfdi_archive_lock: std::sync::Arc<tokio::sync::Mutex<()>>,
+    pub cfdi_transaction_sync_lock: std::sync::Arc<tokio::sync::Mutex<()>>,
     pub cfdi_jobs: Collection<CfdiJob>,
     pub users: Collection<User>,
     pub user_companies: Collection<UserCompany>,
@@ -140,6 +142,8 @@ pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppStat
     }
 
     let state = AppState {
+        cfdi_archive_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
+        cfdi_transaction_sync_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
         cfdi_jobs: db.collection::<CfdiJob>("cfdi_jobs"),
         users: db.collection::<User>("users"),
         user_companies: db.collection::<UserCompany>("user_companies"),

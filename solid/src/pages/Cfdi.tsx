@@ -151,41 +151,52 @@ type SortCol = 'fecha' | 'total' | 'folio' | 'emisor'
  * client-computed. Skips payment-complement CFDIs (tipo "P") and non-positive
  * totals for the money aggregates. */
 function buildCfdiAnalytics(items: Cfdi[]) {
-  const monthly = new Map<string, { emitidos: number; recibidos: number }>()
+  const monthly = new Map<string, { emitidos: number; recibidos: number; emitidosCount: number; recibidosCount: number }>()
   const currency = new Map<string, { emit: number; rec: number }>()
   const emisores = new Map<string, number>()
   const receptores = new Map<string, number>()
+  const types = new Map<string, number>()
   let emitidos = 0
   let recibidos = 0
   for (const c of items) {
-    if (c.tipo === 'P' || c.total <= 0) continue
     const month = (c.fecha ?? '').slice(0, 7)
-    const bucket = monthly.get(month) ?? { emitidos: 0, recibidos: 0 }
+    const bucket = monthly.get(month) ?? { emitidos: 0, recibidos: 0, emitidosCount: 0, recibidosCount: 0 }
+    if (c.es_emitido) bucket.emitidosCount += 1
+    else bucket.recibidosCount += 1
+    monthly.set(month, bucket)
+    const type = c.tipo || '—'
+    types.set(type, (types.get(type) ?? 0) + 1)
+    if (c.tipo === 'P' || c.total <= 0) continue
     const cur = currency.get(c.moneda ?? '—') ?? { emit: 0, rec: 0 }
-    if (c.es_emitido) {
+    const isIncome = c.tipo === 'E' ? !c.es_emitido : c.es_emitido
+    const counterparty = c.es_emitido ? c.receptor_nombre ?? '—' : c.emisor_nombre ?? '—'
+    if (isIncome) {
       bucket.emitidos += c.total
       emitidos += c.total
       cur.emit += c.total
-      const name = c.receptor_nombre ?? '—'
-      receptores.set(name, (receptores.get(name) ?? 0) + c.total)
+      receptores.set(counterparty, (receptores.get(counterparty) ?? 0) + c.total)
     } else {
       bucket.recibidos += c.total
       recibidos += c.total
       cur.rec += c.total
-      const name = c.emisor_nombre ?? '—'
-      emisores.set(name, (emisores.get(name) ?? 0) + c.total)
+      emisores.set(counterparty, (emisores.get(counterparty) ?? 0) + c.total)
     }
-    monthly.set(month, bucket)
     currency.set(c.moneda ?? '—', cur)
   }
-  const series = [...monthly.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([label, v]) => ({ label, income: v.emitidos, expense: v.recibidos }))
+  const sortedMonthly = [...monthly.entries()].sort(([a], [b]) => a.localeCompare(b))
+  const series = sortedMonthly.map(([label, v]) => ({ label, income: v.emitidos, expense: v.recibidos }))
+  const countSeries = sortedMonthly.map(([label, v]) => ({
+    label,
+    income: v.emitidosCount,
+    expense: v.recibidosCount,
+  }))
   const top = (m: Map<string, number>) => [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5)
   return {
     emitidos,
     recibidos,
     series,
+    countSeries,
+    types: [...types.entries()].sort((a, b) => b[1] - a[1]),
     currencies: [...currency.entries()].sort(([a], [b]) => a.localeCompare(b)),
     topEmisores: top(emisores),
     topReceptores: top(receptores),
@@ -310,13 +321,29 @@ export default function Cfdi(): JSX.Element {
   const allCfdis = createMemo(() => cfdisQuery.data?.items ?? [])
   const hasCfdis = () => allCfdis().length > 0
   const monedas = createMemo(() => [...new Set(allCfdis().map((c) => c.moneda).filter((m): m is string => !!m))])
+  const emisores = createMemo(() => {
+    const options = new Map<string, string>()
+    for (const c of allCfdis()) {
+      const rfc = c.emisor_rfc ?? ''
+      const name = c.emisor_nombre ?? ''
+      if (rfc || name) options.set(`${rfc}|${name}`, name ? `${name} · ${rfc}` : rfc)
+    }
+    return [...options.entries()].sort((a, b) => a[1].localeCompare(b[1]))
+  })
 
   const [search, setSearch] = createSignal('')
   const [dir, setDir] = createSignal<'all' | 'emit' | 'rec'>('all')
   const [moneda, setMoneda] = createSignal('all')
+  const [emisor, setEmisor] = createSignal('all')
+  const [dateFrom, setDateFrom] = createSignal('')
+  const [dateTo, setDateTo] = createSignal('')
   const [sort, setSort] = createSignal<SortCol>('fecha')
   const [sortDir, setSortDir] = createSignal<'asc' | 'desc'>('desc')
   const [page, setPage] = createSignal(1)
+  const [selected, setSelected] = createSignal<Set<string>>(new Set())
+  const [bulkConfirmOpen, setBulkConfirmOpen] = createSignal(false)
+  const [bulkResult, setBulkResult] = createSignal<fiscalApi.BulkCfdiTransactionsResponse | null>(null)
+  const [bulkError, setBulkError] = createSignal<string | null>(null)
 
   const toggleSort = (col: SortCol) => {
     if (sort() === col) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
@@ -340,6 +367,11 @@ export default function Cfdi(): JSX.Element {
     }
     if (dir() !== 'all') list = list.filter((c) => (dir() === 'emit' ? c.es_emitido : !c.es_emitido))
     if (moneda() !== 'all') list = list.filter((c) => (c.moneda ?? '') === moneda())
+    if (emisor() !== 'all') {
+      list = list.filter((c) => `${c.emisor_rfc ?? ''}|${c.emisor_nombre ?? ''}` === emisor())
+    }
+    if (dateFrom()) list = list.filter((c) => (c.fecha ?? '').slice(0, 10) >= dateFrom())
+    if (dateTo()) list = list.filter((c) => (c.fecha ?? '').slice(0, 10) <= dateTo())
     const s = sort()
     const sd = sortDir() === 'asc' ? 1 : -1
     list.sort((a, b) => {
@@ -357,7 +389,11 @@ export default function Cfdi(): JSX.Element {
     search()
     dir()
     moneda()
+    emisor()
+    dateFrom()
+    dateTo()
     setPage(1)
+    setSelected(new Set<string>())
   })
   const totalFiltered = createMemo(() => filtered().length)
   const totalPages = createMemo(() => Math.max(1, Math.ceil(totalFiltered() / PAGE_SIZE)))
@@ -368,6 +404,50 @@ export default function Cfdi(): JSX.Element {
   })
 
   const analytics = createMemo(() => buildCfdiAnalytics(filtered()))
+  const selectedCount = createMemo(() => selected().size)
+  const allFilteredSelected = createMemo(
+    () => filtered().length > 0 && filtered().every((cfdi) => selected().has(cfdi.uuid)),
+  )
+  const toggleSelected = (uuid: string, checked: boolean) => {
+    setSelected((current) => {
+      const next = new Set(current)
+      if (checked) next.add(uuid)
+      else next.delete(uuid)
+      return next
+    })
+  }
+  const toggleAllFiltered = (checked: boolean) => {
+    setSelected(checked ? new Set(filtered().map((cfdi) => cfdi.uuid)) : new Set<string>())
+  }
+  const bulkMutation = createMutation(() => ({
+    mutationFn: () => fiscalApi.syncCfdiTransactions({ uuids: [...selected()] }),
+    onSuccess: (result) => {
+      setBulkResult(result)
+      setBulkError(null)
+      setBulkConfirmOpen(false)
+      setSelected(new Set<string>())
+      void qc.invalidateQueries({ queryKey: ['cfdis'] })
+      void qc.invalidateQueries({ queryKey: ['transactions'] })
+      void qc.invalidateQueries({ queryKey: ['planned-entries'] })
+    },
+    onError: (error) => {
+      setBulkError(humanizeError(error, 'No se pudieron sincronizar los movimientos'))
+      setBulkConfirmOpen(false)
+    },
+  }))
+  const archiveMutation = createMutation(() => ({
+    mutationFn: () => fiscalApi.downloadCfdiArchive([...selected()]),
+    onSuccess: (blob) => {
+      setBulkError(null)
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `cfdis-${todayStr()}.zip`
+      anchor.click()
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+    },
+    onError: (error) => setBulkError(humanizeError(error, 'No se pudo crear el ZIP de CFDIs')),
+  }))
   const emitCount = createCountUp(() => analytics().emitidos)
   const recCount = createCountUp(() => analytics().recibidos)
   const netCount = createCountUp(() => analytics().emitidos - analytics().recibidos)
@@ -435,6 +515,7 @@ export default function Cfdi(): JSX.Element {
 
   const maxEmisor = () => analytics().topEmisores[0]?.[1] ?? 1
   const maxReceptor = () => analytics().topReceptores[0]?.[1] ?? 1
+  const typeColors = ['#38bdf8', '#a78bfa', '#f59e0b', '#10b981', '#f43f5e', '#64748b']
 
   const sortIcon = (col: SortCol) => (sort() !== col ? '↕' : sortDir() === 'asc' ? '↑' : '↓')
 
@@ -533,7 +614,7 @@ export default function Cfdi(): JSX.Element {
                 <Card glass glow class="p-4">
                   <div class="flex items-start justify-between">
                     <div>
-                      <div class="text-[12px] font-medium text-muted-foreground">Emitidos (ingresos)</div>
+                      <div class="text-[12px] font-medium text-muted-foreground">Ingresos CFDI</div>
                       <div class="mt-1.5 text-[22px] font-bold tnum text-emerald-600">{money(emitCount())}</div>
                     </div>
                     <span class="grid h-9 w-9 place-items-center rounded-lg bg-emerald-500/15 text-emerald-600">
@@ -544,7 +625,7 @@ export default function Cfdi(): JSX.Element {
                 <Card glass glow class="p-4">
                   <div class="flex items-start justify-between">
                     <div>
-                      <div class="text-[12px] font-medium text-muted-foreground">Recibidos (egresos)</div>
+                      <div class="text-[12px] font-medium text-muted-foreground">Egresos CFDI</div>
                       <div class="mt-1.5 text-[22px] font-bold tnum text-rose-600">{money(recCount())}</div>
                     </div>
                     <span class="grid h-9 w-9 place-items-center rounded-lg bg-rose-500/15 text-rose-600">
@@ -571,15 +652,15 @@ export default function Cfdi(): JSX.Element {
                 <Card glass glow class="p-4 lg:col-span-2">
                   <div class="flex flex-wrap items-center justify-between gap-2">
                     <div>
-                      <h2 class="text-[14px] font-semibold">Mensual · emitidos vs recibidos</h2>
+                      <h2 class="text-[14px] font-semibold">Mensual · ingresos vs egresos</h2>
                       <p class="text-[12px] text-muted-foreground">Por mes en el rango</p>
                     </div>
                     <div class="flex items-center gap-3 text-[12px]">
                       <span class="flex items-center gap-1.5">
-                        <span class="h-2.5 w-2.5 rounded-full bg-emerald-500" />Emitidos
+                        <span class="h-2.5 w-2.5 rounded-full bg-emerald-500" />Ingresos
                       </span>
                       <span class="flex items-center gap-1.5">
-                        <span class="h-2.5 w-2.5 rounded-full bg-rose-500" />Recibidos
+                        <span class="h-2.5 w-2.5 rounded-full bg-rose-500" />Egresos
                       </span>
                     </div>
                   </div>
@@ -588,17 +669,60 @@ export default function Cfdi(): JSX.Element {
                   </div>
                 </Card>
                 <Card glass glow class="p-4">
-                  <h2 class="text-[14px] font-semibold">Dirección</h2>
+                  <h2 class="text-[14px] font-semibold">Flujo fiscal</h2>
                   <div class="mx-auto mt-2 h-40 w-40">
                     <Donut
                       segments={[
-                        { label: 'Emitidos', value: analytics().emitidos, color: '#10b981' },
-                        { label: 'Recibidos', value: analytics().recibidos, color: '#f43f5e' },
+                        { label: 'Ingresos', value: analytics().emitidos, color: '#10b981' },
+                        { label: 'Egresos', value: analytics().recibidos, color: '#f43f5e' },
                       ]}
                       centerValue={money(analytics().emitidos - analytics().recibidos)}
                       centerLabel="neto"
                       class="text-foreground"
                     />
+                  </div>
+                </Card>
+              </div>
+
+              <div class="grid gap-3 lg:grid-cols-3">
+                <Card glass glow class="p-4 lg:col-span-2">
+                  <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h2 class="text-[14px] font-semibold">Volumen mensual</h2>
+                      <p class="text-[12px] text-muted-foreground">Cantidad de comprobantes por dirección</p>
+                    </div>
+                    <div class="flex items-center gap-3 text-[12px]">
+                      <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-full bg-emerald-500" />Emitidos</span>
+                      <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-full bg-rose-500" />Recibidos</span>
+                    </div>
+                  </div>
+                  <div class="mt-3 h-48">
+                    <LineArea data={analytics().countSeries} class="h-full w-full text-muted-foreground" />
+                  </div>
+                </Card>
+                <Card glass glow class="p-4">
+                  <h2 class="text-[14px] font-semibold">Tipos de CFDI</h2>
+                  <div class="mx-auto mt-2 h-36 w-36">
+                    <Donut
+                      segments={analytics().types.map(([label, value], index) => ({
+                        label,
+                        value,
+                        color: typeColors[index % typeColors.length],
+                      }))}
+                      centerValue={int(totalFiltered())}
+                      centerLabel="CFDIs"
+                      class="text-foreground"
+                    />
+                  </div>
+                  <div class="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                    <For each={analytics().types}>
+                      {([label, value], index) => (
+                        <span class="flex items-center gap-1">
+                          <span class="h-2 w-2 rounded-full" style={{ background: typeColors[index() % typeColors.length] }} />
+                          {label}: {int(value)}
+                        </span>
+                      )}
+                    </For>
                   </div>
                 </Card>
               </div>
@@ -630,7 +754,7 @@ export default function Cfdi(): JSX.Element {
                 </Card>
                 <Card glass glow class="p-4">
                   <h2 class="text-[14px] font-semibold">
-                    Top emisores <span class="text-[11px] font-normal text-muted-foreground">(gastos)</span>
+                    Contrapartes de egresos
                   </h2>
                   <div class="mt-3 space-y-2.5">
                     <For
@@ -653,7 +777,7 @@ export default function Cfdi(): JSX.Element {
                 </Card>
                 <Card glass glow class="p-4">
                   <h2 class="text-[14px] font-semibold">
-                    Top receptores <span class="text-[11px] font-normal text-muted-foreground">(ingresos)</span>
+                    Contrapartes de ingresos
                   </h2>
                   <div class="mt-3 space-y-2.5">
                     <For
@@ -678,6 +802,26 @@ export default function Cfdi(): JSX.Element {
 
               {/* Toolbar + table */}
               <Card glass class="overflow-hidden">
+                <Show when={(cfdisQuery.data?.total ?? 0) > allCfdis().length}>
+                  <div class="border-b border-amber-500/25 bg-amber-500/10 px-4 py-3 text-[12px] text-amber-700">
+                    La vista está limitada a {int(allCfdis().length)} de {int(cfdisQuery.data!.total)} CFDIs. Refina el filtro antes de usar
+                    “Seleccionar todos” para garantizar una descarga completa.
+                  </div>
+                </Show>
+                <Show when={bulkResult()}>
+                  {(result) => (
+                    <div class="border-b border-emerald-500/25 bg-emerald-500/10 px-4 py-3 text-[12px] text-emerald-700">
+                      Movimientos sincronizados: {result().created} creados, {result().updated} actualizados,{' '}
+                      {result().unchanged} sin cambios y {result().skipped} omitidos.
+                      <Show when={result().errors.length > 0}> {result().errors.length} con error.</Show>
+                    </div>
+                  )}
+                </Show>
+                <Show when={bulkError()}>
+                  <div class="border-b border-destructive/25 bg-destructive/10 px-4 py-3 text-[12px] text-destructive">
+                    {bulkError()}
+                  </div>
+                </Show>
                 <div class="border-b border-border p-3 sm:p-4">
                   <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div class="relative w-full lg:max-w-sm">
@@ -725,6 +869,60 @@ export default function Cfdi(): JSX.Element {
                       <Button type="button" variant="outline" class="h-8 gap-1.5 px-2.5 text-[13px]" onClick={exportCsv}>
                         <Download class="h-4 w-4" /> Exportar
                       </Button>
+                      <Show when={isAdmin()}>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          class="h-8 px-3 text-[13px]"
+                          disabled={totalFiltered() === 0}
+                          onClick={() => toggleAllFiltered(!allFilteredSelected())}
+                        >
+                          {allFilteredSelected() ? 'Quitar selección' : `Seleccionar todos (${totalFiltered()})`}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          class="h-8 gap-1.5 px-3 text-[13px]"
+                          disabled={selectedCount() === 0 || archiveMutation.isPending}
+                          onClick={() => archiveMutation.mutate()}
+                        >
+                          <Download class="h-4 w-4" />
+                          {archiveMutation.isPending ? 'Creando ZIP…' : `Descargar XML ZIP (${selectedCount()})`}
+                        </Button>
+                        <Button
+                          type="button"
+                          class="h-8 px-3 text-[13px]"
+                          disabled={selectedCount() === 0 || bulkMutation.isPending}
+                          onClick={() => setBulkConfirmOpen(true)}
+                        >
+                          Crear/actualizar movimientos ({selectedCount()})
+                        </Button>
+                      </Show>
+                    </div>
+                  </div>
+                  <div class="mt-3 grid gap-3 border-t border-border/60 pt-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <label class="space-y-1 text-[11px] font-semibold uppercase text-muted-foreground">
+                      Emisor
+                      <Select value={emisor()} onChange={setEmisor} class="mt-1 w-full normal-case">
+                        <option value="all">Todos los emisores</option>
+                        <For each={emisores()}>{([value, label]) => <option value={value}>{label}</option>}</For>
+                      </Select>
+                    </label>
+                    <DateField value={dateFrom()} onChange={setDateFrom} label="Desde" />
+                    <DateField value={dateTo()} onChange={setDateTo} label="Hasta" />
+                    <div class="flex items-end">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        class="h-9 w-full text-[12px]"
+                        onClick={() => {
+                          setEmisor('all')
+                          setDateFrom('')
+                          setDateTo('')
+                        }}
+                      >
+                        Limpiar emisor y fechas
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -734,6 +932,15 @@ export default function Cfdi(): JSX.Element {
                   <table class="w-full text-[13px]">
                     <thead class="bg-muted/40">
                       <tr class="border-b border-border text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        <th class="w-10 px-3 py-2.5">
+                          <input
+                            type="checkbox"
+                            class="h-4 w-4 rounded border-input"
+                            checked={allFilteredSelected()}
+                            onChange={(event) => toggleAllFiltered(event.currentTarget.checked)}
+                            aria-label={`Seleccionar los ${totalFiltered()} CFDIs filtrados`}
+                          />
+                        </th>
                         <th class="px-3 py-2.5">
                           <button class="inline-flex items-center gap-1 hover:text-foreground" onClick={() => toggleSort('folio')}>
                             Folio <span class="tnum">{sortIcon('folio')}</span>
@@ -757,6 +964,7 @@ export default function Cfdi(): JSX.Element {
                           </button>
                         </th>
                         <th class="px-3 py-2.5">Dirección</th>
+                        <th class="px-3 py-2.5">Movimiento</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -764,7 +972,7 @@ export default function Cfdi(): JSX.Element {
                         each={pageItems()}
                         fallback={
                           <tr>
-                            <td colspan="7" class="px-3 py-16 text-center text-muted-foreground">
+                            <td colspan="9" class="px-3 py-16 text-center text-muted-foreground">
                               Sin resultados
                             </td>
                           </tr>
@@ -773,6 +981,7 @@ export default function Cfdi(): JSX.Element {
                         {(c) => (
                           <tr
                             class="row-hover cursor-pointer border-b border-border/60 transition"
+                            classList={{ 'bg-primary/[.06]': selected().has(c.uuid) }}
                             tabindex="0"
                             role="button"
                             aria-label={`Ver detalle folio ${c.folio ?? c.uuid}`}
@@ -784,6 +993,15 @@ export default function Cfdi(): JSX.Element {
                               }
                             }}
                           >
+                            <td class="px-3 py-2.5" onClick={(event) => event.stopPropagation()}>
+                              <input
+                                type="checkbox"
+                                class="h-4 w-4 rounded border-input"
+                                checked={selected().has(c.uuid)}
+                                onChange={(event) => toggleSelected(c.uuid, event.currentTarget.checked)}
+                                aria-label={`Seleccionar CFDI ${c.folio ?? c.uuid}`}
+                              />
+                            </td>
                             <td class="px-3 py-2.5 font-medium tnum">{c.folio ?? ''}</td>
                             <td class="px-3 py-2.5 text-muted-foreground">{c.tipo ?? ''}</td>
                             <td class="whitespace-nowrap px-3 py-2.5 text-muted-foreground tnum">
@@ -802,6 +1020,11 @@ export default function Cfdi(): JSX.Element {
                                 </Show>
                               </div>
                             </td>
+                            <td class="whitespace-nowrap px-3 py-2.5">
+                              <Badge tone={c.has_transaction ? 'success' : 'neutral'}>
+                                {c.has_transaction ? 'Movimiento' : 'Pendiente'}
+                              </Badge>
+                            </td>
                           </tr>
                         )}
                       </For>
@@ -816,26 +1039,39 @@ export default function Cfdi(): JSX.Element {
                     fallback={<p class="py-12 text-center text-muted-foreground">Sin resultados</p>}
                   >
                     {(c) => (
-                      <button
-                        type="button"
-                        class="card glow-edge w-full rounded-xl p-3.5 text-left transition active:scale-[.99]"
-                        onClick={() => openDetail(c)}
+                      <div
+                        class="card glow-edge w-full rounded-xl p-3.5 text-left transition"
+                        classList={{ 'ring-1 ring-primary/50': selected().has(c.uuid) }}
                       >
                         <div class="flex items-center justify-between gap-2">
-                          <span class="font-semibold tnum">{c.folio ?? ''}</span>
-                          <Badge tone={c.es_emitido ? 'success' : 'info'}>{c.es_emitido ? 'Emitido' : 'Recibido'}</Badge>
+                          <label class="flex min-w-0 items-center gap-2">
+                            <input
+                              type="checkbox"
+                              class="h-4 w-4 rounded border-input"
+                              checked={selected().has(c.uuid)}
+                              onChange={(event) => toggleSelected(c.uuid, event.currentTarget.checked)}
+                              aria-label={`Seleccionar CFDI ${c.folio ?? c.uuid}`}
+                            />
+                            <span class="truncate font-semibold tnum">{c.folio ?? ''}</span>
+                          </label>
+                          <div class="flex items-center gap-1.5">
+                            <Badge tone={c.has_transaction ? 'success' : 'neutral'}>{c.has_transaction ? 'Movimiento' : 'Pendiente'}</Badge>
+                            <Badge tone={c.es_emitido ? 'success' : 'info'}>{c.es_emitido ? 'Emitido' : 'Recibido'}</Badge>
+                          </div>
                         </div>
-                        <div class="mt-2 text-[13px]">
-                          <span class="text-muted-foreground">{c.es_emitido ? 'Para: ' : 'De: '}</span>
-                          {c.es_emitido ? c.receptor_nombre ?? '' : c.emisor_nombre ?? ''}
-                        </div>
-                        <div class="mt-1.5 flex items-center justify-between">
-                          <span class="text-[12px] text-muted-foreground tnum">{c.fecha ? rfc3339ToDate(c.fecha) : ''}</span>
-                          <span class="font-bold tnum">
-                            {money(c.total)} <span class="text-[11px] font-normal text-muted-foreground">{c.moneda ?? ''}</span>
-                          </span>
-                        </div>
-                      </button>
+                        <button type="button" class="mt-2 w-full text-left" onClick={() => openDetail(c)}>
+                          <div class="text-[13px]">
+                            <span class="text-muted-foreground">{c.es_emitido ? 'Para: ' : 'De: '}</span>
+                            {c.es_emitido ? c.receptor_nombre ?? '' : c.emisor_nombre ?? ''}
+                          </div>
+                          <div class="mt-1.5 flex items-center justify-between">
+                            <span class="text-[12px] text-muted-foreground tnum">{c.fecha ? rfc3339ToDate(c.fecha) : ''}</span>
+                            <span class="font-bold tnum">
+                              {money(c.total)} <span class="text-[11px] font-normal text-muted-foreground">{c.moneda ?? ''}</span>
+                            </span>
+                          </div>
+                        </button>
+                      </div>
                     )}
                   </For>
                 </div>
@@ -1266,6 +1502,31 @@ export default function Cfdi(): JSX.Element {
           )}
         </Show>
       </Drawer>
+
+      <Modal
+        open={bulkConfirmOpen()}
+        onOpenChange={setBulkConfirmOpen}
+        title="Crear o actualizar movimientos"
+        class="max-w-lg"
+      >
+        <div class="space-y-4">
+          <p class="text-sm text-muted-foreground">
+            Se sincronizarán <strong class="text-foreground">{selectedCount()} CFDIs</strong>. Los movimientos inexistentes se crearán,
+            los desactualizados se reemplazarán con los datos fiscales y los que ya coincidan no se modificarán.
+          </p>
+          <div class="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700">
+            Las notas de crédito invierten el flujo. CFDIs cancelados, complementos de pago y tipos no compatibles se omiten.
+          </div>
+          <div class="flex justify-end gap-2">
+            <Button type="button" variant="ghost" disabled={bulkMutation.isPending} onClick={() => setBulkConfirmOpen(false)}>
+              Cancelar
+            </Button>
+            <Button type="button" disabled={bulkMutation.isPending || selectedCount() === 0} onClick={() => bulkMutation.mutate()}>
+              {bulkMutation.isPending ? 'Sincronizando…' : `Sincronizar ${selectedCount()} movimientos`}
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Error modal */}
       <Modal

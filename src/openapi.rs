@@ -161,6 +161,8 @@ impl Modify for SecurityAddon {
 
         // cfdi — reads / download jobs
         crate::routes::admin::cfdis::cfdis_data_api,
+        crate::routes::admin::cfdis::cfdi_archive_api,
+        crate::routes::admin::cfdis::cfdi_transactions_bulk_api,
         crate::routes::admin::cfdis::cfdi_data_api,
         crate::routes::admin::cfdi_download::company_cfdi_download,
         crate::routes::admin::cfdi_download::company_cfdi_jobs_list,
