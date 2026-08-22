@@ -8,7 +8,7 @@
 import { createMutation, createQuery, useQueryClient } from '@tanstack/solid-query'
 import { createVirtualizer } from '@tanstack/solid-virtual'
 import { ArrowLeftRight, Pencil, Trash2 } from 'lucide-solid'
-import { type JSX, Show, createMemo, createSignal, For } from 'solid-js'
+import { type JSX, Show, createEffect, createMemo, createSignal, For } from 'solid-js'
 
 import { Donut } from '../components/charts/Donut'
 import { LineArea } from '../components/charts/LineArea'
@@ -90,6 +90,10 @@ export default function Transactions(): JSX.Element {
     overscan: 10,
   })
   const vItems = () => rowVirt.getVirtualItems()
+  createEffect(() => {
+    const count = rows().length
+    if (count > 0) requestAnimationFrame(() => rowVirt.measure())
+  })
   // eslint-disable-next-line solid/reactivity -- scrollEl is read inside the helper's onMount (a tracked scope)
   remeasureAfterLayout(scrollEl, setScrollEl)
   const padTop = () => vItems()[0]?.start ?? 0
