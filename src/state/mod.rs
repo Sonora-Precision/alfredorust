@@ -1,7 +1,7 @@
 // state module: AppState, initialization, and re-exports of submodules.
 
-use anyhow::Result;
-use mongodb::{Client, Collection};
+use anyhow::{Context, Result};
+use mongodb::{Client, Collection, IndexModel, options::IndexOptions};
 use serde::{Deserialize, Serialize};
 use std::env;
 
@@ -140,6 +140,29 @@ pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppStat
         seed::seed_default_users(&db, &default_users, &company_ids).await?;
         seed::seed_sample_finance(&db, company_ids.values().next().cloned()).await?;
     }
+
+    // A CFDI represents one real fiscal movement per tenant. Enforce that
+    // invariant in MongoDB so concurrent workers or application instances
+    // cannot both pass a find-before-insert check.
+    db.collection::<Document>("transactions")
+        .create_index(
+            IndexModel::builder()
+                .keys(mongodb::bson::doc! { "company_id": 1, "cfdi_uuid": 1 })
+                .options(
+                    IndexOptions::builder()
+                        .name("unique_company_cfdi_transaction".to_string())
+                        .unique(true)
+                        .partial_filter_expression(
+                            mongodb::bson::doc! { "cfdi_uuid": { "$type": "string" } },
+                        )
+                        .build(),
+                )
+                .build(),
+        )
+        .await
+        .context(
+            "creating the unique CFDI transaction index; resolve existing duplicate company_id/cfdi_uuid records before restarting",
+        )?;
 
     let state = AppState {
         cfdi_archive_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),

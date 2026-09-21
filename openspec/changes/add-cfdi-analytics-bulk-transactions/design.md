@@ -30,13 +30,13 @@ The endpoint accepts 1 to 5,000 UUIDs, deduplicates them, derives the company ex
 - CFDI `I`: issued is income; received is expense.
 - CFDI `E`: issued is expense; received is income.
 - Cancelled CFDIs and types other than `I` or `E` are skipped.
-- The managed fields are date, description, transaction type, category, SAT account direction, amount, linked planned entry, confirmation state, contact, CFDI UUID, currency, folio, and notes.
+- The managed fields are date, description, transaction type, category, SAT account direction, amount, linked planned entry, confirmation state, contact, CFDI UUID, currency, and folio. User-managed project and notes fields are preserved.
 - Existing matching transactions are fully synchronized. Equal records are not written.
 - The endpoint creates or synchronizes the CFDI-backed planned entry before the transaction and recalculates its coverage after a write.
 
 ## Idempotency and tenancy
 
-The idempotency key is `(company_id, cfdi_uuid)`. Bulk synchronization is serialized inside the single application process so concurrent submissions cannot race through find/create. This avoids a startup-breaking index migration when legacy duplicate records may exist. Every CFDI, planned entry, contact, category, account, and transaction lookup is scoped to the active company.
+The idempotency key is `(company_id, cfdi_uuid)` and is enforced by a partial unique MongoDB index for records that carry a CFDI UUID. The application-level mutex avoids redundant work within one process, while the database index protects concurrent workers and multiple application instances. A process that loses an insert race reloads and synchronizes the winning record. Every CFDI, planned entry, contact, category, account, and transaction lookup is scoped to the active company.
 
 ## Frontend
 

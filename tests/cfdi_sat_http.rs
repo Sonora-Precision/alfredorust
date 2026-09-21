@@ -228,6 +228,18 @@ async fn bulk_cfdi_transactions_are_idempotent_and_tenant_scoped() {
     assert_eq!(replay["requested"], 3);
     assert_eq!(replay["unchanged"], 3);
 
+    let manual_project_id = bson::oid::ObjectId::new();
+    state
+        .transactions
+        .update_one(
+            doc! { "company_id": company_a, "cfdi_uuid": invoice_uuid },
+            doc! { "$set": {
+                "project_id": manual_project_id,
+                "notes": "Nota capturada manualmente",
+            } },
+        )
+        .await
+        .unwrap();
     state
         .cfdis
         .update_one(
@@ -254,6 +266,8 @@ async fn bulk_cfdi_transactions_are_idempotent_and_tenant_scoped() {
         .unwrap()
         .unwrap();
     assert_eq!(invoice.amount, 150.0);
+    assert_eq!(invoice.project_id, Some(manual_project_id));
+    assert_eq!(invoice.notes.as_deref(), Some("Nota capturada manualmente"));
     assert_eq!(
         state
             .transactions
@@ -282,8 +296,13 @@ async fn bulk_cfdi_transactions_are_idempotent_and_tenant_scoped() {
         &admin_token,
         serde_json::json!({ "uuids": [concurrent_uuid] }),
     );
+    let uri =
+        std::env::var("MONGODB_URI").unwrap_or_else(|_| "mongodb://localhost:27017".to_string());
+    let independent_state = alfredodev::state::init_state_with_db_name(&uri, &ctx.db_name)
+        .await
+        .unwrap();
     let second = post_json_with_cookie(
-        build_app(shared.clone()),
+        build_app(Arc::new(independent_state)),
         "bulk-a.miapp.local",
         "/api/admin/cfdis/transactions/bulk",
         &admin_token,
@@ -412,7 +431,9 @@ async fn cfdi_json_endpoints_scope_to_active_tenant() {
     let app = build_app(shared.clone());
     let (status, body) = get_with_cookie(app, host_a, "/api/admin/cfdis/data", &token).await;
     assert_eq!(status, StatusCode::OK);
-    serde_json::from_str::<serde_json::Value>(&body).expect("response must be JSON");
+    let list: serde_json::Value = serde_json::from_str(&body).expect("response must be JSON");
+    assert_eq!(list["total"], 1);
+    assert_eq!(list["items"].as_array().unwrap().len(), 1);
     assert!(body.contains(uuid_a));
     assert!(body.contains("CFDI concepto A"));
     assert!(!body.contains(uuid_b));

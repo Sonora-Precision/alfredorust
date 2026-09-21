@@ -175,6 +175,7 @@ pub struct CfdiApiItem {
 #[derive(Serialize)]
 pub struct CfdiDataResponse {
     pub company_rfcs: Vec<String>,
+    pub total: u64,
     pub items: Vec<CfdiApiItem>,
 }
 
@@ -740,6 +741,11 @@ pub async fn cfdis_data_api(
         .collect();
 
     let filter = bson::doc! { "company_id": active_company.to_hex() };
+    let total = state
+        .cfdis
+        .count_documents(filter.clone())
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let opts = mongodb::options::FindOptions::builder()
         .sort(bson::doc! { "comprobante.fecha": -1 })
         .limit(API_LIMIT)
@@ -840,6 +846,7 @@ pub async fn cfdis_data_api(
 
     Ok(Json(CfdiDataResponse {
         company_rfcs: company_rfcs_vec,
+        total,
         items,
     }))
 }

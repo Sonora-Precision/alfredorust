@@ -798,6 +798,62 @@ pub enum CfdiTransactionSyncOutcome {
     Unchanged,
 }
 
+async fn update_existing_cfdi_transaction(
+    state: &AppState,
+    company_id: &ObjectId,
+    existing: Transaction,
+    input: &CfdiTransactionSync,
+    account_from_id: Option<ObjectId>,
+    account_to_id: Option<ObjectId>,
+) -> Result<CfdiTransactionSyncOutcome> {
+    let id = existing.id.context("CFDI transaction missing _id")?;
+    let previous_planned_entry_id = existing.planned_entry_id;
+    let is_current = existing.date == input.date
+        && existing.description == input.description
+        && existing.transaction_type == input.transaction_type
+        && existing.category_id == input.category_id
+        && existing.account_from_id == account_from_id
+        && existing.account_to_id == account_to_id
+        && existing.amount == input.amount
+        && existing.planned_entry_id == Some(input.planned_entry_id)
+        && existing.is_confirmed
+        && existing.contact_id == input.contact_id
+        && existing.currency == input.currency
+        && existing.cfdi_folio == input.cfdi_folio;
+    if is_current {
+        return Ok(CfdiTransactionSyncOutcome::Unchanged);
+    }
+
+    state
+        .transactions
+        .update_one(
+            doc! { "_id": &id, "company_id": company_id },
+            doc! { "$set": {
+                "date": input.date,
+                "description": &input.description,
+                "transaction_type": input.transaction_type.as_str(),
+                "category_id": &input.category_id,
+                "account_from_id": account_from_id,
+                "account_to_id": account_to_id,
+                "amount": input.amount,
+                "planned_entry_id": &input.planned_entry_id,
+                "is_confirmed": true,
+                "contact_id": input.contact_id,
+                "currency": &input.currency,
+                "cfdi_folio": &input.cfdi_folio,
+                "updated_at": DateTime::from_system_time(SystemTime::now()),
+            }},
+        )
+        .await?;
+    recalculate_planned_entry_status(state, &input.planned_entry_id).await?;
+    if let Some(previous_id) = previous_planned_entry_id {
+        if previous_id != input.planned_entry_id {
+            recalculate_planned_entry_status(state, &previous_id).await?;
+        }
+    }
+    Ok(CfdiTransactionSyncOutcome::Updated)
+}
+
 pub async fn sync_transaction_from_cfdi(
     state: &AppState,
     company_id: &ObjectId,
@@ -817,69 +873,28 @@ pub async fn sync_transaction_from_cfdi(
         .await?;
 
     if let Some(existing) = existing {
-        let id = existing.id.context("CFDI transaction missing _id")?;
-        let previous_planned_entry_id = existing.planned_entry_id;
-        let is_current = existing.date == input.date
-            && existing.description == input.description
-            && existing.transaction_type == input.transaction_type
-            && existing.category_id == input.category_id
-            && existing.account_from_id == account_from_id
-            && existing.account_to_id == account_to_id
-            && existing.amount == input.amount
-            && existing.planned_entry_id == Some(input.planned_entry_id)
-            && existing.project_id.is_none()
-            && existing.is_confirmed
-            && existing.notes.is_none()
-            && existing.contact_id == input.contact_id
-            && existing.currency == input.currency
-            && existing.cfdi_folio == input.cfdi_folio;
-        if is_current {
-            return Ok(CfdiTransactionSyncOutcome::Unchanged);
-        }
-
-        state
-            .transactions
-            .update_one(
-                doc! { "_id": &id, "company_id": company_id },
-                doc! { "$set": {
-                    "date": input.date,
-                    "description": &input.description,
-                    "transaction_type": input.transaction_type.as_str(),
-                    "category_id": &input.category_id,
-                    "account_from_id": account_from_id,
-                    "account_to_id": account_to_id,
-                    "amount": input.amount,
-                    "planned_entry_id": &input.planned_entry_id,
-                    "project_id": null,
-                    "is_confirmed": true,
-                    "notes": null,
-                    "contact_id": input.contact_id,
-                    "currency": input.currency,
-                    "cfdi_folio": input.cfdi_folio,
-                    "updated_at": DateTime::from_system_time(SystemTime::now()),
-                }},
-            )
-            .await?;
-        recalculate_planned_entry_status(state, &input.planned_entry_id).await?;
-        if let Some(previous_id) = previous_planned_entry_id {
-            if previous_id != input.planned_entry_id {
-                recalculate_planned_entry_status(state, &previous_id).await?;
-            }
-        }
-        return Ok(CfdiTransactionSyncOutcome::Updated);
+        return update_existing_cfdi_transaction(
+            state,
+            company_id,
+            existing,
+            &input,
+            account_from_id,
+            account_to_id,
+        )
+        .await;
     }
 
-    state
+    let insert_result = state
         .transactions
         .insert_one(Transaction {
             id: None,
             company_id: *company_id,
             date: input.date,
-            description: input.description,
-            transaction_type: input.transaction_type,
+            description: input.description.clone(),
+            transaction_type: input.transaction_type.clone(),
             category_id: input.category_id,
-            account_from_id,
-            account_to_id,
+            account_from_id: account_from_id.clone(),
+            account_to_id: account_to_id.clone(),
             amount: input.amount,
             planned_entry_id: Some(input.planned_entry_id),
             project_id: None,
@@ -887,12 +902,36 @@ pub async fn sync_transaction_from_cfdi(
             created_at: Some(DateTime::from_system_time(SystemTime::now())),
             updated_at: None,
             contact_id: input.contact_id,
-            cfdi_uuid: Some(input.cfdi_uuid),
-            currency: input.currency,
-            cfdi_folio: input.cfdi_folio,
+            cfdi_uuid: Some(input.cfdi_uuid.clone()),
+            currency: input.currency.clone(),
+            cfdi_folio: input.cfdi_folio.clone(),
             notes: None,
         })
-        .await?;
+        .await;
+    if let Err(insert_error) = insert_result {
+        // Another application instance may have won the unique-index race.
+        // Load and synchronize that record instead of surfacing a spurious
+        // per-item failure.
+        if let Some(existing) = state
+            .transactions
+            .find_one(doc! {
+                "company_id": company_id,
+                "cfdi_uuid": &input.cfdi_uuid,
+            })
+            .await?
+        {
+            return update_existing_cfdi_transaction(
+                state,
+                company_id,
+                existing,
+                &input,
+                account_from_id,
+                account_to_id,
+            )
+            .await;
+        }
+        return Err(insert_error.into());
+    }
     recalculate_planned_entry_status(state, &input.planned_entry_id).await?;
     Ok(CfdiTransactionSyncOutcome::Created)
 }
@@ -1072,7 +1111,8 @@ pub async fn create_transaction(
         ensure_project_in_company(state, project_id, company_id).await?;
     }
 
-    let res = state
+    let cfdi_uuid_for_retry = cfdi_uuid.clone();
+    let insert_result = state
         .transactions
         .insert_one(Transaction {
             id: None,
@@ -1095,7 +1135,29 @@ pub async fn create_transaction(
             cfdi_folio,
             notes,
         })
-        .await?;
+        .await;
+
+    let res = match insert_result {
+        Ok(result) => result,
+        Err(insert_error) => {
+            if let Some(cfdi_uuid) = cfdi_uuid_for_retry {
+                if let Some(existing) = state
+                    .transactions
+                    .find_one(doc! {
+                        "company_id": company_id,
+                        "cfdi_uuid": cfdi_uuid,
+                    })
+                    .await?
+                {
+                    if let Some(pe_id) = planned_entry_id {
+                        let _ = recalculate_planned_entry_status(state, &pe_id).await;
+                    }
+                    return existing.id.context("existing CFDI transaction missing _id");
+                }
+            }
+            return Err(insert_error.into());
+        }
+    };
 
     if let Some(pe_id) = planned_entry_id {
         let _ = recalculate_planned_entry_status(state, &pe_id).await;

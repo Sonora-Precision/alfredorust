@@ -36,6 +36,18 @@ The system SHALL synchronize at most one transaction per company and CFDI UUID.
 - THEN the system performs no write
 - AND reports the item as unchanged
 
+#### Scenario: Concurrent instances synchronize the same CFDI
+
+- GIVEN no transaction exists for a company and CFDI UUID
+- WHEN two application instances synchronize the UUID concurrently
+- THEN exactly one transaction exists for that company and UUID
+
+#### Scenario: Existing transaction has user metadata
+
+- GIVEN a CFDI-backed transaction has a manually assigned project or notes
+- WHEN the transaction is synchronized
+- THEN the project and notes remain unchanged
+
 ### Requirement: Bulk CFDI synchronization preserves tenant isolation
 
 The endpoint SHALL derive company context from the authenticated admin and SHALL NOT reveal or mutate CFDIs belonging to another company.

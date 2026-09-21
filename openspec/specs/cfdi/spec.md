@@ -143,6 +143,18 @@ The system SHALL maintain at most one transaction per company and CFDI UUID and 
 - THEN no transaction is written
 - AND each matching item is reported as unchanged
 
+#### Scenario: Multiple application instances synchronize the same CFDI
+
+- GIVEN no transaction exists yet for a company and CFDI UUID
+- WHEN two application instances synchronize that UUID concurrently
+- THEN the database contains exactly one transaction for the company and UUID
+
+#### Scenario: User metadata exists on a CFDI transaction
+
+- GIVEN a CFDI-backed transaction has a manually assigned project or notes
+- WHEN its managed CFDI fields are synchronized
+- THEN the project and notes are preserved
+
 #### Scenario: Credit note direction is inverted
 
 - GIVEN an issued credit note and a received credit note
