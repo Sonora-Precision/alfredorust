@@ -162,6 +162,23 @@ pub struct Session {
     pub expires_at: DateTime,
 }
 
+/// Revocable personal access token. Only a SHA-256 digest is persisted; the
+/// plaintext token is returned exactly once when it is created.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiToken {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub public_id: String,
+    pub secret_hash: String,
+    pub token_prefix: String,
+    pub user_id: ObjectId,
+    pub name: String,
+    pub created_at: DateTime,
+    pub expires_at: DateTime,
+    pub last_used_at: Option<DateTime>,
+    pub revoked_at: Option<DateTime>,
+}
+
 /// ---------- SHARED ENUMS FOR FINANCE DOMAIN ----------
 
 /// Basic income/expense kind used by categories, recurring plans, planned entries.

@@ -64,6 +64,29 @@ export interface ProfilePayload {
   secret: string
 }
 
+export interface PersonalAccessToken {
+  id: string
+  name: string
+  token_prefix: string
+  created_at: string
+  expires_at: string
+  last_used_at?: string | null
+  revoked_at?: string | null
+}
+
+export interface CreatePersonalAccessTokenPayload {
+  name: string
+  expires_in_days: number
+}
+
+export interface CreatedPersonalAccessToken {
+  id: string
+  name: string
+  token: string
+  token_prefix: string
+  expires_at: string
+}
+
 // --- companies (admin) --------------------------------------------------------
 
 export interface CompanyData {

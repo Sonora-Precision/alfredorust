@@ -4,13 +4,14 @@
 
 ## Authentication
 
-Configure the CLI once with the server URL, email, and TOTP secret:
+Create a personal access token from **Mi cuenta → Tokens de acceso**. Copy it
+when it is shown (it is never shown again), then configure the CLI without
+putting the token in shell history:
 
 ```bash
-cargo run --bin spcli -- login \
-  --base-url http://localhost:8090 \
-  --email alfredo@example.com \
-  --totp-secret YOUR_BASE32_TOTP_SECRET
+cargo run --bin spcli -- auth token \
+  --base-url http://localhost:8090 --stdin
+# Paste the spat_... token and press Ctrl-D (Unix) / Ctrl-Z then Enter (Windows).
 ```
 
 The CLI stores credentials outside the repository at the user's config path, for example:
@@ -19,9 +20,9 @@ The CLI stores credentials outside the repository at the user's config path, for
 ~/.config/spcli/credentials.bin
 ```
 
-The credential file is a binary encrypted envelope with restrictive permissions where supported. It is not plaintext JSON and should not reveal credentials when opened in a text editor.
+The credential file is a binary encrypted envelope with restrictive permissions where supported. It is not plaintext JSON and must never be committed.
 
-If a protected request receives `401 Unauthorized`, `spcli` generates a fresh TOTP code from the stored secret, logs in again, updates the local session cookie, and retries the request once.
+The server stores only a hash of the token. Tokens expire, can be revoked independently from the web account page, and continue to use the user's live company memberships and permissions. The legacy `login --totp-secret` command remains temporarily available for existing installations, but new setups should use a personal access token.
 
 ## Commands
 
@@ -81,7 +82,7 @@ Select active company context:
 cargo run --bin spcli -- company use acme
 ```
 
-Clear only the current session cookie:
+Clear local authentication (this does not revoke a server-side personal token):
 
 ```bash
 cargo run --bin spcli -- logout
@@ -263,10 +264,10 @@ It exits `0` when every check passes and `1` otherwise, so it can gate a deploy 
 
 ## Security Notes
 
-The stored TOTP secret can generate valid login codes. If the credential file is stolen and decrypted, rotate the user's TOTP secret server-side and run:
+If the credential file may have been copied, revoke its personal access token from **Mi cuenta** and run:
 
 ```bash
 cargo run --bin spcli -- reset-auth
 ```
 
-Do not commit `credentials.bin`, generated TOTP codes, session cookies, or real TOTP secrets.
+Do not commit `credentials.bin`, personal access tokens, generated TOTP codes, session cookies, or real TOTP secrets.

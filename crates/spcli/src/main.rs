@@ -1,6 +1,6 @@
 #![recursion_limit = "512"]
 
-use std::{env, fs, path::PathBuf, process::ExitCode};
+use std::{env, fs, io::Read, path::PathBuf, process::ExitCode};
 
 use aes_gcm::{
     Aes256Gcm, Nonce,
@@ -63,6 +63,10 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     Login(LoginArgs),
+    Auth {
+        #[command(subcommand)]
+        command: AuthCommand,
+    },
     Status,
     Logout,
     ResetAuth(ResetAuthArgs),
@@ -111,6 +115,21 @@ enum Command {
         command: OnboardingCommand,
     },
     Manifest,
+}
+
+#[derive(Subcommand)]
+enum AuthCommand {
+    /// Configure a personal access token created from the web account page.
+    Token(TokenAuthArgs),
+}
+
+#[derive(Args)]
+struct TokenAuthArgs {
+    #[arg(long)]
+    base_url: String,
+    /// Read the token from standard input. Otherwise SPCLI_TOKEN is used.
+    #[arg(long)]
+    stdin: bool,
 }
 
 #[derive(Subcommand)]
@@ -201,7 +220,9 @@ struct UserUpdateArgs {
 #[derive(Subcommand)]
 enum AdminCompanyCommand {
     List,
-    Get { id: String },
+    Get {
+        id: String,
+    },
     Create(CompanyWriteArgs),
     Update(CompanyUpdateArgs),
     /// Delete a company (cannot be the active one).
@@ -483,7 +504,9 @@ enum SatCommand {
 #[derive(Subcommand)]
 enum SatConfigsCommand {
     List,
-    Get { id: String },
+    Get {
+        id: String,
+    },
     Create(SatConfigWriteArgs),
     /// Create a SAT config by uploading the actual .cer and .key files.
     Upload(SatConfigUploadArgs),
@@ -1072,7 +1095,10 @@ struct CliError {
 struct CredentialState {
     base_url: String,
     email: String,
-    totp_secret: String,
+    #[serde(default)]
+    totp_secret: Option<String>,
+    #[serde(default)]
+    api_token: Option<String>,
     session_cookie: Option<String>,
     company_slug: Option<String>,
     tenant_host: Option<String>,
@@ -1115,6 +1141,9 @@ async fn main() -> ExitCode {
 async fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Command::Login(args) => login(args, cli.json).await,
+        Command::Auth { command } => match command {
+            AuthCommand::Token(args) => token_auth(args, cli.json).await,
+        },
         Command::Status => status(cli.json).await,
         Command::Logout => logout(cli.json).await,
         Command::ResetAuth(args) => reset_auth(args, cli.json),
@@ -1463,7 +1492,8 @@ async fn login(args: LoginArgs, json_output: bool) -> Result<()> {
     let mut state = CredentialState {
         base_url,
         email: args.email,
-        totp_secret: args.totp_secret,
+        totp_secret: Some(args.totp_secret),
+        api_token: None,
         session_cookie: None,
         company_slug: None,
         tenant_host: None,
@@ -1508,6 +1538,56 @@ async fn login(args: LoginArgs, json_output: bool) -> Result<()> {
     Ok(())
 }
 
+async fn token_auth(args: TokenAuthArgs, json_output: bool) -> Result<()> {
+    let base_url = normalize_base_url(&args.base_url)?;
+    let token = if args.stdin {
+        let mut input = String::new();
+        std::io::stdin()
+            .read_to_string(&mut input)
+            .context("failed to read token from standard input")?;
+        input.trim().to_string()
+    } else {
+        env::var("SPCLI_TOKEN")
+            .context("missing token; use --stdin or set the SPCLI_TOKEN environment variable")?
+    };
+    if !token.starts_with("spat_") || token.chars().any(char::is_whitespace) {
+        bail!("personal access token has an invalid format");
+    }
+
+    let mut state = CredentialState {
+        base_url,
+        email: String::new(),
+        totp_secret: None,
+        api_token: Some(token),
+        session_cookie: None,
+        company_slug: None,
+        tenant_host: None,
+        last_login_at: None,
+    };
+    let me = authenticated_get(&mut state, "/api/me")
+        .await
+        .context("personal access token validation failed")?;
+    state.email = me["username"]
+        .as_str()
+        .context("server response did not include username")?
+        .to_string();
+    save_state(&state)?;
+
+    if json_output {
+        print_json(&json!({
+            "ok": true,
+            "username": state.email,
+            "base_url": state.base_url,
+            "authentication": "personal_access_token",
+            "credential_path": credential_path()?.display().to_string()
+        }))?;
+    } else {
+        println!("Personal access token configured for {}", state.email);
+        println!("Credential file: {}", credential_path()?.display());
+    }
+    Ok(())
+}
+
 async fn status(json_output: bool) -> Result<()> {
     let mut state = load_state()?;
     let value = authenticated_get(&mut state, "/setup").await?;
@@ -1541,12 +1621,15 @@ async fn logout(json_output: bool) -> Result<()> {
         let _ = post_logout(&state).await;
     }
     state.session_cookie = None;
+    state.api_token = None;
     state.last_login_at = None;
     save_state(&state)?;
     if json_output {
         print_json(&json!({ "ok": true, "credential_removed": false }))?;
     } else {
-        println!("Session cleared. Stored TOTP secret remains configured.");
+        println!(
+            "Local authentication cleared. Revoke personal tokens from the account page if needed."
+        );
     }
     Ok(())
 }
@@ -1633,7 +1716,7 @@ async fn account_profile_update(args: AccountProfileUpdateArgs, json_output: boo
     )
     .await?;
     state.email = args.email;
-    state.totp_secret = secret;
+    state.totp_secret = Some(secret);
     save_state(&state)?;
     print_ok_output(&value, json_output, "account updated")
 }
@@ -1717,9 +1800,8 @@ fn user_payload(args: &UserCreateArgs) -> Result<Value> {
 async fn sat_config_upload(args: SatConfigUploadArgs, json_output: bool) -> Result<()> {
     validate_non_empty(&args.rfc, "rfc")?;
     validate_non_empty(&args.key_password_env, "key-password-env")?;
-    let key_password = std::env::var(&args.key_password_env).with_context(|| {
-        format!("environment variable {} is required", args.key_password_env)
-    })?;
+    let key_password = std::env::var(&args.key_password_env)
+        .with_context(|| format!("environment variable {} is required", args.key_password_env))?;
     let cer_bytes = std::fs::read(&args.cer_file)
         .with_context(|| format!("cannot read --cer-file {}", args.cer_file))?;
     let key_bytes = std::fs::read(&args.key_file)
@@ -2737,8 +2819,14 @@ async fn onboarding_status(json_output: bool) -> Result<()> {
     }
 
     let ready = value.get("ready").and_then(Value::as_bool).unwrap_or(false);
-    let done = value.get("required_done").and_then(Value::as_u64).unwrap_or(0);
-    let total = value.get("required_total").and_then(Value::as_u64).unwrap_or(0);
+    let done = value
+        .get("required_done")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let total = value
+        .get("required_total")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
     println!(
         "Estado de configuración: {} ({done}/{total} obligatorios)",
         if ready { "LISTO ✓" } else { "INCOMPLETO" }
@@ -2752,7 +2840,11 @@ async fn onboarding_status(json_output: bool) -> Result<()> {
             };
             let label = step.get("label").and_then(Value::as_str).unwrap_or("?");
             let detail = step.get("detail").and_then(Value::as_str).unwrap_or("");
-            let tag = if step.get("required").and_then(Value::as_bool).unwrap_or(false) {
+            let tag = if step
+                .get("required")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+            {
                 "obligatorio"
             } else {
                 "opcional"
@@ -2792,7 +2884,8 @@ fn print_manifest(json_output: bool) -> Result<()> {
         "name": "spcli",
         "schema_version": "1",
         "commands": [
-            { "name": "login", "auth_required": false, "company_required": false, "destructive": false },
+            { "name": "auth token", "auth_required": false, "company_required": false, "destructive": false, "arguments": ["--base-url", "--stdin"], "output_schema": "authentication_status" },
+            { "name": "login", "auth_required": false, "company_required": false, "destructive": false, "deprecated": true },
             { "name": "status", "auth_required": true, "company_required": false, "destructive": false },
             { "name": "logout", "auth_required": false, "company_required": false, "destructive": false },
             { "name": "reset-auth", "auth_required": false, "company_required": false, "destructive": true, "confirmation_flag": "--yes" },
@@ -2912,7 +3005,7 @@ fn print_manifest(json_output: bool) -> Result<()> {
         print_json(&manifest)?;
     } else {
         println!(
-            "spcli commands: login, status, logout, reset-auth, account, admin, company, finance, cfdi, sat, projects, resources, time, pdf, manifest"
+            "spcli commands: auth token, status, logout, reset-auth, account, admin, company, finance, cfdi, sat, projects, resources, time, pdf, manifest"
         );
         println!("Use --json for machine-readable output.");
     }
@@ -2920,9 +3013,12 @@ fn print_manifest(json_output: bool) -> Result<()> {
 }
 
 async fn authenticated_get(state: &mut CredentialState, path: &str) -> Result<Value> {
-    ensure_session(state).await?;
+    ensure_authentication(state).await?;
     let response = get_with_session(state, path).await?;
     if response.status() == StatusCode::UNAUTHORIZED {
+        if state.api_token.is_some() {
+            bail!("personal access token was rejected, expired, or revoked");
+        }
         refresh_login(state).await?;
         let retry = get_with_session(state, path).await?;
         return parse_json_response(retry).await;
@@ -2935,9 +3031,12 @@ async fn authenticated_post_json<T: Serialize>(
     path: &str,
     payload: &T,
 ) -> Result<Value> {
-    ensure_session(state).await?;
+    ensure_authentication(state).await?;
     let response = post_json_with_session(state, path, payload).await?;
     if response.status() == StatusCode::UNAUTHORIZED {
+        if state.api_token.is_some() {
+            bail!("personal access token was rejected, expired, or revoked");
+        }
         refresh_login(state).await?;
         let retry = post_json_with_session(state, path, payload).await?;
         return parse_json_response(retry).await;
@@ -2976,9 +3075,12 @@ async fn authenticated_post_multipart(
         form
     };
 
-    ensure_session(state).await?;
+    ensure_authentication(state).await?;
     let response = post_multipart_with_session(state, path, build_form()).await?;
     if response.status() == StatusCode::UNAUTHORIZED {
+        if state.api_token.is_some() {
+            bail!("personal access token was rejected, expired, or revoked");
+        }
         refresh_login(state).await?;
         let retry = post_multipart_with_session(state, path, build_form()).await?;
         return parse_json_response(retry).await;
@@ -2993,18 +3095,20 @@ async fn post_multipart_with_session(
 ) -> Result<reqwest::Response> {
     let client = Client::new();
     let url = endpoint(&request_base_url(state)?, path)?;
-    let mut request = client
-        .post(url)
-        .header(header::COOKIE, session_cookie_header(state)?)
-        .multipart(form);
+    let mut request = authenticated_request(client.post(url), state)?.multipart(form);
     if let Some(host) = request_host(state) {
         request = request.header(header::HOST, host);
     }
     request.send().await.context("request failed")
 }
 
-async fn ensure_session(state: &mut CredentialState) -> Result<()> {
-    if state.session_cookie.is_none() {
+async fn ensure_authentication(state: &mut CredentialState) -> Result<()> {
+    if state.api_token.is_none() && state.session_cookie.is_none() {
+        if state.totp_secret.is_none() {
+            bail!(
+                "not authenticated; create a personal access token in the web app and run `spcli auth token --stdin --base-url <URL>`"
+            );
+        }
         refresh_login(state).await?;
     }
     Ok(())
@@ -3013,9 +3117,7 @@ async fn ensure_session(state: &mut CredentialState) -> Result<()> {
 async fn get_with_session(state: &CredentialState, path: &str) -> Result<reqwest::Response> {
     let client = Client::new();
     let url = endpoint(&request_base_url(state)?, path)?;
-    let mut request = client
-        .get(url)
-        .header(header::COOKIE, session_cookie_header(state)?);
+    let mut request = authenticated_request(client.get(url), state)?;
     if let Some(host) = request_host(state) {
         request = request.header(header::HOST, host);
     }
@@ -3029,10 +3131,7 @@ async fn post_json_with_session<T: Serialize>(
 ) -> Result<reqwest::Response> {
     let client = Client::new();
     let url = endpoint(&request_base_url(state)?, path)?;
-    let mut request = client
-        .post(url)
-        .header(header::COOKIE, session_cookie_header(state)?)
-        .json(payload);
+    let mut request = authenticated_request(client.post(url), state)?.json(payload);
     if let Some(host) = request_host(state) {
         request = request.header(header::HOST, host);
     }
@@ -3096,7 +3195,11 @@ async fn parse_json_response(response: reqwest::Response) -> Result<Value> {
 }
 
 fn current_totp_code(state: &CredentialState) -> Result<String> {
-    let totp = build_totp(APP_NAME, &state.email, &state.totp_secret)
+    let secret = state
+        .totp_secret
+        .as_deref()
+        .context("no TOTP credential is configured; create a personal access token in the web app and run `spcli auth token --stdin --base-url <URL>`")?;
+    let totp = build_totp(APP_NAME, &state.email, secret)
         .context("failed to build TOTP from stored secret")?;
     totp.generate_current()
         .map_err(|err| anyhow!("failed to generate TOTP code: {err}"))
@@ -3293,6 +3396,17 @@ fn session_cookie_header(state: &CredentialState) -> Result<String> {
     Ok(format!("session={cookie}"))
 }
 
+fn authenticated_request(
+    request: reqwest::RequestBuilder,
+    state: &CredentialState,
+) -> Result<reqwest::RequestBuilder> {
+    if let Some(token) = state.api_token.as_deref() {
+        Ok(request.bearer_auth(token))
+    } else {
+        Ok(request.header(header::COOKIE, session_cookie_header(state)?))
+    }
+}
+
 fn extract_session_cookie(headers: &header::HeaderMap) -> Result<String> {
     for value in headers.get_all(header::SET_COOKIE) {
         let cookie = value.to_str().context("invalid Set-Cookie header")?;
@@ -3452,7 +3566,10 @@ fn validate_rfc3339(value: &str, name: &str) -> Result<String> {
 
 fn classify_error(err: &anyhow::Error) -> &'static str {
     let message = err.to_string().to_lowercase();
-    if message.contains("credential file not found") || message.contains("missing session cookie") {
+    if message.contains("credential file not found")
+        || message.contains("missing session cookie")
+        || message.contains("not authenticated")
+    {
         "not_authenticated"
     } else if message.contains("login failed") {
         "invalid_credentials"
@@ -3523,7 +3640,13 @@ fn set_private_dir_permissions(_path: &std::path::Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{derive_tenant_host, suggest_login_host};
+    use super::{classify_error, derive_tenant_host, suggest_login_host};
+
+    #[test]
+    fn missing_personal_token_is_not_authenticated() {
+        let error = anyhow::anyhow!("not authenticated; configure a personal access token");
+        assert_eq!(classify_error(&error), "not_authenticated");
+    }
 
     #[test]
     fn derive_tenant_host_from_app_login_host() {

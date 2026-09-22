@@ -10,18 +10,19 @@ description: >-
   timeline, or PDF previews. Triggers include requests like "list my accounts",
   "create a transaction", "show project X concepts", "register resource usage",
   "add a user to company Y", "what CFDIs do I have", or any query/mutation of
-  platform records. `spcli` authenticates once with a TOTP secret and exposes a
-  stable, machine-readable JSON command surface designed for automation.
+  platform records. `spcli` authenticates once with a revocable personal access
+  token and exposes a stable, machine-readable JSON command surface designed for
+  automation.
 ---
 
 # spcli — drive the platform from the CLI
 
 `spcli` is the first-party command-line client for the multi-tenant financial
-platform (Axum/MongoDB backend). It logs in once with a TOTP secret, stores an
-encrypted local session, transparently re-logs in when the session expires, and
-exposes ~115 commands with **stable JSON output and structured errors**. Always
+platform (Axum/MongoDB backend). It stores a personal access token in an
+encrypted local credential envelope and exposes ~115 commands with **stable JSON
+output and structured errors**. Always
 prefer `spcli` over calling the HTTP API directly — it handles auth, the tenant
-host, re-login, and validation for you.
+host, Bearer authentication, and validation for you.
 
 > Login identifier: the platform now calls it the **username** (a unique handle,
 > not a validated email). For backward compatibility the CLI flag is still
@@ -61,12 +62,13 @@ spcli --json status
 ```
 
 - If it returns the user/company/role → you're authenticated; continue.
-- If it errors with `code: "not_authenticated"` → you must log in. **Ask the user
-  for the base URL, email, and TOTP secret** (never invent them; never echo the
-  secret into logs or chat). Then:
+- If it errors with `code: "not_authenticated"` → the user must create a token
+  in **Mi cuenta → Tokens de acceso**. Ask only for the app/login base URL, then
+  have the user paste the token directly into `spcli` through standard input.
+  Never ask them to reveal the token or TOTP secret in chat. Then:
 
 ```bash
-spcli --json login --base-url <APP_LOGIN_URL> --email <EMAIL> --totp-secret <BASE32_SECRET>
+spcli --json auth token --base-url <APP_LOGIN_URL> --stdin
 ```
 
 > **Critical — base URL must be the app/login host, not a tenant host.** Use the
@@ -74,8 +76,8 @@ spcli --json login --base-url <APP_LOGIN_URL> --email <EMAIL> --totp-secret <BAS
 > `https://<tenant>.alfredorivera.dev`. `spcli` derives the tenant host by
 > prepending the company slug to the base host, so a tenant URL becomes an
 > invalid double subdomain (`tenant.tenant…`). If `company use` later errors with
-> "looks like a tenant host", you logged in against the wrong base URL — re-login
-> against the app host. For local dev the base URL is `http://localhost:8090`.
+> "looks like a tenant host", configure authentication again against the app
+> host. For local dev the base URL is `http://localhost:8090`.
 
 After login, pick the active company (tenant). Most data commands are
 company-scoped, so do this once per session:
@@ -99,7 +101,7 @@ Each entry has `name`, `auth_required`, `company_required`, `destructive`,
 categories, contacts, recurring-plans, planned-entries, transactions, forecasts),
 `orders`, `projects` (incl. statuses, concepts), `resources` (incl. logs, usages,
 usages allocations, usages grid), `sat` (configs), `cfdi`, `time`, `pdf`,
-plus `status`, `login`, `logout`, `reset-auth`, `manifest`.
+plus `status`, `auth token`, `logout`, `reset-auth`, `manifest`.
 
 For argument shapes and worked examples per command, read
 [`docs/spcli.md`](../../../docs/spcli.md).
@@ -158,14 +160,14 @@ spcli --json pdf preview --source "= Hello"
 2. Find the command via `manifest` / `docs/spcli.md`; resolve any ids you need by
    listing first (e.g. get the category id before creating a transaction).
 3. Run with `--json`; parse stdout. On a non-zero exit, read the JSON error on
-   stderr and act on its `code` (re-login, fix validation, ask for confirmation,
+   stderr and act on its `code` (re-authenticate, fix validation, ask for confirmation,
    report not-found, etc.).
 4. Summarize the result for the user in plain language (don't dump raw JSON
    unless asked). For multi-step changes, confirm destructive steps first.
 
 ## Safety
 
-- Never print, log, or echo the TOTP secret, generated codes, session cookie, or
+- Never print, log, or echo personal access tokens, TOTP secrets, generated codes, session cookies, or
   SAT passwords. Pass secrets only via env-var-name flags.
 - Always require explicit user confirmation before any `delete` / `--yes`,
   before `reset-auth`, and before bulk mutations.

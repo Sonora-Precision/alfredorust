@@ -60,6 +60,14 @@ async fn main() {
             get(routes::account_profile_data_api).post(routes::account_profile_update_api),
         )
         .route(
+            "/api/account/tokens",
+            get(routes::api_tokens_index).post(routes::api_tokens_create),
+        )
+        .route(
+            "/api/account/tokens/{id}/revoke",
+            post(routes::api_tokens_revoke),
+        )
+        .route(
             "/admin/users",
             get(routes::users_index).post(routes::users_create),
         )
@@ -116,8 +124,7 @@ async fn main() {
             "/api/admin/companies/{id}/cfdis/upload",
             // Raise the body limit above the 2 MB default so a month-sized ZIP
             // of CFDIs can be dropped in one go (per-file cap enforced in-handler).
-            post(routes::company_cfdi_upload_api)
-                .layer(DefaultBodyLimit::max(30 * 1024 * 1024)),
+            post(routes::company_cfdi_upload_api).layer(DefaultBodyLimit::max(30 * 1024 * 1024)),
         )
         .route(
             "/api/admin/companies/{id}/cfdi/jobs",
@@ -213,10 +220,7 @@ async fn main() {
             "/admin/accounts",
             get(routes::accounts_index).post(routes::accounts_create),
         )
-        .route(
-            "/api/onboarding/status",
-            get(routes::onboarding_status_api),
-        )
+        .route("/api/onboarding/status", get(routes::onboarding_status_api))
         .route(
             "/api/admin/accounts",
             get(routes::accounts_data_api).post(routes::accounts_create_api),
@@ -700,7 +704,8 @@ async fn main() {
     // directory (smoke test + Playwright HTML). Gated by require_session AND
     // require_test_tenant, so it is invisible unless you are logged in on the
     // test tenant. Reports dir is configurable via TEST_REPORTS_DIR.
-    let reports_dir = std::env::var("TEST_REPORTS_DIR").unwrap_or_else(|_| "test-reports".to_string());
+    let reports_dir =
+        std::env::var("TEST_REPORTS_DIR").unwrap_or_else(|_| "test-reports".to_string());
     let test_gated = Router::new()
         .merge(SwaggerUi::new("/docs").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .route("/test", get(routes::test_dashboard))
@@ -728,7 +733,10 @@ async fn main() {
         // JSON login API (POST). Without the GET arm, Axum returns 405 for a
         // browser navigating to /login (path matches, method doesn't) instead of
         // falling through to the SPA.
-        .route("/login", post(routes::login).get_service(ServeFile::new(spa3_index)))
+        .route(
+            "/login",
+            post(routes::login).get_service(ServeFile::new(spa3_index)),
+        )
         .merge(protected)
         .merge(test_gated)
         // SPA at the site root: anything not matched by an explicit route above

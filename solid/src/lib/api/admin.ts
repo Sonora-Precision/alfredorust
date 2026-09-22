@@ -4,6 +4,9 @@ import type {
   CompanyPayload,
   ProfileData,
   ProfilePayload,
+  PersonalAccessToken,
+  CreatePersonalAccessTokenPayload,
+  CreatedPersonalAccessToken,
   UserPayload,
   UserRowData,
 } from './types'
@@ -36,3 +39,9 @@ export const deleteUser = (id: string) => apiPost<void>(`/api/admin/users/${id}/
 export const getAccountProfile = () => apiGet<ProfileData>('/api/account')
 export const updateAccountProfile = (payload: ProfilePayload) =>
   apiPost<void>('/api/account', payload)
+export const listPersonalAccessTokens = () =>
+  apiGet<PersonalAccessToken[]>('/api/account/tokens')
+export const createPersonalAccessToken = (payload: CreatePersonalAccessTokenPayload) =>
+  apiPost<CreatedPersonalAccessToken>('/api/account/tokens', payload)
+export const revokePersonalAccessToken = (id: string) =>
+  apiPost<void>(`/api/account/tokens/${id}/revoke`)

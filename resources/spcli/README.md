@@ -46,9 +46,10 @@ mkdir -p ~/.claude/skills/spcli && cp SKILL.md reference.md ~/.claude/skills/spc
 
 ## First use
 Open Claude in any project and ask a platform question. The first time, Claude
-asks for the **login URL** (`https://app.alfredorivera.dev`), your **usuario**
-(login id — the CLI flag is `--email`), and your **TOTP secret**. It logs in
-once and keeps an encrypted local session.
+asks for the **login URL** (`https://app.alfredorivera.dev`) and a personal
+access token. Create one in **Mi cuenta → Tokens de acceso**, then paste it once
+through `spcli auth token --base-url <URL> --stdin`. The TOTP secret never leaves
+the web login flow.
 
 Verify directly any time:
 ```bash

@@ -19,6 +19,7 @@ import type {
   CfdiList,
   CompanyData,
   CompanySummary,
+  CreatedPersonalAccessToken,
   ConceptStatusFull,
   Contact,
   ContactDetail,
@@ -686,6 +687,7 @@ function resolve(path: string): unknown {
   // identity / misc
   if (path === '/api/me') return DEMO_ME
   if (path === '/api/account') return DEMO_PROFILE
+  if (path === '/api/account/tokens') return []
   if (path === '/api/onboarding/status') return DEMO_ONBOARDING
   // /api/tiempo is handled in demoGet (needs the mode/from/to params).
 
@@ -781,6 +783,15 @@ export async function demoMutation<T>(path: string): Promise<T> {
   }
   if (path === '/api/admin/cfdis/transactions/bulk') {
     return { requested: 0, created: 0, updated: 0, unchanged: 0, skipped: 0, errors: [] } as T
+  }
+  if (path === '/api/account/tokens') {
+    return {
+      id: 'demo-token',
+      name: 'spcli demo',
+      token: 'spat_demo000000000000_DEMO000000000000000000000000000000000000000000000000',
+      token_prefix: 'spat_demo000000000',
+      expires_at: new Date(Date.now() + 30 * 86_400_000).toISOString(),
+    } as CreatedPersonalAccessToken as T
   }
   // Resolve with a benign shape; callers that read a field just get undefined.
   return {} as T

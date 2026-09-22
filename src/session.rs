@@ -5,7 +5,11 @@ use std::{env, sync::Arc};
 
 use axum::{
     extract::{FromRequestParts, Request, State},
-    http::{HeaderMap, HeaderValue, StatusCode, header::COOKIE, request::Parts},
+    http::{
+        HeaderMap, HeaderValue, StatusCode,
+        header::{AUTHORIZATION, COOKIE},
+        request::Parts,
+    },
     middleware::Next,
     response::{IntoResponse, Response},
 };
@@ -15,7 +19,7 @@ use mongodb::bson::oid::ObjectId;
 
 use crate::{
     models::UserPermission,
-    state::{AppState, UserWithCompany, find_user_by_session},
+    state::{AppState, UserWithCompany, find_user_by_api_token, find_user_by_session},
 };
 
 pub const SESSION_COOKIE_NAME: &str = "session";
@@ -24,6 +28,13 @@ pub const SESSION_COOKIE_NAME: &str = "session";
 pub struct SessionData {
     pub user: UserWithCompany,
     pub token: String,
+    pub authentication: AuthenticationMethod,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AuthenticationMethod {
+    SessionCookie,
+    BearerToken,
 }
 
 pub async fn require_session(
@@ -31,29 +42,37 @@ pub async fn require_session(
     mut request: Request,
     next: Next,
 ) -> Result<Response, Response> {
-    let tokens = extract_cookies(request.headers(), SESSION_COOKIE_NAME);
-    if tokens.is_empty() {
-        return Err(unauthorized_response());
-    }
-
-    // Try all cookies with the session name until one is valid
     let mut found = None;
-    for token in tokens {
-        match find_user_by_session(&state, &token).await {
+    if let Some(token) = bearer_token(request.headers()) {
+        match find_user_by_api_token(&state, token).await {
             Ok(Some(user)) => {
-                found = Some((user, token));
-                break;
+                found = Some((user, token.to_string(), AuthenticationMethod::BearerToken));
             }
-            Ok(None) => continue,
+            Ok(None) => {}
             Err(_) => {
                 return Err(
-                    (StatusCode::INTERNAL_SERVER_ERROR, "session lookup failed").into_response()
+                    (StatusCode::INTERNAL_SERVER_ERROR, "token lookup failed").into_response()
                 );
+            }
+        }
+    } else {
+        // Try all cookies with the session name until one is valid.
+        for token in extract_cookies(request.headers(), SESSION_COOKIE_NAME) {
+            match find_user_by_session(&state, &token).await {
+                Ok(Some(user)) => {
+                    found = Some((user, token, AuthenticationMethod::SessionCookie));
+                    break;
+                }
+                Ok(None) => continue,
+                Err(_) => {
+                    return Err((StatusCode::INTERNAL_SERVER_ERROR, "session lookup failed")
+                        .into_response());
+                }
             }
         }
     }
 
-    if let Some((mut user, token)) = found {
+    if let Some((mut user, token, authentication)) = found {
         // Select active company strictly by a trusted tenant subdomain if present.
         if let Some(host) = request.headers().get("host").and_then(|h| h.to_str().ok()) {
             if let Some(sub) = tenant_subdomain_from_host(host) {
@@ -80,7 +99,11 @@ pub async fn require_session(
             }
         }
 
-        request.extensions_mut().insert(SessionData { user, token });
+        request.extensions_mut().insert(SessionData {
+            user,
+            token,
+            authentication,
+        });
         Ok(next.run(request).await)
     } else {
         Err(unauthorized_response())
@@ -108,7 +131,10 @@ script-src 'self'; connect-src 'self'";
 pub async fn security_headers(request: Request, next: Next) -> Response {
     let mut response = next.run(request).await;
     let h = response.headers_mut();
-    h.insert("x-content-type-options", HeaderValue::from_static("nosniff"));
+    h.insert(
+        "x-content-type-options",
+        HeaderValue::from_static("nosniff"),
+    );
     h.insert("x-frame-options", HeaderValue::from_static("SAMEORIGIN"));
     h.insert(
         "referrer-policy",
@@ -183,6 +209,10 @@ impl SessionUser {
         &self.0.token
     }
 
+    pub fn is_browser_session(&self) -> bool {
+        self.0.authentication == AuthenticationMethod::SessionCookie
+    }
+
     pub fn user_id(&self) -> &ObjectId {
         &self.0.user.id
     }
@@ -209,6 +239,16 @@ impl SessionUser {
 
     pub fn can_edit_user(&self, target: &ObjectId) -> bool {
         self.is_admin() || self.user_id() == target
+    }
+}
+
+fn bearer_token(headers: &HeaderMap) -> Option<&str> {
+    let value = headers.get(AUTHORIZATION)?.to_str().ok()?;
+    let (scheme, token) = value.split_once(' ')?;
+    if scheme.eq_ignore_ascii_case("bearer") && !token.is_empty() && !token.contains(' ') {
+        Some(token)
+    } else {
+        None
     }
 }
 

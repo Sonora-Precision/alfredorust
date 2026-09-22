@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::env;
 
 use crate::models::{
-    Account, Category, Company, ConceptStatus, Contact, Forecast, PlannedEntry, Project,
+    Account, ApiToken, Category, Company, ConceptStatus, Contact, Forecast, PlannedEntry, Project,
     ProjectConcept, RecurringPlan, Resource, ResourceLog, ResourceUsage, ResourceUsageAllocation,
     SatConfig, ServiceOrder, Session, Transaction, User, UserCompany,
 };
@@ -42,6 +42,7 @@ pub struct CfdiJob {
     pub created_at: bson::DateTime,
 }
 
+mod api_tokens;
 mod cfdi_jobs;
 mod companies;
 mod finance;
@@ -55,6 +56,7 @@ mod sat_configs;
 mod seed;
 mod users;
 
+pub use api_tokens::*;
 pub use cfdi_jobs::*;
 pub use companies::*;
 pub use finance::*;
@@ -79,6 +81,7 @@ pub struct AppState {
     pub user_companies: Collection<UserCompany>,
     pub companies: Collection<Company>,
     pub sessions: Collection<Session>,
+    pub api_tokens: Collection<ApiToken>,
     pub accounts: Collection<Account>,
     pub categories: Collection<Category>,
     pub contacts: Collection<Contact>,
@@ -164,6 +167,34 @@ pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppStat
             "creating the unique CFDI transaction index; resolve existing duplicate company_id/cfdi_uuid records before restarting",
         )?;
 
+    db.collection::<ApiToken>("api_tokens")
+        .create_index(
+            IndexModel::builder()
+                .keys(mongodb::bson::doc! { "public_id": 1 })
+                .options(
+                    IndexOptions::builder()
+                        .name("unique_api_token_public_id".to_string())
+                        .unique(true)
+                        .build(),
+                )
+                .build(),
+        )
+        .await
+        .context("creating the unique personal access token index")?;
+    db.collection::<ApiToken>("api_tokens")
+        .create_index(
+            IndexModel::builder()
+                .keys(mongodb::bson::doc! { "user_id": 1, "created_at": -1 })
+                .options(
+                    IndexOptions::builder()
+                        .name("api_tokens_by_user".to_string())
+                        .build(),
+                )
+                .build(),
+        )
+        .await
+        .context("creating the personal access token owner index")?;
+
     let state = AppState {
         cfdi_archive_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
         cfdi_transaction_sync_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
@@ -172,6 +203,7 @@ pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppStat
         user_companies: db.collection::<UserCompany>("user_companies"),
         companies: db.collection::<Company>("company"),
         sessions: db.collection::<Session>("sessions"),
+        api_tokens: db.collection::<ApiToken>("api_tokens"),
         accounts: db.collection::<Account>("accounts"),
         categories: db.collection::<Category>("categories"),
         contacts: db.collection::<Contact>("contacts"),

@@ -7,7 +7,7 @@
 
 use utoipa::{
     Modify, OpenApi,
-    openapi::security::{ApiKey, ApiKeyValue, SecurityScheme},
+    openapi::security::{ApiKey, ApiKeyValue, Http, HttpAuthScheme, SecurityScheme},
 };
 
 struct SecurityAddon;
@@ -21,6 +21,10 @@ impl Modify for SecurityAddon {
                 crate::session::SESSION_COOKIE_NAME,
             ))),
         );
+        components.add_security_scheme(
+            "bearerToken",
+            SecurityScheme::Http(Http::new(HttpAuthScheme::Bearer)),
+        );
     }
 }
 
@@ -29,7 +33,7 @@ impl Modify for SecurityAddon {
     info(
         title = "alfredodev API",
         version = "0.1.0",
-        description = "JSON API for the multi-tenant financial management app. Every protected endpoint requires a valid session cookie."
+        description = "JSON API for the multi-tenant financial management app. Protected endpoints accept a valid session cookie or personal Bearer token."
     ),
     modifiers(&SecurityAddon),
     tags(
@@ -51,6 +55,9 @@ impl Modify for SecurityAddon {
         crate::routes::tiempo::tiempo_data,
         crate::routes::admin::account::account_profile_data_api,
         crate::routes::admin::account::account_profile_update_api,
+        crate::routes::api_tokens::api_tokens_index,
+        crate::routes::api_tokens::api_tokens_create,
+        crate::routes::api_tokens::api_tokens_revoke,
 
         // finance — accounts / categories / contacts
         crate::routes::admin::finance::accounts::accounts_data_api,

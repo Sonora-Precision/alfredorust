@@ -2,6 +2,7 @@
 // Public re-exports of all route handlers.
 
 pub mod admin;
+pub mod api_tokens;
 pub mod home;
 pub mod login;
 pub mod logout;
@@ -14,6 +15,7 @@ pub mod test_dashboard;
 pub mod tiempo;
 
 pub use admin::*;
+pub use api_tokens::*;
 pub use home::home;
 pub use login::login;
 pub use logout::logout;

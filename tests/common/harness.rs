@@ -49,6 +49,14 @@ pub fn build_app(state: Arc<AppState>) -> Router {
             get(routes::account_profile_data_api).post(routes::account_profile_update_api),
         )
         .route(
+            "/api/account/tokens",
+            get(routes::api_tokens_index).post(routes::api_tokens_create),
+        )
+        .route(
+            "/api/account/tokens/{id}/revoke",
+            post(routes::api_tokens_revoke),
+        )
+        .route(
             "/admin/users",
             get(routes::users_index).post(routes::users_create),
         )
