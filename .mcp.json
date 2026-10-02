@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "sonora-platform": {
+      "command": "node",
+      "args": ["tools/sp-mcp/server.mjs"]
+    }
+  }
+}

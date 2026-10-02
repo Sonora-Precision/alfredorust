@@ -1,0 +1,18 @@
+{
+  "name": "sp-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Conector MCP para que Claude opere la plataforma alfredodev / Sonora Precision con un token de acceso personal.",
+  "type": "module",
+  "bin": { "sp-mcp": "./server.mjs" },
+  "scripts": {
+    "start": "node server.mjs",
+    "check": "node server.mjs --check",
+    "test": "node --test \"test/*.test.mjs\""
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.31.0",
+    "zod": "^4.6.5"
+  }
+}
