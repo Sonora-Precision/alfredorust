@@ -21,7 +21,6 @@ import { toast } from '../components/ui/Toast'
 import { humanizeError } from '../lib/api/client'
 import { advanceProjectConcept, createProjectConcept, deleteProjectConcept, getProject, listConceptStatuses, listProjectConcepts, updateProjectConcept } from '../lib/api/operations'
 import type { ProjectConcept, ProjectConceptPayload } from '../lib/api/types'
-import { money } from '../lib/format'
 import { useAuth } from '../lib/auth/AuthContext'
 
 const opt = (s: string): string | null => {
@@ -87,7 +86,7 @@ export default function ProjectDetail(): JSX.Element {
       description: concept.description ?? '',
       estimatedHours: concept.estimated_hours != null ? String(concept.estimated_hours) : '',
       estimatedCost: concept.estimated_cost != null ? String(concept.estimated_cost) : '',
-      notes: '',
+      notes: concept.notes ?? '',
       position: String(concept.position),
     })
     setFormError(null)
@@ -219,7 +218,7 @@ export default function ProjectDetail(): JSX.Element {
                       <TableCell class="tnum text-muted-foreground">{c.position}</TableCell>
                       <TableCell class="font-medium text-foreground">{c.name}</TableCell>
                       <TableCell class="tnum">
-                        {money(c.quantity)} {c.unit ?? ''}
+                        {c.quantity.toLocaleString('es-MX', { maximumFractionDigits: 3 })} {c.unit ?? ''}
                       </TableCell>
                       <TableCell>
                         <Show when={statusName(c.status_id)} fallback={<span class="text-muted-foreground">—</span>}>

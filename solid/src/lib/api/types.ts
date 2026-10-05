@@ -456,6 +456,7 @@ export interface ProjectConcept {
   description?: string | null
   estimated_hours?: number | null
   estimated_cost?: number | null
+  notes?: string | null
   position: number
 }
 
