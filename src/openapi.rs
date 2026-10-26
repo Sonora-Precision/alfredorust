@@ -132,6 +132,9 @@ impl Modify for SecurityAddon {
         crate::routes::admin::project_backend::api_project_concepts_delete,
 
         // resources — usage grid + usages (project_backend)
+        crate::routes::admin::machine_runs::api_machine_runs_ingest,
+        crate::routes::admin::machine_runs::api_machine_runs_index,
+        crate::routes::admin::machine_runs::api_project_machine_time,
         crate::routes::admin::project_backend::api_resource_usages_index,
         crate::routes::admin::project_backend::api_resource_usages_create,
         crate::routes::admin::project_backend::api_resource_usages_grid_save,

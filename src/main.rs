@@ -675,6 +675,18 @@ async fn main() {
             get(routes::api_resource_usages_index).post(routes::api_resource_usages_create),
         )
         .route(
+            "/api/admin/machine_runs",
+            get(routes::api_machine_runs_index),
+        )
+        .route(
+            "/api/admin/machine_runs/ingest",
+            post(routes::api_machine_runs_ingest),
+        )
+        .route(
+            "/api/admin/projects/{id}/machine_time",
+            get(routes::api_project_machine_time),
+        )
+        .route(
             "/api/admin/resource_usages/grid",
             get(routes::api_resource_usages_grid_view).post(routes::api_resource_usages_grid_save),
         )

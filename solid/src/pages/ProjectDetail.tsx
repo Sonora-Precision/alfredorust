@@ -19,7 +19,7 @@ import { Spinner } from '../components/ui/Spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeadCell, TableRow } from '../components/ui/Table'
 import { toast } from '../components/ui/Toast'
 import { humanizeError } from '../lib/api/client'
-import { advanceProjectConcept, createProjectConcept, deleteProjectConcept, getProject, listConceptStatuses, listProjectConcepts, updateProjectConcept } from '../lib/api/operations'
+import { advanceProjectConcept, createProjectConcept, deleteProjectConcept, getProject, getProjectMachineTime, listConceptStatuses, listProjectConcepts, updateProjectConcept } from '../lib/api/operations'
 import type { ProjectConcept, ProjectConceptPayload } from '../lib/api/types'
 import { useAuth } from '../lib/auth/AuthContext'
 
@@ -39,6 +39,25 @@ const emptyForm = () => ({
   notes: '',
   position: '0',
 })
+
+const horas = (min: number): string => {
+  const m = Math.round(min)
+  return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`
+}
+
+const fecha = (iso?: string | null): string =>
+  iso ? new Date(iso).toLocaleString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'
+
+function Stat(props: { label: string; value: string }): JSX.Element {
+  return (
+    <Card glass>
+      <CardContent class="py-3">
+        <p class="text-xs text-muted-foreground">{props.label}</p>
+        <p class="tnum text-lg font-semibold text-foreground">{props.value}</p>
+      </CardContent>
+    </Card>
+  )
+}
 
 export default function ProjectDetail(): JSX.Element {
   const params = useParams<{ id: string }>()
@@ -60,6 +79,13 @@ export default function ProjectDetail(): JSX.Element {
     queryKey: ['concept-statuses'],
     queryFn: listConceptStatuses,
   }))
+
+  // Machine time per part number, measured on the shop floor (DNC boxes) and pushed by taller-vision.
+  const machineQuery = createQuery(() => ({
+    queryKey: ['project-machine-time', params.id],
+    queryFn: () => getProjectMachineTime(params.id),
+  }))
+  const machineOf = (conceptId: string) => machineQuery.data?.concepts.find((m) => m.concept_id === conceptId)
 
   const statusName = (sid: string): string => (statusesQuery.data ?? []).find((s) => s.id === sid)?.name ?? ''
 
@@ -176,6 +202,15 @@ export default function ProjectDetail(): JSX.Element {
         }
       />
 
+      <Show when={(machineQuery.data?.runs ?? 0) > 0}>
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Stat label="Tiempo de máquina" value={horas(machineQuery.data!.minutes)} />
+          <Stat label="Cortando" value={horas(machineQuery.data!.cutting_minutes)} />
+          <Stat label="Ciclos" value={String(machineQuery.data!.cycles)} />
+          <Stat label="Última corrida" value={fecha(machineQuery.data!.last_at)} />
+        </div>
+      </Show>
+
       <Card glass>
         <Show when={!conceptsQuery.isLoading} fallback={
           <CardContent class="flex items-center justify-center gap-2 py-16 text-muted-foreground">
@@ -207,6 +242,8 @@ export default function ProjectDetail(): JSX.Element {
                     <TableHeadCell>Cantidad</TableHeadCell>
                     <TableHeadCell>Estado</TableHeadCell>
                     <TableHeadCell>Estimado (h)</TableHeadCell>
+                    <TableHeadCell>Máquina (real)</TableHeadCell>
+                    <TableHeadCell>Ciclos</TableHeadCell>
                     <Show when={isAdmin()}>
                       <TableHeadCell class="text-right">Acciones</TableHeadCell>
                     </Show>
@@ -226,6 +263,15 @@ export default function ProjectDetail(): JSX.Element {
                         </Show>
                       </TableCell>
                       <TableCell class="tnum">{c.estimated_hours != null ? c.estimated_hours.toFixed(1) : ''}</TableCell>
+                      <TableCell class="tnum">
+                        <Show when={machineOf(c.id)?.runs} fallback={<span class="text-muted-foreground">—</span>}>
+                          <span title={`${machineOf(c.id)!.machines.join(', ')} · ${machineOf(c.id)!.programs.join(', ')}\nCortando ${horas(machineOf(c.id)!.cutting_minutes)}`}>
+                            {horas(machineOf(c.id)!.minutes)}
+                          </span>
+                          <span class="ml-1 text-xs text-muted-foreground">{machineOf(c.id)!.machines.join(', ')}</span>
+                        </Show>
+                      </TableCell>
+                      <TableCell class="tnum">{machineOf(c.id)?.cycles || ''}</TableCell>
                       <Show when={isAdmin()}>
                         <TableCell class="text-right">
                           <div class="flex justify-end gap-1">

@@ -3,6 +3,7 @@ pub mod cfdi_download;
 pub mod cfdis;
 pub mod companies;
 pub mod finance;
+pub mod machine_runs;
 pub mod onboarding;
 pub mod project_backend;
 pub mod projects;
@@ -24,6 +25,7 @@ pub use cfdis::{
 };
 pub use companies::*;
 pub use finance::*;
+pub use machine_runs::{api_machine_runs_index, api_machine_runs_ingest, api_project_machine_time};
 pub use onboarding::onboarding_status_api;
 pub use project_backend::*;
 pub use projects::*;

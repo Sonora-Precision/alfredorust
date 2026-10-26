@@ -6,9 +6,9 @@ use serde::{Deserialize, Serialize};
 use std::env;
 
 use crate::models::{
-    Account, ApiToken, Category, Company, ConceptStatus, Contact, Forecast, PlannedEntry, Project,
-    ProjectConcept, RecurringPlan, Resource, ResourceLog, ResourceUsage, ResourceUsageAllocation,
-    SatConfig, ServiceOrder, Session, Transaction, User, UserCompany,
+    Account, ApiToken, Category, Company, ConceptStatus, Contact, Forecast, MachineRun,
+    PlannedEntry, Project, ProjectConcept, RecurringPlan, Resource, ResourceLog, ResourceUsage,
+    ResourceUsageAllocation, SatConfig, ServiceOrder, Session, Transaction, User, UserCompany,
 };
 use bson::Document;
 
@@ -46,6 +46,7 @@ mod api_tokens;
 mod cfdi_jobs;
 mod companies;
 mod finance;
+mod machine_runs;
 mod orders;
 mod project_concepts;
 mod projects;
@@ -60,6 +61,7 @@ pub use api_tokens::*;
 pub use cfdi_jobs::*;
 pub use companies::*;
 pub use finance::*;
+pub use machine_runs::*;
 pub use orders::*;
 pub use project_concepts::*;
 pub use projects::*;
@@ -99,6 +101,7 @@ pub struct AppState {
     pub resource_logs: Collection<ResourceLog>,
     pub resource_usages: Collection<ResourceUsage>,
     pub resource_usage_allocations: Collection<ResourceUsageAllocation>,
+    pub machine_runs: Collection<MachineRun>,
 }
 
 pub async fn init_state() -> Result<AppState> {
@@ -195,6 +198,22 @@ pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppStat
         .await
         .context("creating the personal access token owner index")?;
 
+    // Shop-floor monitor runs are re-sent on every sync; the unique key makes that an upsert.
+    db.collection::<MachineRun>("machine_runs")
+        .create_index(
+            IndexModel::builder()
+                .keys(mongodb::bson::doc! { "company_id": 1, "source": 1, "external_id": 1 })
+                .options(
+                    IndexOptions::builder()
+                        .name("unique_machine_run".to_string())
+                        .unique(true)
+                        .build(),
+                )
+                .build(),
+        )
+        .await
+        .context("creating the unique machine run index")?;
+
     let state = AppState {
         cfdi_archive_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
         cfdi_transaction_sync_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
@@ -222,6 +241,7 @@ pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppStat
         resource_usages: db.collection::<ResourceUsage>("resource_usages"),
         resource_usage_allocations: db
             .collection::<ResourceUsageAllocation>("resource_usage_allocations"),
+        machine_runs: db.collection::<MachineRun>("machine_runs"),
     };
 
     let interrupted = fail_interrupted_cfdi_jobs(&state).await?;

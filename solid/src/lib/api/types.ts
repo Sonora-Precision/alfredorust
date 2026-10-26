@@ -460,6 +460,33 @@ export interface ProjectConcept {
   position: number
 }
 
+// --- machine time from the shop floor (DNC runs pushed by taller-vision) -------------
+
+export interface ConceptMachineTime {
+  concept_id: string
+  name: string
+  quantity: number
+  estimated_hours?: number | null
+  minutes: number
+  cutting_minutes: number
+  cycles: number
+  runs: number
+  machines: string[]
+  programs: string[]
+  first_at?: string | null
+  last_at?: string | null
+}
+
+export interface ProjectMachineTime {
+  project_id: string
+  minutes: number
+  cutting_minutes: number
+  cycles: number
+  runs: number
+  last_at?: string | null
+  concepts: ConceptMachineTime[]
+}
+
 export interface ProjectConceptPayload {
   status_id?: string | null
   name: string
