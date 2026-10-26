@@ -15,8 +15,9 @@ O0010
 (O0010)
 (FECHA - 14-08-26 HORA - 11:43)
 (ZBL149-CST-Y261007-1.MCAM)
-(PROYECTO - ZBL149)          ← opcional: la misma pieza puede ir a varios proyectos
 ```
+
+El proyecto **no** va en la cabecera: el programador sólo sabe qué pieza es.
 
 El número de parte es el nombre de un `ProjectConcept`. Con eso cada parte puede mostrar cuánto
 tiempo real de máquina lleva, sin captura manual, y se ve cómo avanzan los proyectos.
@@ -33,7 +34,7 @@ tiempo real de máquina lleva, sin captura manual, y se ve cómo avanzan los pro
 - `GET /api/admin/projects/{id}/machine_time` (`view_projects`): minutos, corte, ciclos,
   máquinas y programas por número de parte, más totales.
 - `GET /api/admin/machine_runs?from&to&status` (`view_projects`): corridas con su liga
-  (`matched`, `no_part`, `not_found`, `ambiguous`) para ver qué números de parte llegan
+  (`matched` con su reparto, `no_part`, `not_found`) para ver qué números de parte llegan
   sin proyecto en el ERP.
 - Solid: el detalle del proyecto muestra tiempo de máquina, corte, ciclos y última corrida, y por
   parte una columna "Máquina (real)" con las máquinas usadas.
@@ -41,12 +42,12 @@ tiempo real de máquina lleva, sin captura manual, y se ve cómo avanzan los pro
 ## Liga corrida → parte (al leer, no se guarda)
 
 La liga se calcula al leer, así que una parte dada de alta después recoge su tiempo anterior.
-1. Número de parte normalizado (mayúsculas, sin espacios) = nombre del concepto. Proyectos
-   cancelados no cuentan.
-2. Si la cabecera trae proyecto: sólo proyectos cuyo código (letras+dígitos al inicio del título,
-   `ZBL149 …`) es ése, o cuyo título lo contiene (`F-96`).
-3. Si quedan varios: se prefieren los no entregados; si aún hay varios → `ambiguous` (no se suma a
-   ninguno; se lista para corregir la cabecera).
+1. Número de parte normalizado (mayúsculas, sin espacios) = nombre del concepto.
+2. Sólo proyectos **activos cuando corrió**: no cancelados, y si están entregados, sólo si su
+   `completed_at` es posterior al inicio de la corrida (entregado sin fecha = ya no recibe tiempo).
+3. Si la pieza está en varios proyectos activos, el tiempo (y los ciclos) se **reparte por piezas
+   pedidas** (`quantity`): 8 h de una pieza que A pide 6 y B pide 2 → 6 h a A y 2 h a B. Es una
+   estimación para cotizar, no un registro exacto; la UI la marca con "≈" (`shared_minutes`).
 
 ## Relación con `add-shop-floor-tracking` (fase 4)
 

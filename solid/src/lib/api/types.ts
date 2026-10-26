@@ -469,7 +469,10 @@ export interface ConceptMachineTime {
   estimated_hours?: number | null
   minutes: number
   cutting_minutes: number
+  /** fractional when the part was shared with other projects */
   cycles: number
+  /** minutes that came from runs split with other projects by pieces ordered (estimate) */
+  shared_minutes: number
   runs: number
   machines: string[]
   programs: string[]

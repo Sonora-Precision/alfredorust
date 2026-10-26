@@ -22,17 +22,22 @@ store them idempotently by source and external id within that company.
 
 ### Requirement: Machine time per part number
 
-The system SHALL attribute each run to the project part whose name equals the run's part
-number (case and spaces ignored), restricted to the project named in the run when present,
-excluding cancelled projects and preferring projects not yet delivered. Runs matching
-several parts SHALL NOT be attributed to any of them.
+The system SHALL attribute each run to every part whose name equals the run's part number
+(case and spaces ignored) in a project that was active when the run started (not cancelled;
+delivered projects only before their completion date). When several such parts exist, the run's
+minutes and cycles SHALL be split among them in proportion to the pieces each one ordered.
 
-#### Scenario: Same part in two projects
+#### Scenario: Same part in two active projects
 
-- GIVEN part "PIN-10" in projects "ZBL149 …" and "TY2157 …"
-- WHEN a run for "PIN-10" names project "TY2157"
-- THEN its time counts only for "TY2157"
-- AND a run for "PIN-10" without project is listed as ambiguous
+- GIVEN part "PIN-10" ordered 6 pieces in project A and 2 pieces in project B
+- WHEN an 8-hour run of "PIN-10" is ingested
+- THEN project A shows 6 hours and project B shows 2 hours for that part, marked as shared
+
+#### Scenario: Delivered project
+
+- GIVEN a project delivered on October 10 with part "PIN-10"
+- WHEN a run of "PIN-10" starts on October 20
+- THEN none of its time goes to the delivered project
 
 #### Scenario: Tenant isolation
 

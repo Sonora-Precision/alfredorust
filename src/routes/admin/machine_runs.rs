@@ -1,5 +1,6 @@
 //! Machine time from the shop floor: the monitor (taller-vision) pushes program runs read
-//! from the DNC boxes; projects show the time per part number. Time is not money, so
+//! from the DNC boxes; projects show the time per part number (split by pieces ordered when
+//! several active projects share the part, see `PartIndex::match_run`). Time is not money, so
 //! reading needs `view_projects`; writing (ingest) is admin-only, like every write here.
 
 use std::{
@@ -35,7 +36,6 @@ pub struct MachineRunPayload {
     pub machine: String,
     pub program: String,
     pub part_number: Option<String>,
-    pub project_code: Option<String>,
     pub header_date: Option<String>,
     /// RFC 3339
     pub started_at: String,
@@ -114,7 +114,6 @@ fn validate(run: MachineRunPayload) -> Result<NewMachineRun, Response> {
         machine: text(&run.machine, "machine", 80)?,
         program: text(&run.program, "program", 120)?,
         part_number: optional_text(run.part_number, "part_number", 120)?,
-        project_code: optional_text(run.project_code, "project_code", 80)?,
         header_date: optional_text(run.header_date, "header_date", 80)?,
         started_at,
         ended_at,
@@ -183,7 +182,10 @@ pub struct ConceptMachineTime {
     pub estimated_hours: Option<f64>,
     pub minutes: f64,
     pub cutting_minutes: f64,
-    pub cycles: i64,
+    /// Fractional when the part was split with other projects.
+    pub cycles: f64,
+    /// Part of `minutes` that came from runs split with other projects (estimate by pieces).
+    pub shared_minutes: f64,
     pub runs: usize,
     pub machines: Vec<String>,
     pub programs: Vec<String>,
@@ -196,7 +198,7 @@ pub struct ProjectMachineTime {
     pub project_id: String,
     pub minutes: f64,
     pub cutting_minutes: f64,
-    pub cycles: i64,
+    pub cycles: f64,
     pub runs: usize,
     pub last_at: Option<String>,
     pub concepts: Vec<ConceptMachineTime>,
@@ -270,29 +272,34 @@ pub async fn api_project_machine_time(
         .collect();
     let mut sets: Vec<(BTreeSet<String>, BTreeSet<String>)> = vec![Default::default(); rows.len()];
     for run in &runs {
-        let RunMatch::Matched {
-            project_id,
-            concept_id,
-        } = index.match_run(run.part_key.as_deref(), run.project_code.as_deref())
+        let RunMatch::Matched { shares } = index.match_run(run.part_key.as_deref(), run.started_at)
         else {
             continue;
         };
-        let Some(&i) = pos.get(&concept_id).filter(|_| project_id == pid) else {
-            continue;
-        };
-        let r = &mut rows[i];
-        r.minutes += run.minutes;
-        r.cutting_minutes += run.cutting_minutes;
-        r.cycles += i64::from(run.cycles);
-        r.runs += 1;
-        r.first_at.get_or_insert_with(|| iso(run.started_at));
-        r.last_at = Some(iso(run.ended_at));
-        sets[i].0.insert(run.machine.clone());
-        sets[i].1.insert(run.program.clone());
+        let split = shares.len() > 1;
+        for share in shares.iter().filter(|s| s.project_id == pid) {
+            let Some(&i) = pos.get(&share.concept_id) else {
+                continue;
+            };
+            let r = &mut rows[i];
+            r.minutes += run.minutes * share.ratio;
+            r.cutting_minutes += run.cutting_minutes * share.ratio;
+            r.cycles += f64::from(run.cycles) * share.ratio;
+            if split {
+                r.shared_minutes += run.minutes * share.ratio;
+            }
+            r.runs += 1;
+            r.first_at.get_or_insert_with(|| iso(run.started_at));
+            r.last_at = Some(iso(run.ended_at));
+            sets[i].0.insert(run.machine.clone());
+            sets[i].1.insert(run.program.clone());
+        }
     }
     for (r, (machines, programs)) in rows.iter_mut().zip(sets) {
         r.minutes = round1(r.minutes);
         r.cutting_minutes = round1(r.cutting_minutes);
+        r.cycles = round1(r.cycles);
+        r.shared_minutes = round1(r.shared_minutes);
         r.machines = machines.into_iter().collect();
         r.programs = programs.into_iter().collect();
     }
@@ -300,7 +307,7 @@ pub async fn api_project_machine_time(
         project_id: pid,
         minutes: round1(rows.iter().map(|r| r.minutes).sum()),
         cutting_minutes: round1(rows.iter().map(|r| r.cutting_minutes).sum()),
-        cycles: rows.iter().map(|r| r.cycles).sum(),
+        cycles: round1(rows.iter().map(|r| r.cycles).sum()),
         runs: rows.iter().map(|r| r.runs).sum(),
         last_at: rows.iter().filter_map(|r| r.last_at.clone()).max(),
         concepts: rows,
@@ -312,7 +319,7 @@ pub async fn api_project_machine_time(
 pub struct MachineRunsQuery {
     pub from: Option<String>,
     pub to: Option<String>,
-    /// matched | no_part | not_found | ambiguous
+    /// matched | no_part | not_found
     pub status: Option<String>,
 }
 
@@ -324,7 +331,6 @@ pub struct MachineRunData {
     pub machine: String,
     pub program: String,
     pub part_number: Option<String>,
-    pub project_code: Option<String>,
     pub header_date: Option<String>,
     pub started_at: String,
     pub ended_at: String,
@@ -343,7 +349,6 @@ fn run_data(run: MachineRun, matched: RunMatch) -> Option<MachineRunData> {
         machine: run.machine,
         program: run.program,
         part_number: run.part_number,
-        project_code: run.project_code,
         header_date: run.header_date,
         started_at: iso(run.started_at),
         ended_at: iso(run.ended_at),
@@ -359,7 +364,6 @@ fn match_status(m: &RunMatch) -> &'static str {
         RunMatch::Matched { .. } => "matched",
         RunMatch::NoPart => "no_part",
         RunMatch::NotFound => "not_found",
-        RunMatch::Ambiguous { .. } => "ambiguous",
     }
 }
 
@@ -370,7 +374,7 @@ fn match_status(m: &RunMatch) -> &'static str {
     params(
         ("from" = Option<String>, Query, description = "RFC 3339, runs started at or after"),
         ("to" = Option<String>, Query, description = "RFC 3339, runs started before"),
-        ("status" = Option<String>, Query, description = "matched | no_part | not_found | ambiguous")
+        ("status" = Option<String>, Query, description = "matched | no_part | not_found")
     ),
     responses(
         (status = 200, description = "Machine runs with their project part, if any"),
@@ -422,7 +426,7 @@ pub async fn api_machine_runs_index(
     let items: Vec<MachineRunData> = runs
         .into_iter()
         .filter_map(|run| {
-            let m = index.match_run(run.part_key.as_deref(), run.project_code.as_deref());
+            let m = index.match_run(run.part_key.as_deref(), run.started_at);
             if q.status.as_deref().is_some_and(|s| s != match_status(&m)) {
                 return None;
             }

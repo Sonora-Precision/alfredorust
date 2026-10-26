@@ -3,21 +3,14 @@ mod common;
 
 use common::harness::*;
 
-fn run(
-    id: &str,
-    part: Option<&str>,
-    project: Option<&str>,
-    minutes: f64,
-    cycles: i32,
-) -> serde_json::Value {
+fn run(id: &str, part: Option<&str>, minutes: f64, cycles: i32) -> serde_json::Value {
     serde_json::json!({
         "external_id": id,
         "machine": "VF-3",
         "program": "O0010.NC",
         "part_number": part,
-        "project_code": project,
         "header_date": "14-08-26 11:43",
-        "started_at": "2026-10-20T15:00:00Z",
+        "started_at": "2026-10-20T08:00:00Z",
         "ended_at": "2026-10-20T16:00:00Z",
         "minutes": minutes,
         "cutting_minutes": minutes / 2.0,
@@ -129,7 +122,7 @@ async fn machine_runs_ingest_upsert_and_project_time() {
     };
     let p1 = mk_project("ZBL149 Braba").await;
     let p2 = mk_project("TY2157 Otro").await;
-    let mk_concept = |project: bson::oid::ObjectId, name: &'static str| {
+    let mk_concept = |project: bson::oid::ObjectId, name: &'static str, pieces: f64| {
         let state = state.clone();
         let company = company.clone();
         let status_id = status_id.clone();
@@ -140,7 +133,7 @@ async fn machine_runs_ingest_upsert_and_project_time() {
                 &project,
                 Some(status_id),
                 name,
-                4.0,
+                pieces,
                 None,
                 None,
                 Some(2.0),
@@ -152,9 +145,10 @@ async fn machine_runs_ingest_upsert_and_project_time() {
             .unwrap()
         }
     };
-    let c1 = mk_concept(p1, "ZBL149-CST-Y261007-1").await;
-    let _c_shared_1 = mk_concept(p1, "PIN-10").await;
-    let c_shared_2 = mk_concept(p2, "PIN-10").await;
+    let c1 = mk_concept(p1, "ZBL149-CST-Y261007-1", 4.0).await;
+    // the same part in two active projects: 6 pieces for A, 2 for B
+    let pin_a = mk_concept(p1, "PIN-10", 6.0).await;
+    let pin_b = mk_concept(p2, "PIN-10", 2.0).await;
 
     // staff can read but not write
     let app = build_app(shared.clone());
@@ -163,13 +157,13 @@ async fn machine_runs_ingest_upsert_and_project_time() {
         host,
         "/api/admin/machine_runs/ingest",
         &staff_token,
-        serde_json::json!({ "source": "taller-vision", "runs": [run("vf3:1", Some("PIN-10"), None, 10.0, 1)] }),
+        serde_json::json!({ "source": "taller-vision", "runs": [run("vf3:1", Some("PIN-10"), 10.0, 1)] }),
     )
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 
     // invalid: cutting time longer than the run
-    let mut bad = run("vf3:bad", None, None, 10.0, 1);
+    let mut bad = run("vf3:bad", None, 10.0, 1);
     bad["cutting_minutes"] = serde_json::json!(30.0);
     let app = build_app(shared.clone());
     let (status, _) = post_json_with_cookie(
@@ -183,11 +177,10 @@ async fn machine_runs_ingest_upsert_and_project_time() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
     let payload = serde_json::json!({ "source": "taller-vision", "runs": [
-        run("vf3:1", Some(" zbl149-cst-y261007-1"), None, 30.0, 3),
-        run("vf3:2", Some("PIN-10"), None, 20.0, 2),            // ambiguous: in both projects
-        run("vf3:3", Some("PIN-10"), Some("ty2157"), 12.0, 1),  // the header names the project
-        run("vf3:4", None, None, 5.0, 1),                       // old header without part number
-        run("vf3:5", Some("NO-EXISTE-9"), None, 7.0, 1),
+        run("vf3:1", Some(" zbl149-cst-y261007-1"), 30.0, 3),
+        run("vf3:2", Some("PIN-10"), 480.0, 8),                 // 8 h, 8 pieces: split 6/2 by pieces ordered
+        run("vf3:4", None, 5.0, 1),                             // old header without part number
+        run("vf3:5", Some("NO-EXISTE-9"), 7.0, 1),
     ]});
     let app = build_app(shared.clone());
     let (status, body) = post_json_with_cookie(
@@ -200,7 +193,7 @@ async fn machine_runs_ingest_upsert_and_project_time() {
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let res: serde_json::Value = serde_json::from_str(&body).unwrap();
-    assert_eq!(res["inserted"], 5);
+    assert_eq!(res["inserted"], 4);
 
     // resending is an upsert, not a duplicate; a changed run is updated
     let mut again = payload.clone();
@@ -231,8 +224,8 @@ async fn machine_runs_ingest_upsert_and_project_time() {
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let t: serde_json::Value = serde_json::from_str(&body).unwrap();
-    assert_eq!(t["minutes"], 40.0);
-    assert_eq!(t["cycles"], 3);
+    assert_eq!(t["minutes"], 400.0);
+    assert_eq!(t["cycles"], 9.0);
     let part = t["concepts"]
         .as_array()
         .unwrap()
@@ -243,6 +236,21 @@ async fn machine_runs_ingest_upsert_and_project_time() {
     assert_eq!(part["cutting_minutes"], 15.0);
     assert_eq!(part["machines"], serde_json::json!(["VF-3"]));
     assert_eq!(part["estimated_hours"], 2.0);
+    assert_eq!(part["shared_minutes"], 0.0);
+    let pin = t["concepts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["concept_id"] == pin_a.to_hex())
+        .unwrap();
+    assert_eq!(
+        (
+            pin["minutes"].as_f64(),
+            pin["shared_minutes"].as_f64(),
+            pin["cycles"].as_f64()
+        ),
+        (Some(360.0), Some(360.0), Some(6.0))
+    );
 
     let app = build_app(shared.clone());
     let (_, body) = get_with_cookie(
@@ -253,28 +261,34 @@ async fn machine_runs_ingest_upsert_and_project_time() {
     )
     .await;
     let t: serde_json::Value = serde_json::from_str(&body).unwrap();
-    assert_eq!(t["minutes"], 12.0);
+    assert_eq!(t["minutes"], 120.0);
     assert!(
         t["concepts"]
             .as_array()
             .unwrap()
             .iter()
-            .any(|c| c["concept_id"] == c_shared_2.to_hex() && c["minutes"] == 12.0)
+            .any(|c| c["concept_id"] == pin_b.to_hex()
+                && c["minutes"] == 120.0
+                && c["cycles"] == 2.0)
     );
 
     let app = build_app(shared.clone());
     let (status, body) = get_with_cookie(
         app,
         host,
-        "/api/admin/machine_runs?status=ambiguous",
+        "/api/admin/machine_runs?status=matched",
         &admin_token,
     )
     .await;
     assert_eq!(status, StatusCode::OK);
     let runs: serde_json::Value = serde_json::from_str(&body).unwrap();
-    assert_eq!(runs.as_array().unwrap().len(), 1);
-    assert_eq!(runs[0]["external_id"], "vf3:2");
-    assert_eq!(runs[0]["match"]["project_ids"].as_array().unwrap().len(), 2);
+    let split = runs
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["external_id"] == "vf3:2")
+        .unwrap();
+    assert_eq!(split["match"]["shares"].as_array().unwrap().len(), 2);
 
     let app = build_app(shared.clone());
     let (_, body) = get_with_cookie(app, host, "/api/admin/machine_runs", &admin_token).await;

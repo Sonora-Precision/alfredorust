@@ -1088,8 +1088,9 @@ pub struct ResourceUsageAllocation {
 /// One interval in which a machine ran one CNC program, reported automatically by
 /// the shop-floor monitor (taller-vision reads the DNC boxes). Stored as intervals,
 /// not per-second samples. Idempotent by (`company_id`, `source`, `external_id`).
-/// The run is linked to a project part at read time by `part_key` (the part number
-/// written in the program header), so parts created later still pick up old time.
+/// The run is linked at read time by `part_key` (the part number written in the program
+/// header) to that part in every project active when it ran, split by pieces ordered, so
+/// parts created later still pick up old time.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MachineRun {
     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
@@ -1107,10 +1108,6 @@ pub struct MachineRun {
     /// Normalized `part_number` (uppercase, no spaces) used to match concept names.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub part_key: Option<String>,
-
-    /// Optional project given in the program header, for parts made for several projects.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub project_code: Option<String>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub header_date: Option<String>,

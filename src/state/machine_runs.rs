@@ -22,7 +22,6 @@ pub struct NewMachineRun {
     pub machine: String,
     pub program: String,
     pub part_number: Option<String>,
-    pub project_code: Option<String>,
     pub header_date: Option<String>,
     pub started_at: DateTime,
     pub ended_at: DateTime,
@@ -38,21 +37,6 @@ pub fn normalize_part(value: &str) -> String {
         .filter(|c| !c.is_whitespace())
         .flat_map(char::to_uppercase)
         .collect()
-}
-
-/// Project code = letters followed by digits at the start of the title ("ZBL149 Braba Tech" -> "ZBL149").
-pub fn project_code_from_title(title: &str) -> Option<String> {
-    let t = title.trim_start();
-    let letters = t.chars().take_while(|c| c.is_ascii_alphabetic()).count();
-    let digits = t[letters..]
-        .chars()
-        .take_while(|c| c.is_ascii_digit())
-        .count();
-    if letters >= 2 && digits >= 2 {
-        Some(t[..letters + digits].to_ascii_uppercase())
-    } else {
-        None
-    }
 }
 
 pub async fn upsert_machine_runs(
@@ -72,10 +56,6 @@ pub async fn upsert_machine_runs(
             .map(|p| p.trim().to_string())
             .filter(|p| !p.is_empty());
         let part_key = part_number.as_deref().map(normalize_part);
-        let project_code = run
-            .project_code
-            .map(|p| normalize_part(&p))
-            .filter(|p| !p.is_empty());
         let result = state
             .machine_runs
             .update_one(
@@ -86,7 +66,6 @@ pub async fn upsert_machine_runs(
                         "program": run.program,
                         "part_number": part_number,
                         "part_key": part_key,
-                        "project_code": project_code,
                         "header_date": run.header_date,
                         "started_at": run.started_at,
                         "ended_at": run.ended_at,
@@ -147,91 +126,98 @@ pub async fn list_machine_runs(
 
 /// A part (concept) that a run could belong to.
 #[derive(Debug, Clone)]
-pub struct PartCandidate {
-    pub concept_id: ObjectId,
-    pub project_id: ObjectId,
-    pub project_code: Option<String>,
-    project_title_key: String,
-    open: bool,
+struct PartCandidate {
+    concept_id: ObjectId,
+    project_id: ObjectId,
+    quantity: f64,
+    /// Delivered/cancelled projects stop receiving time after this moment.
+    active_until: Option<DateTime>,
 }
 
-/// Part number -> candidate concepts, for every non-cancelled project of a company.
+/// Part number -> candidate concepts, for every project of a company that was active at some point.
 #[derive(Debug, Default)]
 pub struct PartIndex {
     by_key: HashMap<String, Vec<PartCandidate>>,
 }
 
+/// Fraction of a run that goes to one part of one project.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct RunShare {
+    pub project_id: String,
+    pub concept_id: String,
+    pub ratio: f64,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum RunMatch {
-    Matched {
-        project_id: String,
-        concept_id: String,
-    },
+    /// One share per active project that has the part; several = time split by pieces ordered.
+    Matched { shares: Vec<RunShare> },
     /// The header had no part number (old programs, "O0010").
     NoPart,
-    /// No concept with that part number (or not in the project given in the header).
+    /// No active project had a part with that number when the run happened.
     NotFound,
-    /// Same part number in several open projects and the header names no project.
-    Ambiguous { project_ids: Vec<String> },
 }
 
 impl PartIndex {
+    /// `completed_at` = when a delivered project stopped being active (None and not delivered = still active).
     pub fn insert(
         &mut self,
         part_name: &str,
         concept_id: ObjectId,
         project_id: ObjectId,
-        project_title: &str,
+        quantity: f64,
         project_status: &ProjectStatus,
+        completed_at: Option<DateTime>,
     ) {
-        if *project_status == ProjectStatus::Cancelado {
-            return;
-        }
+        let active_until = match project_status {
+            ProjectStatus::Cancelado => return,
+            // delivered without a date: unknown when it ended, so it no longer takes time
+            ProjectStatus::Entregado => Some(completed_at.unwrap_or(DateTime::from_millis(0))),
+            _ => None,
+        };
         self.by_key
             .entry(normalize_part(part_name))
             .or_default()
             .push(PartCandidate {
                 concept_id,
                 project_id,
-                project_code: project_code_from_title(project_title),
-                project_title_key: normalize_part(project_title),
-                open: *project_status != ProjectStatus::Entregado,
+                quantity,
+                active_until,
             });
     }
 
-    pub fn match_run(&self, part_key: Option<&str>, project_code: Option<&str>) -> RunMatch {
+    /// The programmers only know the part, not the project: the run goes to every project that was
+    /// active when it started and has that part, split by the pieces each one ordered (an estimate:
+    /// 8 h for a part ordered 6 by A and 2 by B -> 6 h to A, 2 h to B).
+    pub fn match_run(&self, part_key: Option<&str>, at: DateTime) -> RunMatch {
         let Some(key) = part_key.filter(|k| !k.is_empty()) else {
             return RunMatch::NoPart;
         };
-        let Some(all) = self.by_key.get(key) else {
+        let found: Vec<&PartCandidate> = self
+            .by_key
+            .get(key)
+            .into_iter()
+            .flatten()
+            .filter(|c| c.active_until.is_none_or(|until| until >= at))
+            .collect();
+        if found.is_empty() {
             return RunMatch::NotFound;
-        };
-        let mut found: Vec<&PartCandidate> = match project_code.filter(|c| !c.is_empty()) {
-            Some(code) => all
-                .iter()
-                .filter(|c| {
-                    c.project_code.as_deref() == Some(code) || c.project_title_key.contains(code)
-                })
-                .collect(),
-            None => all.iter().collect(),
-        };
-        if found.len() > 1 {
-            let open: Vec<&PartCandidate> = found.iter().copied().filter(|c| c.open).collect();
-            if !open.is_empty() {
-                found = open;
-            }
         }
-        match found.as_slice() {
-            [] => RunMatch::NotFound,
-            [one] => RunMatch::Matched {
-                project_id: one.project_id.to_hex(),
-                concept_id: one.concept_id.to_hex(),
-            },
-            many => RunMatch::Ambiguous {
-                project_ids: many.iter().map(|c| c.project_id.to_hex()).collect(),
-            },
-        }
+        let total: f64 = found.iter().map(|c| c.quantity.max(0.0)).sum();
+        let shares = found
+            .iter()
+            .map(|c| RunShare {
+                project_id: c.project_id.to_hex(),
+                concept_id: c.concept_id.to_hex(),
+                ratio: if total > 0.0 {
+                    c.quantity.max(0.0) / total
+                } else {
+                    1.0 / found.len() as f64
+                },
+            })
+            .collect();
+        RunMatch::Matched { shares }
     }
 }
 
@@ -259,8 +245,9 @@ pub async fn build_part_index(state: &AppState, company_id: &ObjectId) -> Result
             &c.name,
             concept_id,
             c.project_id,
-            &project.title,
+            c.quantity,
             &project.status,
+            project.completed_at,
         );
     }
     Ok(index)
@@ -270,96 +257,94 @@ pub async fn build_part_index(state: &AppState, company_id: &ObjectId) -> Result
 mod tests {
     use super::*;
 
-    fn index() -> (PartIndex, ObjectId, ObjectId, ObjectId) {
-        let (p1, p2, p3) = (ObjectId::new(), ObjectId::new(), ObjectId::new());
+    fn t(s: &str) -> DateTime {
+        DateTime::parse_rfc3339_str(s).unwrap()
+    }
+
+    #[test]
+    fn runs_go_to_active_projects_split_by_pieces() {
+        let (a, b, old, gone) = (
+            ObjectId::new(),
+            ObjectId::new(),
+            ObjectId::new(),
+            ObjectId::new(),
+        );
         let mut ix = PartIndex::default();
         ix.insert(
             "ZBL149-CST-Y261007-1",
             ObjectId::new(),
-            p1,
-            "ZBL149 Braba",
+            a,
+            4.0,
             &ProjectStatus::Produccion,
+            None,
         );
-        // same part in two projects
+        // same part in two active projects: 6 pieces for A, 2 for B
         ix.insert(
             "PIN-10",
             ObjectId::new(),
-            p1,
-            "ZBL149 Braba",
+            a,
+            6.0,
             &ProjectStatus::Produccion,
+            None,
         );
         ix.insert(
             "pin-10 ",
             ObjectId::new(),
-            p2,
-            "TY2157 Otro / F-96",
-            &ProjectStatus::Produccion,
+            b,
+            2.0,
+            &ProjectStatus::Ingenieria,
+            None,
         );
-        // delivered project: loses to an open one
+        // delivered on Oct 10: takes time from runs before that, not after
         ix.insert(
-            "BUJE-2",
+            "PIN-10",
             ObjectId::new(),
-            p3,
-            "AB100 Viejo",
+            old,
+            8.0,
             &ProjectStatus::Entregado,
+            Some(t("2026-10-10T00:00:00Z")),
         );
-        ix.insert(
-            "BUJE-2",
-            ObjectId::new(),
-            p2,
-            "TY2157 Otro / F-96",
-            &ProjectStatus::Calidad,
-        );
-        // cancelled projects never match
         ix.insert(
             "TAPA-1",
             ObjectId::new(),
-            p3,
-            "AB100 Viejo",
+            gone,
+            1.0,
             &ProjectStatus::Cancelado,
+            None,
         );
-        (ix, p1, p2, p3)
-    }
+        let now = t("2026-10-20T15:00:00Z");
+        let m = |part: &str, at| ix.match_run(Some(&normalize_part(part)), at);
 
-    #[test]
-    fn project_code_is_the_leading_letters_and_digits() {
-        assert_eq!(
-            project_code_from_title("ZBL149 Braba Tech").as_deref(),
-            Some("ZBL149")
-        );
-        assert_eq!(
-            project_code_from_title("  ty2157-x").as_deref(),
-            Some("TY2157")
-        );
-        assert_eq!(project_code_from_title("Pines varios"), None);
-        assert_eq!(project_code_from_title("Ñ12 raro"), None);
-    }
-
-    #[test]
-    fn runs_match_by_part_number_and_project() {
-        let (ix, p1, p2, _) = index();
-        let m = |part: Option<&str>, code: Option<&str>| {
-            ix.match_run(part.map(normalize_part).as_deref(), code)
+        let RunMatch::Matched { shares } = m("zbl149-cst-y261007-1", now) else {
+            panic!()
         };
-        assert!(
-            matches!(m(Some("zbl149-cst-y261007-1"), None), RunMatch::Matched { project_id, .. } if project_id == p1.to_hex())
+        assert_eq!(
+            (shares.len(), shares[0].ratio, shares[0].project_id.clone()),
+            (1, 1.0, a.to_hex())
         );
-        assert_eq!(m(None, None), RunMatch::NoPart);
-        assert_eq!(m(Some("NO-EXISTE-1"), None), RunMatch::NotFound);
-        assert!(
-            matches!(m(Some("PIN-10"), None), RunMatch::Ambiguous { project_ids } if project_ids.len() == 2)
+
+        let RunMatch::Matched { shares } = m("PIN-10", now) else {
+            panic!()
+        };
+        let ratio = |p: ObjectId| {
+            shares
+                .iter()
+                .find(|s| s.project_id == p.to_hex())
+                .map(|s| s.ratio)
+        };
+        assert_eq!(
+            (ratio(a), ratio(b), ratio(old)),
+            (Some(0.75), Some(0.25), None)
         );
-        assert!(
-            matches!(m(Some("PIN-10"), Some("TY2157")), RunMatch::Matched { project_id, .. } if project_id == p2.to_hex())
-        );
-        // the header can also carry the invoice folio written in the title
-        assert!(
-            matches!(m(Some("PIN-10"), Some("F-96")), RunMatch::Matched { project_id, .. } if project_id == p2.to_hex())
-        );
-        assert_eq!(m(Some("PIN-10"), Some("XX999")), RunMatch::NotFound);
-        assert!(
-            matches!(m(Some("BUJE-2"), None), RunMatch::Matched { project_id, .. } if project_id == p2.to_hex())
-        );
-        assert_eq!(m(Some("TAPA-1"), None), RunMatch::NotFound);
+
+        let RunMatch::Matched { shares } = m("PIN-10", t("2026-10-05T12:00:00Z")) else {
+            panic!()
+        };
+        assert_eq!(shares.len(), 3);
+        assert_eq!(shares.iter().map(|s| s.ratio).sum::<f64>(), 1.0);
+
+        assert_eq!(ix.match_run(None, now), RunMatch::NoPart);
+        assert_eq!(m("NO-EXISTE-1", now), RunMatch::NotFound);
+        assert_eq!(m("TAPA-1", now), RunMatch::NotFound);
     }
 }
