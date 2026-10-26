@@ -14,7 +14,7 @@ parte:
 O0010
 (O0010)
 (FECHA - 14-08-26 HORA - 11:43)
-(ZBL149-CST-Y261007-1.MCAM)
+(ARCHIVO MCAM - ZBL149-CST-Y261007-1.MCAM)
 ```
 
 El proyecto **no** va en la cabecera: el programador sólo sabe qué pieza es.
