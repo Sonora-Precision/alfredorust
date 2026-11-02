@@ -250,10 +250,12 @@ pub async fn api_concept_statuses_index(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
 ) -> Response {
-    let company_id = match require_admin_active(&session_user) {
-        Ok(id) => id,
-        Err(status) => return status.into_response(),
-    };
+    // Read-only for anyone who can view projects (the detail page labels each
+    // part with its status); writes stay admin-only.
+    if !session_user.has_permission(UserPermission::ViewProjects) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let company_id = require_active_company(&session_user);
     match list_concept_statuses(&state, &company_id).await {
         Ok(items) => Json(
             items
@@ -422,10 +424,12 @@ pub async fn api_project_concepts_index(
     State(state): State<Arc<AppState>>,
     Path(project_id): Path<String>,
 ) -> Response {
-    let company_id = match require_admin_active(&session_user) {
-        Ok(id) => id,
-        Err(status) => return status.into_response(),
-    };
+    // Staff with view_projects can read parts and progress, but not money.
+    if !session_user.has_permission(UserPermission::ViewProjects) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let company_id = require_active_company(&session_user);
+    let can_view_money = session_user.has_permission(UserPermission::ViewProjectMoney);
     let project_id = match parse_oid(&project_id) {
         Ok(id) => id,
         Err(resp) => return resp,
@@ -435,6 +439,12 @@ pub async fn api_project_concepts_index(
             items
                 .into_iter()
                 .filter_map(project_concept_data)
+                .map(|mut data| {
+                    if !can_view_money {
+                        data.estimated_cost = None;
+                    }
+                    data
+                })
                 .collect::<Vec<_>>(),
         )
         .into_response(),

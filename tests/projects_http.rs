@@ -546,3 +546,138 @@ async fn project_workflow_json_mutations_manage_statuses_and_concepts() {
 }
 
 
+
+#[tokio::test]
+async fn staff_with_view_projects_reads_parts_without_money() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+
+    let company = create_company(&state, "Project Parts Staff", "project-parts-staff", "MXN", true, None)
+        .await
+        .unwrap();
+    let admin_id = create_user(
+        &state,
+        "project-parts-admin@example.com",
+        "SECRET",
+        &[(company.clone(), UserRole::Admin)],
+    )
+    .await
+    .unwrap();
+    let programmer_id = create_user_with_permissions(
+        &state,
+        "project-parts-programmer@example.com",
+        "SECRET",
+        &[(company.clone(), UserRole::Staff, vec![UserPermission::ViewProjects])],
+    )
+    .await
+    .unwrap();
+    let blocked_id = create_user(
+        &state,
+        "project-parts-blocked@example.com",
+        "SECRET",
+        &[(company.clone(), UserRole::Staff)],
+    )
+    .await
+    .unwrap();
+    let admin = get_user_by_id(&state, &admin_id).await.unwrap().unwrap();
+    let programmer = get_user_by_id(&state, &programmer_id).await.unwrap().unwrap();
+    let blocked = get_user_by_id(&state, &blocked_id).await.unwrap().unwrap();
+    let admin_token = create_session(&state, &admin.username).await.unwrap();
+    let programmer_token = create_session(&state, &programmer.username).await.unwrap();
+    let blocked_token = create_session(&state, &blocked.username).await.unwrap();
+    let host = "project-parts-staff.miapp.local";
+
+    let project_id = create_project(
+        &state,
+        &company,
+        "Parts Project",
+        None,
+        None,
+        None,
+        ProjectPriority::Medium,
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let (status, body) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        "/api/admin/concept_statuses",
+        &admin_token,
+        serde_json::json!({ "name": "En espera", "position": 1, "is_initial": true, "is_active": true }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "body: {body}");
+    let status_id = serde_json::from_str::<serde_json::Value>(&body).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let concepts_path = format!("/api/admin/projects/{}/concepts", project_id.to_hex());
+    let (status, body) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        &concepts_path,
+        &admin_token,
+        serde_json::json!({
+            "status_id": status_id,
+            "name": "ZBL149-17",
+            "quantity": 10.0,
+            "estimated_cost": 4500.0,
+            "position": 1
+        }),
+    )
+    .await;
+    assert!(status.is_success(), "body: {body}");
+
+    // Admin still sees the cost.
+    let (status, body) = get_with_cookie(build_app(shared.clone()), host, &concepts_path, &admin_token).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    assert_eq!(serde_json::from_str::<serde_json::Value>(&body).unwrap()[0]["estimated_cost"], 4500.0);
+
+    // A programmer reads parts and statuses, without the cost.
+    let (status, body) =
+        get_with_cookie(build_app(shared.clone()), host, &concepts_path, &programmer_token).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let parts: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(parts[0]["name"], "ZBL149-17");
+    assert_eq!(parts[0]["quantity"], 10.0);
+    assert!(parts[0]["estimated_cost"].is_null(), "cost leaked: {body}");
+    assert!(!body.contains("4500"), "cost leaked: {body}");
+
+    let (status, body) = get_with_cookie(
+        build_app(shared.clone()),
+        host,
+        "/api/admin/concept_statuses",
+        &programmer_token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    assert!(body.contains("En espera"));
+
+    // Writes stay admin-only.
+    let (status, _) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        &concepts_path,
+        &programmer_token,
+        serde_json::json!({ "status_id": status_id, "name": "X", "quantity": 1.0, "position": 2 }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    // Staff without view_projects is still rejected.
+    let (status, _) = get_with_cookie(build_app(shared.clone()), host, &concepts_path, &blocked_token).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _) =
+        get_with_cookie(build_app(shared), host, "/api/admin/concept_statuses", &blocked_token).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    common::teardown(Some(ctx)).await;
+}
