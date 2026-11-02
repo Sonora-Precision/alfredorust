@@ -688,6 +688,15 @@ async fn main() {
         )
         .route("/api/production/board", get(routes::api_production_board))
         .route("/api/production/members", get(routes::api_production_members))
+        .route("/api/production/plant", get(routes::api_production_plant))
+        .route(
+            "/api/production/plant_layout",
+            post(routes::api_plant_layout_save),
+        )
+        .route(
+            "/api/production/machines/{id}/state",
+            post(routes::api_machine_state_set),
+        )
         .route(
             "/api/production/work_orders/{id}/assign",
             post(routes::api_work_order_assign),

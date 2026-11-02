@@ -160,6 +160,10 @@ pub struct User {
     /// All companies the user can access.
     #[serde(rename = "companies", default)]
     pub company_ids: Vec<ObjectId>,
+
+    /// Name shown on the shop floor ("José Márquez") instead of the login handle.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
 }
 
 /// User-company membership with per-company role.
@@ -1111,6 +1115,97 @@ pub struct WorkOrderEvent {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
 
+    pub at: DateTime,
+}
+
+/// ---------- PLANT VIEW ----------
+
+/// Where a machine sits on the plant drawing (layout units; `rotation` in degrees).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlacedMachine {
+    pub resource_id: ObjectId,
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+    #[serde(default)]
+    pub rotation: f64,
+    /// "Corte", "Tornos CNC", "Centros de maquinado"… for the legend and grouping.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub area: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlantLabel {
+    pub text: String,
+    pub x: f64,
+    pub y: f64,
+}
+
+/// The company's shop drawn from above: outer walls, inner walls and machine places. One
+/// per company; the admin replaces it as a whole.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlantLayout {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub company_id: ObjectId,
+    pub width: f64,
+    pub height: f64,
+    /// Outer wall polygon.
+    pub walls: Vec<[f64; 2]>,
+    /// Inner walls / rooms as open polylines.
+    #[serde(default)]
+    pub rooms: Vec<Vec<[f64; 2]>>,
+    #[serde(default)]
+    pub labels: Vec<PlantLabel>,
+    #[serde(default)]
+    pub machines: Vec<PlacedMachine>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<DateTime>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MachineStatus {
+    Working,
+    Setup,
+    Stopped,
+}
+
+impl MachineStatus {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "working" => Some(MachineStatus::Working),
+            "setup" => Some(MachineStatus::Setup),
+            "stopped" => Some(MachineStatus::Stopped),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            MachineStatus::Working => "working",
+            MachineStatus::Setup => "setup",
+            MachineStatus::Stopped => "stopped",
+        }
+    }
+}
+
+/// Last state someone set by hand on a machine (needed for machines without DNC; also
+/// "setup", which the DNC cannot tell apart from a stop). One per machine.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MachineState {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub company_id: ObjectId,
+    pub resource_id: ObjectId,
+    pub status: MachineStatus,
+    /// The order it is working on, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub concept_id: Option<ObjectId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    pub set_by: ObjectId,
     pub at: DateTime,
 }
 

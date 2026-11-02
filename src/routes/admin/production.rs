@@ -44,6 +44,8 @@ fn can_take(user: &SessionUser) -> bool {
 pub struct PersonData {
     pub id: String,
     pub username: String,
+    /// Shop-floor name (display name, or the handle before the @).
+    pub name: String,
 }
 
 #[derive(Serialize)]
@@ -72,7 +74,7 @@ fn folio(number: Option<i64>) -> String {
     number.map(|n| format!("OT-{n:04}")).unwrap_or_else(|| "OT-?".to_string())
 }
 
-fn work_order_data(o: &WorkOrder, names: &HashMap<ObjectId, String>) -> WorkOrderData {
+fn work_order_data(o: &WorkOrder, names: &HashMap<ObjectId, (String, String)>) -> WorkOrderData {
     let priority = o.priority();
     WorkOrderData {
         id: o.concept_id().to_hex(),
@@ -92,17 +94,27 @@ fn work_order_data(o: &WorkOrder, names: &HashMap<ObjectId, String>) -> WorkOrde
         queue: o.queue.as_str(),
         operation_id: o.operation.id.map(|id| id.to_hex()).unwrap_or_default(),
         operation: o.operation.name.clone(),
-        assignee: o.assignee_user_id.map(|id| PersonData {
-            id: id.to_hex(),
-            username: names.get(&id).cloned().unwrap_or_else(|| "?".to_string()),
-        }),
+        assignee: o.assignee_user_id.map(|id| person(id, names)),
     }
 }
 
-fn member_names(members: &[BoardMember]) -> HashMap<ObjectId, String> {
+pub(crate) fn person(id: ObjectId, names: &HashMap<ObjectId, (String, String)>) -> PersonData {
+    let (username, name) = names
+        .get(&id)
+        .cloned()
+        .unwrap_or_else(|| ("?".to_string(), "?".to_string()));
+    PersonData {
+        id: id.to_hex(),
+        username,
+        name,
+    }
+}
+
+/// user id → (username, shop-floor name)
+pub(crate) fn member_names(members: &[BoardMember]) -> HashMap<ObjectId, (String, String)> {
     members
         .iter()
-        .map(|m| (m.user_id, m.username.clone()))
+        .map(|m| (m.user_id, (m.username.clone(), m.name.clone())))
         .collect()
 }
 
@@ -168,6 +180,7 @@ pub async fn api_production_board(
 pub struct MemberLoadData {
     pub id: String,
     pub username: String,
+    pub name: String,
     pub is_admin: bool,
     /// Orders whose current step is assigned to this person, in sequence order.
     pub assigned: Vec<String>,
@@ -190,6 +203,7 @@ pub async fn api_production_members(
         .map(|m| MemberLoadData {
             id: m.user_id.to_hex(),
             username: m.username.clone(),
+            name: m.name.clone(),
             is_admin: m.is_admin,
             assigned: orders
                 .iter()
