@@ -7,7 +7,7 @@ use futures::stream::TryStreamExt;
 use mongodb::bson::{self, DateTime, doc, oid::ObjectId};
 use std::time::SystemTime;
 
-use crate::models::{PartStep, ProcessOperation, ProjectConcept, StepState};
+use crate::models::{PartStep, ProcessOperation, ProjectConcept, StepState, WorkQueue};
 
 use super::{AppState, get_project_concept_by_id_for_company};
 
@@ -46,6 +46,7 @@ pub async fn create_process_operation(
     company_id: &ObjectId,
     name: &str,
     position: i32,
+    queue: Option<WorkQueue>,
 ) -> Result<ObjectId> {
     let name = clean_name(name)?;
     let res = state
@@ -56,6 +57,7 @@ pub async fn create_process_operation(
             name,
             position,
             is_active: true,
+            queue,
             created_at: Some(DateTime::from_system_time(SystemTime::now())),
             updated_at: None,
         })
@@ -73,6 +75,7 @@ pub async fn update_process_operation(
     name: &str,
     position: i32,
     is_active: bool,
+    queue: Option<WorkQueue>,
 ) -> Result<bool> {
     let name = clean_name(name)?;
     let res = state
@@ -83,6 +86,7 @@ pub async fn update_process_operation(
                 "name": name,
                 "position": position,
                 "is_active": is_active,
+                "queue": queue.map(|q| q.as_str()),
                 "updated_at": DateTime::from_system_time(SystemTime::now()),
             } },
         )
@@ -170,6 +174,8 @@ pub async fn update_part_progress(
                 state: step_state,
                 updated_by: Some(username.to_string()),
                 updated_at: Some(now),
+                assignee_user_id: None,
+                assigned_at: None,
             })?;
             let mut not_on_part = part.clone();
             not_on_part.insert("process_steps.operation_id", doc! { "$ne": operation_id });

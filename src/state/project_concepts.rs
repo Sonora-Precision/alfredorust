@@ -6,7 +6,7 @@ use std::time::SystemTime;
 
 use crate::models::{ConceptStatus, ProjectConcept};
 
-use super::{AppState, get_project_by_id_for_company};
+use super::{AppState, get_project_by_id_for_company, next_work_order_number};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ProjectStatusSummaryItem {
@@ -270,6 +270,7 @@ pub async fn create_project_concept(
             .context("initial concept status missing _id")?,
     };
 
+    let work_order_number = next_work_order_number(state, company_id).await?;
     let res = state
         .project_concepts
         .insert_one(ProjectConcept {
@@ -285,6 +286,9 @@ pub async fn create_project_concept(
             estimated_cost,
             notes,
             position,
+            work_order_number: Some(work_order_number),
+            sequence_rank: None,
+            priority_override: None,
             completed_quantity: 0.0,
             process_steps: Vec::new(),
             created_at: Some(DateTime::from_system_time(SystemTime::now())),

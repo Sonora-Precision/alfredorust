@@ -16,13 +16,18 @@ use serde::{Deserialize, Serialize};
 use super::finance::helpers::{require_active_company, require_admin_active};
 use super::project_backend::{iso, json_error, parse_oid, project_concept_data};
 use crate::{
-    models::{ProcessOperation, StepState, UserPermission},
+    models::{
+        ProcessOperation, ProjectConcept, StepState, UserPermission, WorkOrderEvent,
+        WorkOrderEventKind, WorkQueue,
+    },
     session::SessionUser,
     state::{
         AppState, PartProgressUpdate, create_process_operation, delete_process_operation,
-        list_process_operations, update_part_progress, update_process_operation,
+        get_project_concept_by_id_for_company, list_process_operations, log_work_order_event,
+        update_part_progress, update_process_operation,
     },
 };
+use mongodb::bson::oid::ObjectId;
 
 #[derive(Serialize)]
 pub struct ProcessOperationData {
@@ -30,6 +35,8 @@ pub struct ProcessOperationData {
     pub name: String,
     pub position: i32,
     pub is_active: bool,
+    /// Production-board queue ("programming", "setup", …) or null.
+    pub queue: Option<&'static str>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
 }
@@ -40,6 +47,7 @@ fn process_operation_data(op: ProcessOperation) -> Option<ProcessOperationData> 
         name: op.name,
         position: op.position,
         is_active: op.is_active,
+        queue: op.queue.map(|q| q.as_str()),
         created_at: op.created_at.map(iso),
         updated_at: op.updated_at.map(iso),
     })
@@ -52,6 +60,21 @@ pub struct ProcessOperationPayload {
     pub position: i32,
     #[serde(default = "super::project_backend::default_true")]
     pub is_active: bool,
+    /// "programming", "setup", "machining", "finishing" or null.
+    #[serde(default)]
+    pub queue: Option<String>,
+}
+
+fn parse_queue(value: Option<&str>) -> Result<Option<WorkQueue>, Response> {
+    match value.map(str::trim).filter(|v| !v.is_empty()) {
+        None => Ok(None),
+        Some(v) => WorkQueue::parse(v).map(Some).ok_or_else(|| {
+            json_error(
+                StatusCode::BAD_REQUEST,
+                "queue must be programming, setup, machining or finishing",
+            )
+        }),
+    }
 }
 
 #[utoipa::path(
@@ -111,7 +134,13 @@ pub async fn api_process_operations_create(
         Ok(id) => id,
         Err(status) => return status.into_response(),
     };
-    match create_process_operation(&state, &company_id, &payload.name, payload.position).await {
+    let queue = match parse_queue(payload.queue.as_deref()) {
+        Ok(q) => q,
+        Err(resp) => return resp,
+    };
+    match create_process_operation(&state, &company_id, &payload.name, payload.position, queue)
+        .await
+    {
         Ok(id) => (
             StatusCode::CREATED,
             Json(serde_json::json!({ "id": id.to_hex() })),
@@ -150,6 +179,10 @@ pub async fn api_process_operations_update(
         Ok(id) => id,
         Err(resp) => return resp,
     };
+    let queue = match parse_queue(payload.queue.as_deref()) {
+        Ok(q) => q,
+        Err(resp) => return resp,
+    };
     match update_process_operation(
         &state,
         &id,
@@ -157,6 +190,7 @@ pub async fn api_process_operations_update(
         &payload.name,
         payload.position,
         payload.is_active,
+        queue,
     )
     .await
     {
@@ -271,12 +305,77 @@ pub async fn api_project_concept_progress(
         completed_quantity: payload.completed_quantity,
         step,
     };
+    let before = get_project_concept_by_id_for_company(&state, &id, &company_id)
+        .await
+        .ok()
+        .flatten();
     match update_part_progress(&state, &id, &company_id, update, &username).await {
-        Ok(Some(concept)) => match project_concept_data(concept) {
-            Some(data) => Json(data).into_response(),
-            None => json_error(StatusCode::INTERNAL_SERVER_ERROR, "concept missing id"),
-        },
+        Ok(Some(concept)) => {
+            if let (Some(before), Some((operation_id, new_state))) = (before, step) {
+                log_step_change(&state, &session_user, &before, &concept, operation_id, new_state)
+                    .await;
+            }
+            match project_concept_data(concept) {
+                Some(data) => Json(data).into_response(),
+                None => json_error(StatusCode::INTERNAL_SERVER_ERROR, "concept missing id"),
+            }
+        }
         Ok(None) => json_error(StatusCode::NOT_FOUND, "concept not found"),
         Err(err) => json_error(StatusCode::BAD_REQUEST, &err.to_string()),
+    }
+}
+
+/// Logs StepDone (credited to the step's assignee, or to whoever marked it when nobody held
+/// it) and StepReopened (Done → anything else) so the weekly report stays net of mistakes.
+pub(crate) async fn log_step_change(
+    state: &AppState,
+    session_user: &SessionUser,
+    before: &ProjectConcept,
+    after: &ProjectConcept,
+    operation_id: ObjectId,
+    new_state: StepState,
+) {
+    let was_done = before
+        .process_steps
+        .iter()
+        .any(|s| s.operation_id == operation_id && s.state == StepState::Done);
+    let kind = match (was_done, new_state) {
+        (false, StepState::Done) => WorkOrderEventKind::StepDone,
+        (true, StepState::Pending) | (true, StepState::NotApplicable) => {
+            WorkOrderEventKind::StepReopened
+        }
+        _ => return,
+    };
+    let step = after.process_steps.iter().find(|s| s.operation_id == operation_id);
+    let queue = state
+        .process_operations
+        .find_one(mongodb::bson::doc! { "_id": operation_id, "company_id": after.company_id })
+        .await
+        .ok()
+        .flatten()
+        .and_then(|op| op.queue);
+    let actor = *session_user.user_id();
+    let subject = match kind {
+        WorkOrderEventKind::StepDone => Some(step.and_then(|s| s.assignee_user_id).unwrap_or(actor)),
+        _ => step.and_then(|s| s.assignee_user_id),
+    };
+    let Some(concept_id) = after.id else { return };
+    let event = WorkOrderEvent {
+        id: None,
+        company_id: after.company_id,
+        concept_id,
+        project_id: after.project_id,
+        kind,
+        operation_id: Some(operation_id),
+        operation_name: step.map(|s| s.name.clone()),
+        queue,
+        actor_user_id: actor,
+        subject_user_id: subject,
+        related_to: None,
+        reason: None,
+        at: mongodb::bson::DateTime::now(),
+    };
+    if let Err(err) = log_work_order_event(state, event).await {
+        eprintln!("[production] could not log step change: {err}");
     }
 }
