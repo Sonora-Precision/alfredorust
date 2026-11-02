@@ -80,11 +80,14 @@ export default function Dashboard(): JSX.Element {
 
 function StaffHome(): JSX.Element {
   const auth = useAuth()
+  const home = () =>
+    auth.hasPermission('view_production_board')
+      ? '/produccion'
+      : auth.hasPermission('view_projects')
+        ? '/projects'
+        : null
   return (
-    <Show
-      when={!auth.hasPermission('view_projects')}
-      fallback={<Navigate href="/projects" />}
-    >
+    <Show when={!home()} fallback={<Navigate href={home()!} />}>
       <div class="space-y-6">
         <PageHeader title="Inicio" subtitle={`Hola, ${auth.user()} — ${auth.company()}`} />
         <Card glass>
