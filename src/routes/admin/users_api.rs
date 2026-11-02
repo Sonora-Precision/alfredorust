@@ -26,7 +26,7 @@ use crate::{
     session::SessionUser,
     state::{
         AppState, UserWithCompany, create_user_with_permissions, delete_user, get_user_by_id,
-        list_users, update_user_with_permissions, username_taken,
+        list_users, set_user_display_name, update_user_with_permissions, username_taken,
     },
     totp::{DEFAULT_SECRET_BYTES, generate_base32_secret_n},
 };
@@ -46,6 +46,7 @@ pub struct UserMembershipData {
 pub struct UserRowData {
     pub id: String,
     pub username: String,
+    pub display_name: Option<String>,
     pub role: String,
     pub companies: Vec<String>,
     pub memberships: Vec<UserMembershipData>,
@@ -71,6 +72,9 @@ pub struct UserCreatePayload {
     pub secret: Option<String>,
     #[serde(default)]
     pub memberships: Vec<UserMembershipPayload>,
+    /// Shop-floor name; omitted = unchanged, "" = cleared.
+    #[serde(default)]
+    pub display_name: Option<String>,
 }
 
 #[derive(Deserialize, utoipa::ToSchema)]
@@ -80,6 +84,8 @@ pub struct UserUpdatePayload {
     pub secret: Option<String>,
     #[serde(default)]
     pub memberships: Vec<UserMembershipPayload>,
+    #[serde(default)]
+    pub display_name: Option<String>,
 }
 
 fn json_error(status: StatusCode, message: &str) -> axum::response::Response {
@@ -121,6 +127,7 @@ fn user_row_data(user: UserWithCompany) -> UserRowData {
     UserRowData {
         id: user.id.to_hex(),
         username: user.username,
+        display_name: user.display_name,
         role: user.role.as_str().to_string(),
         companies: user.company_names.clone(),
         memberships,
@@ -280,11 +287,18 @@ pub async fn api_users_create(
         .unwrap_or_else(|| generate_base32_secret_n(DEFAULT_SECRET_BYTES));
 
     match create_user_with_permissions(&state, &username, &secret, &company_roles).await {
-        Ok(id) => (
-            StatusCode::CREATED,
-            Json(serde_json::json!({ "id": id.to_hex() })),
-        )
-            .into_response(),
+        Ok(id) => {
+            if let Some(name) = payload.display_name.as_deref() {
+                if set_user_display_name(&state, &id, name).await.is_err() {
+                    return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not save the name");
+                }
+            }
+            (
+                StatusCode::CREATED,
+                Json(serde_json::json!({ "id": id.to_hex() })),
+            )
+                .into_response()
+        }
         Err(_) => json_error(
             StatusCode::BAD_REQUEST,
             "could not create user (duplicate username?)",
@@ -364,7 +378,14 @@ pub async fn api_users_update(
         .unwrap_or_else(|| target.secret.clone());
 
     match update_user_with_permissions(&state, &object_id, &username, &secret, &company_roles).await {
-        Ok(_) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Ok(_) => {
+            if let Some(name) = payload.display_name.as_deref() {
+                if set_user_display_name(&state, &object_id, name).await.is_err() {
+                    return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not save the name");
+                }
+            }
+            Json(serde_json::json!({ "ok": true })).into_response()
+        }
         Err(_) => json_error(StatusCode::BAD_REQUEST, "could not update user"),
     }
 }

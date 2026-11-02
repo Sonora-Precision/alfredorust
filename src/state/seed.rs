@@ -252,6 +252,7 @@ pub(super) async fn seed_default_users(
                     secret: user.secret.clone(),
                     company_id: Some(primary_company_id.clone()),
                     company_ids: companies_final.clone(),
+                    display_name: None,
                 })
                 .await?;
             inserted

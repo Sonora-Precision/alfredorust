@@ -6,6 +6,7 @@ pub mod finance;
 pub mod machine_runs;
 pub mod onboarding;
 pub mod part_progress;
+pub mod plant;
 pub mod production;
 pub mod project_backend;
 pub mod projects;
@@ -33,6 +34,7 @@ pub use part_progress::{
     api_process_operations_create, api_process_operations_delete, api_process_operations_index,
     api_process_operations_update, api_project_concept_progress,
 };
+pub use plant::{api_machine_state_set, api_plant_layout_save, api_production_plant};
 pub use production::{
     api_production_board, api_production_members, api_work_order_assign,
     api_work_order_complete, api_work_order_release, api_work_order_sequence,

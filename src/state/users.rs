@@ -14,6 +14,7 @@ use super::{AppState, SESSION_TTL_SECONDS};
 pub struct UserWithCompany {
     pub id: ObjectId,
     pub username: String,
+    pub display_name: Option<String>,
     pub secret: String,
     pub company_id: ObjectId,
     pub company_slug: String,
@@ -157,6 +158,7 @@ pub async fn create_user_with_permissions(
             secret: secret.to_string(),
             company_id: Some(primary),
             company_ids: company_ids.clone(),
+            display_name: None,
         })
         .await?;
     let uid = res
@@ -299,6 +301,22 @@ pub async fn add_user_to_company(
     Ok(())
 }
 
+/// Sets the shop-floor name; an empty value clears it.
+pub async fn set_user_display_name(
+    state: &AppState,
+    id: &ObjectId,
+    display_name: &str,
+) -> Result<()> {
+    let name: String = display_name.trim().chars().take(80).collect();
+    let update = if name.is_empty() {
+        doc! { "$unset": { "display_name": "" } }
+    } else {
+        doc! { "$set": { "display_name": name } }
+    };
+    state.users.update_one(doc! { "_id": id }, update).await?;
+    Ok(())
+}
+
 pub async fn delete_user(state: &AppState, id: &ObjectId) -> Result<()> {
     state.users.delete_one(doc! { "_id": id }).await?;
     let _ = state
@@ -389,6 +407,7 @@ async fn build_user_with_company(state: &AppState, user: User) -> Result<UserWit
     Ok(UserWithCompany {
         id,
         username: user.username,
+        display_name: user.display_name,
         secret: user.secret,
         company_id: primary_company_id,
         company_slug: primary_slug,

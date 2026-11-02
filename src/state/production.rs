@@ -224,6 +224,8 @@ pub async fn list_work_orders(state: &AppState, company_id: &ObjectId) -> Result
 pub struct BoardMember {
     pub user_id: ObjectId,
     pub username: String,
+    /// The display name, or the login handle before the @ when there is none.
+    pub name: String,
     pub is_admin: bool,
 }
 
@@ -247,13 +249,19 @@ pub async fn list_board_members(state: &AppState, company_id: &ObjectId) -> Resu
     let mut cursor = state.users.find(doc! { "_id": { "$in": &ids } }).await?;
     while let Some(user) = cursor.try_next().await? {
         let Some(id) = user.id else { continue };
+        let name = user
+            .display_name
+            .clone()
+            .filter(|n| !n.trim().is_empty())
+            .unwrap_or_else(|| user.username.split('@').next().unwrap_or_default().to_string());
         members.push(BoardMember {
             user_id: id,
             username: user.username,
+            name,
             is_admin: eligible.get(&id).copied().unwrap_or(false),
         });
     }
-    members.sort_by(|a, b| a.username.cmp(&b.username));
+    members.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(members)
 }
 
