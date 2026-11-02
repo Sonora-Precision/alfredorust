@@ -326,7 +326,8 @@ export default function ProjectDetail(): JSX.Element {
                         projectId={params.id}
                         concepts={conceptsQuery.data ?? []}
                         statuses={statusesQuery.data ?? []}
-                        canEdit={isAdmin()}
+                        canEdit={isAdmin() || auth.hasPermission('take_work_orders')}
+                        canConfigure={isAdmin()}
                       />
                     ),
                   },

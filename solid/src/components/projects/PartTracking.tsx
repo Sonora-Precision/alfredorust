@@ -95,7 +95,10 @@ interface PartTrackingProps {
   projectId: string
   concepts: ProjectConcept[]
   statuses: ConceptStatusFull[]
+  /** Tick steps and finished pieces (programmers and admins). */
   canEdit: boolean
+  /** Add, rename or remove the company's process steps (admins only). */
+  canConfigure: boolean
 }
 
 export function PartTracking(props: PartTrackingProps): JSX.Element {
@@ -198,7 +201,7 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
             <span class="text-muted-foreground">
               Aún no hay pasos de proceso configurados para el checklist.
             </span>
-            <Show when={props.canEdit}>
+            <Show when={props.canConfigure}>
               <Button variant="outline" onClick={() => setConfigOpen(true)}>
                 Configurar pasos
               </Button>
@@ -214,7 +217,7 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
               Clic en una casilla: pendiente → ✔ hecho → N/A → pendiente.
             </Show>
           </span>
-          <Show when={props.canEdit && activeOps().length > 0}>
+          <Show when={props.canConfigure && activeOps().length > 0}>
             <Button variant="ghost" class="px-2 py-1 text-xs" onClick={() => setConfigOpen(true)}>
               Configurar pasos
             </Button>

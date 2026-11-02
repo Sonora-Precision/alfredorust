@@ -1,8 +1,8 @@
 // Tablero de Producción — Cola de Programación CNC (entrega A de
 // openspec/changes/add-production-board). Every open part number is a work order (OT)
 // in production sequence. Whoever manages the board assigns orders and moves them up or
-// down; programmers see "Tu siguiente programa", mark it done, release it, take the next
-// free one or group a similar part. Tens of cards at most, so plain DOM (CLAUDE.md
+// down; programmers see "Tu siguiente programa", mark it done, release it, take any free
+// order for themselves (never for someone else) or group a similar part. Tens of cards at most, so plain DOM (CLAUDE.md
 // rendering guide). Never shows money or the part description.
 import { A } from '@solidjs/router'
 import { createMutation, createQuery, useQueryClient } from '@tanstack/solid-query'
@@ -168,9 +168,11 @@ export default function Production(): JSX.Element {
                       position={i() + 1}
                       members={membersQuery.data ?? []}
                       canManage={canManage()}
+                      canTake={canTake()}
                       isFirst={i() === 0}
                       isLast={i() === orders().length - 1}
                       busy={run.isPending}
+                      onTake={() => act(() => productionApi.takeWorkOrder(o.id))}
                       onAssign={(userId) => act(() => productionApi.assignWorkOrder(o.id, userId))}
                       onUp={() => moveUp(i())}
                       onDown={() => moveDown(i())}
@@ -217,9 +219,12 @@ interface OrderCardProps {
   position: number
   members: BoardMemberLoad[]
   canManage: boolean
+  /** Programmers take any free order for themselves (they cannot assign others). */
+  canTake: boolean
   isFirst: boolean
   isLast: boolean
   busy: boolean
+  onTake: () => void
   onAssign: (userId: string | null) => void
   onUp: () => void
   onDown: () => void
@@ -239,9 +244,19 @@ function OrderCard(props: OrderCardProps): JSX.Element {
         <Show
           when={props.canManage}
           fallback={
-            <span class="text-sm text-muted-foreground">
-              {props.order.assignee ? props.order.assignee.name : 'Sin asignar'}
-            </span>
+            <Show
+              when={!props.order.assignee && props.canTake}
+              fallback={
+                <span class="text-sm text-muted-foreground">
+                  {props.order.assignee ? props.order.assignee.name : 'Sin asignar'}
+                </span>
+              }
+            >
+              <Button variant="outline" disabled={props.busy} onClick={props.onTake}>
+                <Hand class="mr-1.5 h-4 w-4" />
+                Tomar
+              </Button>
+            </Show>
           }
         >
           <label class="sr-only" for={`assign-${props.order.id}`}>
@@ -354,7 +369,7 @@ function NextProgram(props: NextProgramProps): JSX.Element {
               <div>
                 <p class="text-base font-semibold text-foreground">Sin programas asignados</p>
                 <p class="text-sm text-muted-foreground">
-                  Toma la siguiente orden libre de la cola, según las prioridades.
+                  Toma la primera libre o elige cualquiera de la cola con "Tomar".
                 </p>
               </div>
               <Show when={props.free[0]}>

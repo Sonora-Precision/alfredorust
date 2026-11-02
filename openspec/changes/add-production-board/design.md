@@ -91,8 +91,24 @@ paso actual.
 | Acción | Quién |
 |---|---|
 | Asignar / reasignar / quitar | admin, o staff con `manage_production_board` |
-| Tomar una OT libre | staff con `take_work_orders` y permiso de la cola (abajo) |
+| Tomar **cualquier** OT libre, sólo para sí | staff con `take_work_orders` |
 | Soltar una OT propia | quien la tiene asignada |
+| Palomear pasos y piezas terminadas | staff con `take_work_orders` (o admin) |
+
+**Auto-asignación libre** (Daniel, 2026-11-02, reemplaza "sólo la primera
+libre"): "José ya puede elegir qué números de parte va a hacer él; no va a poder
+asignarle números a otro programador, sólo a él". Tomar no exige orden ni
+motivo; sólo que la OT siga libre (409 si no). Cada toma queda en la bitácora
+(`Taken`, quién y cuándo) para que Daniel vea quién eligió qué.
+
+**Palomear avances** (Daniel, 2026-11-02, "Pasos y piezas"): quien tiene
+`take_work_orders` marca cualquier paso de la ruta y las piezas terminadas
+(`POST /project_concepts/{id}/progress`). Cada paso guarda quién y cuándo
+(`updated_by`, `updated_at`), y cada cambio de piezas escribe `PiecesRecorded`
+con el actor, el delta y el precio unitario congelado. El crédito en dinero de
+esas piezas es para la persona de cada paso, no para quien palomea (§5). La
+respuesta no trae dinero. Configurar el catálogo de pasos sigue siendo del
+admin.
 
 **Quién aparece como responsable posible** de una cola: los admins de la
 empresa y el staff con el permiso de esa cola. En `sp` la Cola de
@@ -100,8 +116,9 @@ Programación tiene hoy a Daniel Rivera (admin), Jesús Sigala, José Márquez y
 Carlos Dávila. Un admin que se asigna, toma o marca un paso recibe el crédito
 igual que un programador.
 
-Permiso por cola: Programación CNC requiere `upload_cnc_files`; Setup y Máquina
-requieren `view_technical_files`. Tomar es atómico: sólo se escribe si el paso
+Permiso por cola (cuando existan los perfiles de la fase 2): Programación CNC
+requerirá `upload_cnc_files`; Setup y Máquina, `view_technical_files`. Hoy basta
+`take_work_orders`. Tomar es atómico: sólo se escribe si el paso
 sigue sin responsable (`assignee_user_id: null` en el filtro); si otro la tomó
 primero → 409.
 
@@ -343,16 +360,19 @@ CAD (cuando exista la fase 3 de archivos). Abajo, en pequeño, cuántas siguen.
 
 - **Marcar terminado** (paso "Programa" → `Done`, o subir el `.nc`) la saca de
   su fila y muestra la siguiente.
-- No puede saltarse la de arriba. Si está atorado, **Reportar bloqueo** con un
+- Su fila se trabaja de arriba hacia abajo, pero puede **Tomar** cualquier OT
+  libre de la cola para sí (botón en cada OT). Si está atorado, **Reportar bloqueo** con un
   motivo (falta plano, información del cliente, material…): la OT queda
   marcada "Bloqueada" para el admin, se le quita al programador (evento
   `Blocked` con el motivo) y él continúa con la siguiente. El admin la
   resuelve y la vuelve a asignar.
 - Si su fila está vacía, la tarjeta dice "Sin programas asignados" y le
-  ofrece **Tomar** la primera OT libre de la Cola de Programación.
+  ofrece **Tomar** la primera OT libre de la Cola de Programación (o cualquier
+  otra con su botón).
 
-**Agrupar partes parecidas** (Daniel, 2026-11-02): única excepción a "tomar
-sólo la primera libre". Mientras trabaja una OT, el programador puede
+**Agrupar partes parecidas** (Daniel, 2026-11-02): con la auto-asignación libre
+ya no es una excepción; sólo cambia dónde queda la OT (justo después de la
+relacionada). Mientras trabaja una OT, el programador puede
 auto-asignarse otras OT **libres** que se le parezcan (mismas herramientas,
 mismo material…) para programarlas juntas.
 

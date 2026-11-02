@@ -68,8 +68,21 @@ ascending with no date last, then by work order number.
 
 The system SHALL store an optional assignee per part step, SHALL let users
 with `manage_production_board` assign any user, and SHALL let users with
-`take_work_orders` and the queue's permission take an unassigned step only if
-it is still unassigned when written.
+`take_work_orders` take any unassigned order for themselves, in any sequence
+position and without a reason, only if it is still unassigned when written,
+logging who took it.
+
+#### Scenario: Programmer picks an order further down
+
+- GIVEN OT-0001 and OT-0005 are unassigned and OT-0001 is first in sequence
+- WHEN José Márquez takes OT-0005
+- THEN OT-0005 is assigned to him and a taken event records him and the time
+
+#### Scenario: Programmer cannot assign someone else
+
+- GIVEN a programmer without `manage_production_board`
+- WHEN they assign an order to another programmer
+- THEN the request is rejected
 
 #### Scenario: Two programmers take the same order
 
@@ -82,6 +95,27 @@ it is still unassigned when written.
 - GIVEN orders assigned to Juan and to Pedro
 - WHEN Juan reads the programming queue with `mine`
 - THEN only Juan's orders are listed, in sequence order
+
+### Requirement: Programmers tick steps and finished pieces
+
+The system SHALL let users with `take_work_orders` mark any process step and
+record finished pieces of a part, SHALL keep who and when for every step mark
+and every change in finished pieces, and SHALL answer without money for users
+who cannot see it.
+
+#### Scenario: Programmer records pieces
+
+- GIVEN a part of 40 pieces priced 455 by the admin
+- WHEN José Márquez records 12 finished pieces and marks "Setup 1" done
+- THEN the part shows 12 finished and "Setup 1" done by José Márquez
+- AND the answer carries no price, cost or quoted amount
+- AND a pieces event records José Márquez, +12 and the price 455
+
+#### Scenario: Ticking does not configure the catalog
+
+- GIVEN a programmer with `take_work_orders`
+- WHEN they create or rename a process step
+- THEN the request is rejected
 
 ### Requirement: Weekly production report per person
 
