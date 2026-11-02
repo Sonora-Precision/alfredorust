@@ -37,6 +37,12 @@ qué tiene asignado hoy y cuántas OT sacó cada uno por semana, y cuáles fuero
    semanal de producción** (OT terminadas por persona y semana, con su
    detalle y, sólo para el admin, el valor producido), sostenidos por una
    bitácora de eventos de la OT.
+7. **Vista de planta**: el taller dibujado como un juego de simulación. Las
+   máquinas aparecen agrupadas por área (Corte, Tornos CNC, Centros de
+   maquinado), cada una con su semáforo y la OT que trae. Al lado, el área de
+   programación con la carga de cada persona, la fila de **órdenes
+   pendientes** para asignarlas **arrastrándolas sobre un programador** y las
+   metas semanales del equipo. Puede ser también la Vista de piso de la TV.
 
 ## Decisiones de producto (confirmadas por Daniel, 2026-11-02)
 

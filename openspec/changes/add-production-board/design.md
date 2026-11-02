@@ -118,7 +118,7 @@ pub struct WorkOrderEvent {           // colección work_order_events, append-on
     queue: Option<WorkQueue>,
     kind: WorkOrderEventKind,         // Assigned | Unassigned | Taken | Released |
                                       // StepDone | StepReopened | Pinned | Unpinned |
-                                      // PiecesRecorded
+                                      // PiecesRecorded | Blocked | Unblocked
     actor_user_id: ObjectId,          // quien hizo la acción
     credited_user_id: Option<ObjectId>, // en StepDone: responsable o, si no, el actor
     pieces_delta: Option<f64>,        // en PiecesRecorded
@@ -237,7 +237,135 @@ Se agregan en los mismos lugares que los de la fase 2 de
   (`/produccion/reportes`) con tabla por persona, detalle desplegable y CSV.
 - Listas cortas (decenas de OT): DOM normal, sin virtualizar.
 
-## 9. Preguntas abiertas
+## 9. Vista de planta
+
+Daniel aprobó la maqueta el 2026-11-02. Es una ruta de la SPA
+(`/produccion/planta`) que lee los mismos datos del tablero, la carga y las
+corridas de máquina; no tiene modelo propio salvo el estado manual de máquina
+(abajo).
+
+**Parque de máquinas de `sp`** (todas propias; dadas de alta como `Resource`
+el 2026-11-02; la "ZZD" importada de Notion se borró porque no existe):
+
+| Área | Máquinas | Estado |
+|---|---|---|
+| Corte | Sierra cinta | manual |
+| Tornos CNC | SL-30, Mori SL-15 | SL-30 automático; Mori SL-15 manual |
+| Centros de maquinado | VF-3, VF-6, Shizuoka | automático |
+
+El área se guarda en el recurso (`Resource.area: Option<String>`, texto libre
+por empresa) para agrupar las tarjetas. Falta confirmar con Daniel el área de
+la Shizuoka.
+
+**Semáforo por máquina:**
+
+| Color | Significa | Regla |
+|---|---|---|
+| Verde | Trabajando | hay una corrida activa en `machine_runs` (última muestra ≤ 15 min; ver `add-dnc-machine-time`), o estado manual "Trabajando" |
+| Ámbar | En setup | sin corrida activa y la OT actual de esa máquina tiene un paso de Setup en curso (pendiente, con otros pasos previos hechos), o estado manual "Setup" |
+| Rojo | Parada / sin trabajo | ninguna de las anteriores; la tarjeta muestra el motivo (esperando programa, material o sin OT en fila) y desde cuándo |
+
+- Automático para las máquinas que lee taller-vision (VF-3, VF-6, SL-30,
+  Shizuoka). El DNC no distingue setup de paro; el ámbar sale de la ruta de
+  proceso.
+- Manual para las que no tienen DNC (Mori SL-15, Sierra cinta): botón de
+  estado en la tarjeta (`POST /api/production/machines/{id}/state`), guardado
+  como evento con quién y cuándo. Si después se conectan a taller-vision,
+  cambian a automático sin tocar la UI.
+- La leyenda de colores siempre está visible en la vista.
+
+**Tarjeta de máquina:** nombre, semáforo, OT actual (folio, parte, cliente),
+barra de piezas terminadas/pedidas, OT en fila para esa máquina y tiempo de
+hoy. Al hacer clic se abre la Cola de Máquina filtrada por ese recurso.
+
+**Órdenes pendientes y asignación:**
+
+- La fila muestra las OT de la Cola de Programación **sin responsable**, en el
+  orden de la secuencia (fijadas primero), con prioridad, máquina planeada y
+  días a la entrega.
+- Quien tiene `manage_production_board` asigna **arrastrando** una OT sobre un
+  programador, o tocando la OT y luego a la persona (sirve en celular). Llama
+  al mismo `POST …/assign` de §4 y deja el evento `Assigned`.
+- Los programadores ven la misma vista, pero sólo pueden **tomar** una OT para
+  sí mismos (`…/take`); no pueden soltarla sobre otra persona.
+- Cada programador muestra, grande, el **número de programas asignados**
+  pendientes y su OT en curso, con un **color de carga** (Daniel,
+  2026-11-02):
+
+  | Color | Carga | Regla |
+  |---|---|---|
+  | Ámbar | Libre | 0 asignadas: hay que darle trabajo |
+  | Verde | Con trabajo | de 1 al límite − 1 |
+  | Rojo | Saturado | ≥ límite (por defecto 5, lo configura el admin por empresa) |
+
+  El color es por carga, no por actividad: no se mide si la persona está
+  trabajando en este momento (no hay monitoreo de su equipo).
+
+**Fila de cada programador** (Daniel, 2026-11-02): lo que se le asigna a
+cada persona se forma en su propia fila, y la persona trabaja siempre la de
+arriba ("Siguiente"). Al desplegar a un programador se ve su fila en orden.
+
+- La fila personal es la **secuencia de producción (§3) filtrada** por sus
+  asignaciones; no hay un orden aparte por persona. Una OT nueva asignada cae
+  en su lugar según prioridad y fecha, o hasta abajo si las demás están
+  fijadas.
+- **Subir una prioridad:** el admin arrastra la OT hacia arriba dentro de la
+  fila del programador (o la marca Urgente). Usa el mismo `…/sequence` con el
+  vecino de esa fila, así que la OT queda fijada antes que las que rebasó y
+  es igual de prioritaria en todas las vistas.
+- El programador ve su fila igual, pero no la reordena; sólo el admin (o
+  quien tenga `manage_production_board`).
+
+**Uno por uno** (Daniel, 2026-11-02): la pantalla de inicio del programador
+es una sola tarjeta grande, **"Tu siguiente programa"**: la primera OT de su
+fila, con parte, cliente, piezas, máquina, entrega y accesos al plano y al
+CAD (cuando exista la fase 3 de archivos). Abajo, en pequeño, cuántas siguen.
+
+- **Marcar terminado** (paso "Programa" → `Done`, o subir el `.nc`) la saca de
+  su fila y muestra la siguiente.
+- No puede saltarse la de arriba. Si está atorado, **Reportar bloqueo** con un
+  motivo (falta plano, información del cliente, material…): la OT queda
+  marcada "Bloqueada" para el admin, se le quita al programador (evento
+  `Blocked` con el motivo) y él continúa con la siguiente. El admin la
+  resuelve y la vuelve a asignar.
+- Si su fila está vacía, la tarjeta dice "Sin programas asignados" y le
+  ofrece **Tomar** la primera OT libre de la Cola de Programación.
+
+**Agrupar partes parecidas** (Daniel, 2026-11-02): única excepción a "tomar
+sólo la primera libre". Mientras trabaja una OT, el programador puede
+auto-asignarse otras OT **libres** que se le parezcan (mismas herramientas,
+mismo material…) para programarlas juntas.
+
+- **Sugerencias:** bajo "Tu siguiente programa" aparece "Partes parecidas
+  libres", ordenadas por coincidencias: mismo material y medidas
+  (`MaterialRequirement`), mismo prefijo de número de parte (texto antes del
+  último `-`, p. ej. `ZBL149-`), mismo proyecto o cliente, misma máquina
+  planeada. Comparar listas de herramientas queda para cuando sean datos y no
+  archivos; mientras tanto lo decide el programador.
+- **Agrupar:** `POST …/take` con `{ operation_id, related_to: <concept_id>,
+  reason }`, donde el motivo sale de una lista corta (mismo material, mismas
+  herramientas, misma familia de parte, mismo setup) o es texto libre. También
+  puede agrupar una OT libre que no esté en las sugerencias.
+- **Reglas:** sólo OT sin responsable (nunca quitarle una a otro); la OT
+  `related_to` debe ser suya y estar pendiente. El evento es `Taken` con
+  `related_to` y `reason`, y la OT muestra "Agrupada con OT-0147 · mismas
+  herramientas" para el admin, que puede quitársela.
+- **Orden:** las OT agrupadas se fijan justo después de la OT con la que se
+  agruparon (`sequence_rank` entre esa y la siguiente), para que salgan
+  juntas. Una alerta resalta cuando una máquina está en rojo
+  esperando un programa que nadie tiene asignado.
+
+**Metas de la semana (equipo):** programas liberados, piezas terminadas y
+% de OT entregadas a tiempo contra una meta semanal que captura el admin. Sin
+ranking por persona en esta vista ni en la TV; las cifras por persona y el
+dinero se quedan en el reporte semanal (admin).
+
+**Render:** decenas de tarjetas, por eso DOM normal con Solid, sin Canvas ni
+WebGPU (guía de renderizado de `CLAUDE.md`). Arrastrar con eventos nativos
+(pointer events para táctil) y animación de entrada/salida con
+`solid-transition-group`. Se actualiza cada 30 s, igual que la Vista de piso.
+
+## 10. Preguntas abiertas
 
 1. ¿El supervisor también puede mover la secuencia o sólo Daniel? (Propuesta:
    sólo admin; se le da `manage_production_board` si se quiere.)

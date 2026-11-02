@@ -161,6 +161,98 @@ a unit price, and SHALL omit every value field for non-admin users.
 - WHEN they read the weekly report
 - THEN counts and work orders are present and no value field is present
 
+### Requirement: Plant view shows machine status as a traffic light
+
+The system SHALL show each active machine with a status of working when it
+has an active machine run or a manual working state, setup when it has no
+active run and its current work order has a setup step in progress or a
+manual setup state, and stopped otherwise, together with the stop reason and
+the time since it stopped.
+
+#### Scenario: Machine with an active run
+
+- GIVEN VF-3 reported a machine run 5 minutes ago that has not ended
+- WHEN a user opens the plant view
+- THEN VF-3 is shown as working
+
+#### Scenario: Setup without a run
+
+- GIVEN VF-6 has no active run
+- AND its current work order has "Setup 2" pending after "Setup 1" done
+- WHEN a user opens the plant view
+- THEN VF-6 is shown as setup
+
+#### Scenario: Waiting for a program
+
+- GIVEN Mori SL-15 has no active run and no manual state
+- AND its next work order has "Programa" pending
+- WHEN a user opens the plant view
+- THEN Mori SL-15 is shown as stopped with reason waiting for program
+
+### Requirement: Pending orders are assigned from the plant view
+
+The system SHALL list unassigned work orders of the programming queue in
+sequence order in the plant view, SHALL let users with
+`manage_production_board` assign one to any programmer, and SHALL let other
+programmers only take an order for themselves.
+
+#### Scenario: Admin drops an order on a programmer
+
+- GIVEN OT-0155 is unassigned
+- WHEN the admin assigns it to Jesús Sigala from the plant view
+- THEN OT-0155 leaves the pending list and appears in Jesús Sigala's assignments
+- AND an assigned event records the admin, Jesús Sigala and the time
+
+#### Scenario: Programmer load color
+
+- GIVEN a company load limit of 5
+- AND José Márquez has 0 pending assignments, Carlos Dávila 2 and Jesús Sigala 5
+- WHEN a user opens the plant view
+- THEN José Márquez is shown as free, Carlos Dávila as busy and Jesús Sigala as saturated
+- AND each shows their number of assigned programs
+
+#### Scenario: Urgent order moved up in a programmer's queue
+
+- GIVEN José Márquez has OT-0147, OT-0152 and OT-0154 assigned in that order
+- AND OT-0161 arrives and is assigned to him at the bottom
+- WHEN the admin moves OT-0161 above OT-0147 in his queue
+- THEN his queue reads OT-0161, OT-0147, OT-0152, OT-0154
+- AND OT-0161 is shown as his next order
+
+#### Scenario: Programmer works one order at a time
+
+- GIVEN Carlos Dávila has OT-0151 and OT-0153 assigned in that order
+- WHEN he opens his start screen
+- THEN only OT-0151 is shown as his next program
+- AND after he marks "Programa" done on OT-0151, OT-0153 is shown
+
+#### Scenario: Programmer reports a blocked order
+
+- GIVEN OT-0151 is Carlos Dávila's next program
+- WHEN he reports it blocked with reason "falta plano"
+- THEN OT-0151 is unassigned and flagged blocked with that reason for the admin
+- AND OT-0153 becomes his next program
+
+#### Scenario: Programmer groups a similar part
+
+- GIVEN OT-0147 is José Márquez's next program
+- AND OT-0159 is unassigned, further down the sequence, with the same material and dimensions
+- WHEN José takes OT-0159 related to OT-0147 with reason "mismas herramientas"
+- THEN OT-0159 is assigned to José and placed right after OT-0147 in his queue
+- AND the event records OT-0147 as related and the reason
+
+#### Scenario: Grouping cannot take another programmer's order
+
+- GIVEN OT-0159 is assigned to Carlos Dávila
+- WHEN José Márquez tries to take it related to OT-0147
+- THEN the request fails with a conflict and OT-0159 stays with Carlos
+
+#### Scenario: Programmer cannot assign to someone else
+
+- GIVEN a programmer without `manage_production_board`
+- WHEN they try to assign an order to another programmer
+- THEN the request is rejected and the order stays unassigned
+
 ### Requirement: Board and workload never expose money
 
 The system SHALL return board, work order and workload data without unit
