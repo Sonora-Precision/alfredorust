@@ -1083,6 +1083,8 @@ pub enum WorkOrderEventKind {
     StepReopened,
     Pinned,
     Unpinned,
+    /// Finished pieces changed; see `pieces_delta`.
+    PiecesRecorded,
 }
 
 /// Append-only log of what happened to a work order; the weekly report and the plant view
@@ -1118,6 +1120,16 @@ pub struct WorkOrderEvent {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+
+    /// PiecesRecorded: finished pieces added (negative = corrected down). The actor is who
+    /// ticked it, not who earns it: the weekly value goes to the people of each step.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pieces_delta: Option<f64>,
+
+    /// PiecesRecorded: the part's price per piece at that moment, frozen for the report.
+    /// Never sent to users who cannot see money.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unit_price: Option<f64>,
 
     pub at: DateTime,
 }

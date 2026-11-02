@@ -238,6 +238,8 @@ fn event(
         subject_user_id: subject,
         related_to: None,
         reason: None,
+        pieces_delta: None,
+        unit_price: None,
         at: DateTime::now(),
     }
 }
@@ -361,27 +363,14 @@ pub async fn api_work_order_take(
         return json_error(StatusCode::CONFLICT, "someone already has this order");
     }
 
-    match related_to {
-        // Grouping a similar part: the related order must be yours and still pending.
-        Some(rel) => {
-            let Some(related) = find_order(&orders, &rel) else {
-                return json_error(StatusCode::BAD_REQUEST, "related order not on the board");
-            };
-            if related.assignee_user_id != Some(me) {
-                return json_error(StatusCode::BAD_REQUEST, "the related order must be yours");
-            }
-        }
-        // Otherwise only the first free order of the queue, so priorities are respected.
-        None => {
-            let first_free = orders
-                .iter()
-                .find(|o| o.queue == order.queue && o.assignee_user_id.is_none());
-            if first_free.map(|o| o.concept_id()) != Some(id) {
-                return json_error(
-                    StatusCode::CONFLICT,
-                    "take the first free order of the queue",
-                );
-            }
+    // Any free order can be taken for yourself (Daniel, 2026-11-02); the log shows who took
+    // what. Grouping next to one of your orders only changes where it lands.
+    if let Some(rel) = related_to {
+        let Some(related) = find_order(&orders, &rel) else {
+            return json_error(StatusCode::BAD_REQUEST, "related order not on the board");
+        };
+        if related.assignee_user_id != Some(me) {
+            return json_error(StatusCode::BAD_REQUEST, "the related order must be yours");
         }
     }
 

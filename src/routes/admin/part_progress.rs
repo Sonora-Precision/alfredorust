@@ -256,21 +256,24 @@ pub struct PartProgressPayload {
         (status = 200, description = "Updated part with its finished pieces and steps"),
         (status = 400, description = "Invalid input"),
         (status = 401, description = "Not authenticated"),
-        (status = 403, description = "Admin only"),
+        (status = 403, description = "Needs take_work_orders or admin"),
         (status = 404, description = "Not found")
     ),
     security(("session" = []))
 )]
+/// Ticks process steps and finished pieces. Programmers can do it (Daniel, 2026-11-02:
+/// "Pasos y piezas"); each change keeps who and when, and the answer carries no money.
 pub async fn api_project_concept_progress(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
     Json(payload): Json<PartProgressPayload>,
 ) -> Response {
-    let company_id = match require_admin_active(&session_user) {
-        Ok(id) => id,
-        Err(status) => return status.into_response(),
-    };
+    if !session_user.has_permission(UserPermission::TakeWorkOrders) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let company_id = require_active_company(&session_user);
+    let can_view_money = session_user.has_permission(UserPermission::ViewProjectMoney);
     let id = match parse_oid(&id) {
         Ok(id) => id,
         Err(resp) => return resp,
@@ -311,17 +314,63 @@ pub async fn api_project_concept_progress(
         .flatten();
     match update_part_progress(&state, &id, &company_id, update, &username).await {
         Ok(Some(concept)) => {
-            if let (Some(before), Some((operation_id, new_state))) = (before, step) {
-                log_step_change(&state, &session_user, &before, &concept, operation_id, new_state)
-                    .await;
+            if let Some(before) = &before {
+                if let Some((operation_id, new_state)) = step {
+                    log_step_change(&state, &session_user, before, &concept, operation_id, new_state)
+                        .await;
+                }
+                log_pieces_change(&state, &session_user, before, &concept).await;
             }
             match project_concept_data(concept) {
-                Some(data) => Json(data).into_response(),
+                Some(mut data) => {
+                    if !can_view_money {
+                        data.estimated_cost = None;
+                        data.unit_price = None;
+                        data.description = crate::redact::strip_money_opt(data.description);
+                        data.notes = crate::redact::strip_money_opt(data.notes);
+                    }
+                    Json(data).into_response()
+                }
                 None => json_error(StatusCode::INTERNAL_SERVER_ERROR, "concept missing id"),
             }
         }
         Ok(None) => json_error(StatusCode::NOT_FOUND, "concept not found"),
         Err(err) => json_error(StatusCode::BAD_REQUEST, &err.to_string()),
+    }
+}
+
+/// Logs a change in finished pieces with who ticked it and the price at that moment, so the
+/// weekly report can value pieces per week and Daniel can audit every tick.
+pub(crate) async fn log_pieces_change(
+    state: &AppState,
+    session_user: &SessionUser,
+    before: &ProjectConcept,
+    after: &ProjectConcept,
+) {
+    let delta = after.completed_quantity - before.completed_quantity;
+    if delta == 0.0 {
+        return;
+    }
+    let Some(concept_id) = after.id else { return };
+    let event = WorkOrderEvent {
+        id: None,
+        company_id: after.company_id,
+        concept_id,
+        project_id: after.project_id,
+        kind: WorkOrderEventKind::PiecesRecorded,
+        operation_id: None,
+        operation_name: None,
+        queue: None,
+        actor_user_id: *session_user.user_id(),
+        subject_user_id: None,
+        related_to: None,
+        reason: None,
+        pieces_delta: Some(delta),
+        unit_price: after.unit_price,
+        at: mongodb::bson::DateTime::now(),
+    };
+    if let Err(err) = log_work_order_event(state, event).await {
+        eprintln!("[production] could not log pieces change: {err}");
     }
 }
 
@@ -373,6 +422,8 @@ pub(crate) async fn log_step_change(
         subject_user_id: subject,
         related_to: None,
         reason: None,
+        pieces_delta: None,
+        unit_price: None,
         at: mongodb::bson::DateTime::now(),
     };
     if let Err(err) = log_work_order_event(state, event).await {

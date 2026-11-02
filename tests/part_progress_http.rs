@@ -394,3 +394,152 @@ async fn concurrent_step_marks_on_one_part_are_all_kept() {
 
     common::teardown(Some(ctx)).await;
 }
+
+#[tokio::test]
+async fn programmer_ticks_steps_and_pieces_without_seeing_money() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+    let host = "ticks-a.miapp.local";
+
+    let company = create_company(&state, "Ticks A", "ticks-a", "MXN", true, None)
+        .await
+        .unwrap();
+    let admin_id = create_user(
+        &state,
+        "ticks-admin@example.com",
+        "SECRET",
+        &[(company.clone(), UserRole::Admin)],
+    )
+    .await
+    .unwrap();
+    let jose_id = create_user_with_permissions(
+        &state,
+        "ticks-jose@example.com",
+        "SECRET",
+        &[(
+            company.clone(),
+            UserRole::Staff,
+            vec![UserPermission::ViewProjects, UserPermission::TakeWorkOrders],
+        )],
+    )
+    .await
+    .unwrap();
+    let admin = get_user_by_id(&state, &admin_id).await.unwrap().unwrap();
+    let jose = get_user_by_id(&state, &jose_id).await.unwrap().unwrap();
+    let admin_token = create_session(&state, &admin.username).await.unwrap();
+    let jose_token = create_session(&state, &jose.username).await.unwrap();
+
+    create_concept_status(&state, &company, "En espera", 1, None, true, false, false, true)
+        .await
+        .unwrap();
+    let project_id = create_project(
+        &state, &company, "Pallets", None, None, None, ProjectPriority::Medium, Some(9000.0), None,
+        None,
+    )
+    .await
+    .unwrap();
+    let concept_id = create_project_concept(
+        &state,
+        &company,
+        &project_id,
+        None,
+        "CG-15253-A",
+        40.0,
+        None,
+        Some("Fixture pallet Vulcan — PU cotización $455".into()),
+        None,
+        Some(4500.0),
+        None,
+        1,
+    )
+    .await
+    .unwrap();
+    let (status, body) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        &format!("/api/admin/project_concepts/{}/update", concept_id.to_hex()),
+        &admin_token,
+        serde_json::json!({
+            "name": "CG-15253-A", "quantity": 40.0, "unit_price": 455.0, "position": 1,
+            "description": "Fixture pallet Vulcan — PU cotización $455", "estimated_cost": 4500.0
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let (status, body) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        "/api/admin/process_operations",
+        &admin_token,
+        serde_json::json!({ "name": "Setup 1", "position": 1, "queue": "setup" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "body: {body}");
+    let setup1 = json(&body)["id"].as_str().unwrap().to_string();
+
+    let progress = format!("/api/admin/project_concepts/{}/progress", concept_id.to_hex());
+    let (status, body) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        &progress,
+        &jose_token,
+        serde_json::json!({ "completed_quantity": 12, "operation_id": setup1, "state": "done" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let part = json(&body);
+    assert_eq!(part["completed_quantity"], 12.0);
+    assert_eq!(part["description"], "Fixture pallet Vulcan");
+    assert!(part["unit_price"].is_null() && part["estimated_cost"].is_null());
+    for leak in ["455", "4500", "9000", "cotiz"] {
+        assert!(!body.contains(leak), "{leak} leaked: {body}");
+    }
+    let step = part["process_steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["operation_id"] == setup1.as_str())
+        .unwrap();
+    assert_eq!(step["state"], "done");
+    assert_eq!(step["updated_by"], "ticks-jose@example.com");
+
+    // Corrected down a bit later.
+    let (status, _) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        &progress,
+        &jose_token,
+        serde_json::json!({ "completed_quantity": 10 }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // Every tick is in the log with who did it; pieces keep the price of that moment.
+    let mut cursor = state
+        .work_order_events
+        .find(doc! { "concept_id": concept_id, "kind": "pieces_recorded" })
+        .sort(doc! { "at": 1 })
+        .await
+        .unwrap();
+    let mut deltas = Vec::new();
+    while cursor.advance().await.unwrap() {
+        let e = cursor.deserialize_current().unwrap();
+        assert_eq!(e.actor_user_id, jose_id);
+        assert_eq!(e.unit_price, Some(455.0));
+        deltas.push(e.pieces_delta.unwrap());
+    }
+    assert_eq!(deltas, [12.0, -2.0]);
+    let done = state
+        .work_order_events
+        .find_one(doc! { "concept_id": concept_id, "kind": "step_done" })
+        .await
+        .unwrap()
+        .expect("step_done");
+    assert_eq!(done.subject_user_id, Some(jose_id));
+
+    common::teardown(Some(ctx)).await;
+}

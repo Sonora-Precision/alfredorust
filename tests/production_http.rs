@@ -185,10 +185,8 @@ async fn production_board_queues_sequence_and_assignment() {
     );
     assert_eq!(ot1, a.to_hex());
 
-    // Only the first free order can be taken; two programmers racing for it: one wins.
+    // Any free order can be taken for yourself; two programmers racing for one: one wins.
     let none = || serde_json::json!({});
-    let (status, body) = act(&shared, &ot1, "take", &jose, none()).await;
-    assert_eq!(status, StatusCode::CONFLICT, "not first free: {body}");
     let ((s1, _), (s2, _)) = tokio::join!(
         act(&shared, &ot3, "take", &jose, none()),
         act(&shared, &ot3, "take", &carlos, none())
@@ -199,9 +197,11 @@ async fn production_board_queues_sequence_and_assignment() {
     let jose_won = s1 == StatusCode::OK;
     let (winner, loser) = if jose_won { (&jose, &carlos) } else { (&carlos, &jose) };
 
-    // The loser takes the next free one.
+    // The loser picks one further down, out of sequence; taking a held order is a conflict.
     let (status, body) = act(&shared, &ot1, "take", loser, none()).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
+    let (status, _) = act(&shared, &ot1, "take", winner, none()).await;
+    assert_eq!(status, StatusCode::CONFLICT);
 
     // The winner groups a similar part out of sequence, with a reason; it lands right
     // after the order it was grouped with.
