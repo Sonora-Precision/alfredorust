@@ -8,6 +8,7 @@ import {
   Factory,
   Home,
   Landmark,
+  Map as MapIcon,
   Rocket,
   ShieldCheck,
   Wallet,
@@ -69,6 +70,14 @@ export const NAV: NavEntry[] = [
     label: 'Tablero de Producción',
     icon: Factory,
     href: '/produccion',
+    can: adminOr('view_production_board'),
+  },
+  // Programmers see it too, to know which machine is free; only managers assign or set states.
+  {
+    id: 'planta',
+    label: 'Vista de planta',
+    icon: MapIcon,
+    href: '/produccion/planta',
     can: adminOr('view_production_board'),
   },
   { id: 'tiempo', label: 'Tiempo', icon: Clock, href: '/tiempo', can: adminOr('view_timeline') },
