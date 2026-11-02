@@ -459,6 +459,8 @@ export interface ProjectConcept {
   description?: string | null
   estimated_hours?: number | null
   estimated_cost?: number | null
+  /** Quoted sale price per piece (admin only). */
+  unit_price?: number | null
   notes?: string | null
   position: number
   completed_quantity: number
@@ -639,6 +641,8 @@ export interface ProjectConceptPayload {
   description?: string | null
   estimated_hours?: number | null
   estimated_cost?: number | null
+  /** Quoted sale price per piece (admin only). */
+  unit_price?: number | null
   notes?: string | null
   position: number
 }

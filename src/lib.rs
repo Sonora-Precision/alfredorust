@@ -1,6 +1,7 @@
 pub mod cfdi;
 pub mod filters;
 pub mod models;
+pub mod redact;
 pub mod routes;
 pub mod sat;
 pub mod sat_consulta;

@@ -923,6 +923,10 @@ pub struct ProjectConcept {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub estimated_cost: Option<f64>,
 
+    /// Quoted sale price per piece (admin only; drives "valor producido").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unit_price: Option<f64>,
+
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
 

@@ -29,7 +29,8 @@ pub(crate) use crate::{
         list_projects, list_resource_usage_allocations, list_resource_usages,
         list_resource_usages_for_slot, list_resources, project_status_summary_by_quantity,
         replace_hourly_resource_usage_grid, replace_resource_usage_allocations,
-        replace_resource_usage_allocations_equal, update_concept_status, update_project_concept,
+        replace_resource_usage_allocations_equal, set_concept_unit_price, update_concept_status,
+        update_project_concept,
         update_resource_usage,
     },
 };
@@ -67,6 +68,16 @@ pub struct ConceptStatusPayload {
 
 pub(crate) fn default_true() -> bool {
     true
+}
+
+/// With `#[serde(default)]`: a missing field stays `None`; a present one (even `null`)
+/// becomes `Some(..)`, so "not sent" and "cleared" differ.
+fn present_or_null<'de, D, T>(de: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(de).map(Some)
 }
 
 // Flat JSON DTOs so these endpoints return clean `id`/ISO-8601 fields like every
@@ -118,6 +129,8 @@ pub struct ProjectConceptData {
     pub description: Option<String>,
     pub estimated_hours: Option<f64>,
     pub estimated_cost: Option<f64>,
+    /// Quoted sale price per piece (admin only).
+    pub unit_price: Option<f64>,
     pub notes: Option<String>,
     pub position: i32,
     pub completed_quantity: f64,
@@ -148,6 +161,7 @@ pub(crate) fn project_concept_data(c: ProjectConcept) -> Option<ProjectConceptDa
         description: c.description,
         estimated_hours: c.estimated_hours,
         estimated_cost: c.estimated_cost,
+        unit_price: c.unit_price,
         notes: c.notes,
         position: c.position,
         completed_quantity: c.completed_quantity,
@@ -401,6 +415,10 @@ pub struct ProjectConceptPayload {
     pub description: Option<String>,
     pub estimated_hours: Option<f64>,
     pub estimated_cost: Option<f64>,
+    /// Quoted sale price per piece: omitted = unchanged, null = cleared.
+    #[serde(default, deserialize_with = "present_or_null")]
+    #[schema(value_type = Option<f64>)]
+    pub unit_price: Option<Option<f64>>,
     pub notes: Option<String>,
     #[serde(default)]
     pub position: i32,
@@ -442,6 +460,9 @@ pub async fn api_project_concepts_index(
                 .map(|mut data| {
                     if !can_view_money {
                         data.estimated_cost = None;
+                        data.unit_price = None;
+                        data.description = crate::redact::strip_money_opt(data.description);
+                        data.notes = crate::redact::strip_money_opt(data.notes);
                     }
                     data
                 })
@@ -504,11 +525,18 @@ pub async fn api_project_concepts_create(
     )
     .await
     {
-        Ok(id) => (
-            StatusCode::CREATED,
-            Json(serde_json::json!({ "id": id.to_hex() })),
-        )
-            .into_response(),
+        Ok(id) => {
+            if let Some(Some(price)) = payload.unit_price {
+                if let Err(err) = set_concept_unit_price(&state, &id, &company_id, Some(price)).await {
+                    return json_error(StatusCode::BAD_REQUEST, &err.to_string());
+                }
+            }
+            (
+                StatusCode::CREATED,
+                Json(serde_json::json!({ "id": id.to_hex() })),
+            )
+                .into_response()
+        }
         Err(err) => json_error(StatusCode::BAD_REQUEST, &err.to_string()),
     }
 }
@@ -571,7 +599,14 @@ pub async fn api_project_concepts_update(
     )
     .await
     {
-        Ok(_) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Ok(_) => {
+            if let Some(price) = payload.unit_price {
+                if let Err(err) = set_concept_unit_price(&state, &id, &company_id, price).await {
+                    return json_error(StatusCode::BAD_REQUEST, &err.to_string());
+                }
+            }
+            Json(serde_json::json!({ "ok": true })).into_response()
+        }
         Err(err) => json_error(StatusCode::BAD_REQUEST, &err.to_string()),
     }
 }

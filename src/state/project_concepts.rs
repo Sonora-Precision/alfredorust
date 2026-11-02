@@ -284,6 +284,7 @@ pub async fn create_project_concept(
             description,
             estimated_hours,
             estimated_cost,
+            unit_price: None,
             notes,
             position,
             work_order_number: Some(work_order_number),
@@ -350,6 +351,29 @@ pub async fn update_project_concept(
                 "updated_at": DateTime::from_system_time(SystemTime::now()),
             } },
         )
+        .await?;
+    Ok(())
+}
+
+/// Sets (or clears) the quoted price per piece.
+pub async fn set_concept_unit_price(
+    state: &AppState,
+    id: &ObjectId,
+    company_id: &ObjectId,
+    unit_price: Option<f64>,
+) -> Result<()> {
+    if let Some(p) = unit_price {
+        if !p.is_finite() || p < 0.0 {
+            bail!("unit price must be zero or more");
+        }
+    }
+    let update = match unit_price {
+        Some(p) => doc! { "$set": { "unit_price": p } },
+        None => doc! { "$unset": { "unit_price": "" } },
+    };
+    state
+        .project_concepts
+        .update_one(doc! { "_id": id, "company_id": company_id }, update)
         .await?;
     Ok(())
 }
