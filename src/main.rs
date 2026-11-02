@@ -28,6 +28,7 @@ mod cron;
 pub mod filters;
 mod models;
 mod openapi;
+mod redact;
 mod routes;
 mod sat;
 mod sat_consulta;

@@ -630,16 +630,22 @@ async fn staff_with_view_projects_reads_parts_without_money() {
             "name": "ZBL149-17",
             "quantity": 10.0,
             "estimated_cost": 4500.0,
+            "unit_price": 777.0,
+            "description": "Fixture pallet Vulcan — PU cotización $585",
+            "notes": "Material: 4140 · Stock 1/2\" x 6\"\nPrecio acordado $1,950",
             "position": 1
         }),
     )
     .await;
     assert!(status.is_success(), "body: {body}");
 
-    // Admin still sees the cost.
+    // Admin still sees the cost, the price and the text as written.
     let (status, body) = get_with_cookie(build_app(shared.clone()), host, &concepts_path, &admin_token).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
-    assert_eq!(serde_json::from_str::<serde_json::Value>(&body).unwrap()[0]["estimated_cost"], 4500.0);
+    let admin_part = &serde_json::from_str::<serde_json::Value>(&body).unwrap()[0];
+    assert_eq!(admin_part["estimated_cost"], 4500.0);
+    assert_eq!(admin_part["unit_price"], 777.0);
+    assert_eq!(admin_part["description"], "Fixture pallet Vulcan — PU cotización $585");
 
     // A programmer reads parts and statuses, without the cost.
     let (status, body) =
@@ -649,7 +655,12 @@ async fn staff_with_view_projects_reads_parts_without_money() {
     assert_eq!(parts[0]["name"], "ZBL149-17");
     assert_eq!(parts[0]["quantity"], 10.0);
     assert!(parts[0]["estimated_cost"].is_null(), "cost leaked: {body}");
-    assert!(!body.contains("4500"), "cost leaked: {body}");
+    assert!(parts[0]["unit_price"].is_null(), "price leaked: {body}");
+    assert_eq!(parts[0]["description"], "Fixture pallet Vulcan");
+    assert_eq!(parts[0]["notes"], "Material: 4140 · Stock 1/2\" x 6\"");
+    for leak in ["4500", "777", "585", "1,950", "cotiz", "Precio"] {
+        assert!(!body.contains(leak), "{leak} leaked: {body}");
+    }
 
     let (status, body) = get_with_cookie(
         build_app(shared.clone()),

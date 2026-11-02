@@ -38,6 +38,7 @@ const emptyForm = () => ({
   description: '',
   estimatedHours: '',
   estimatedCost: '',
+  unitPrice: '',
   notes: '',
   position: '0',
 })
@@ -116,6 +117,7 @@ export default function ProjectDetail(): JSX.Element {
       description: concept.description ?? '',
       estimatedHours: concept.estimated_hours != null ? String(concept.estimated_hours) : '',
       estimatedCost: concept.estimated_cost != null ? String(concept.estimated_cost) : '',
+      unitPrice: concept.unit_price != null ? String(concept.unit_price) : '',
       notes: concept.notes ?? '',
       position: String(concept.position),
     })
@@ -150,6 +152,7 @@ export default function ProjectDetail(): JSX.Element {
     setFormError(null)
     const hours = f.estimatedHours.trim() === '' ? null : Number.parseFloat(f.estimatedHours)
     const cost = f.estimatedCost.trim() === '' ? null : Number.parseFloat(f.estimatedCost)
+    const price = f.unitPrice.trim() === '' ? null : Number.parseFloat(f.unitPrice.replace(/[$,\s]/g, ''))
     saveMutation.mutate({
       status_id: f.statusId.trim() === '' ? null : f.statusId,
       name: f.name.trim(),
@@ -158,6 +161,7 @@ export default function ProjectDetail(): JSX.Element {
       description: opt(f.description),
       estimated_hours: hours != null && Number.isNaN(hours) ? null : hours,
       estimated_cost: cost != null && Number.isNaN(cost) ? null : cost,
+      unit_price: price != null && Number.isNaN(price) ? null : price,
       notes: opt(f.notes),
       position: Number.parseInt(f.position, 10) || 0,
     })
@@ -389,6 +393,21 @@ export default function ProjectDetail(): JSX.Element {
               onInput={(v) => setForm((f) => ({ ...f, estimatedCost: v }))}
               inputmode="decimal"
             />
+          </div>
+          <div class="space-y-1.5">
+            <label class="block text-sm font-medium text-foreground" for="concept-unit-price">
+              Precio unitario
+            </label>
+            <Input
+              id="concept-unit-price"
+              value={form().unitPrice}
+              onInput={(v) => setForm((f) => ({ ...f, unitPrice: v }))}
+              inputmode="decimal"
+              placeholder="Precio cotizado por pieza"
+            />
+            <p class="text-xs text-muted-foreground">
+              Solo lo ve el administrador. No lo escribas en la descripción.
+            </p>
           </div>
           <div class="space-y-1.5 sm:col-span-2">
             <label class="block text-sm font-medium text-foreground">Descripción</label>

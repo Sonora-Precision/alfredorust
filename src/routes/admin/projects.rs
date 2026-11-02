@@ -786,7 +786,11 @@ fn project_data(project: Project, can_view_money: bool) -> Option<ProjectData> {
         contact_id: project.contact_id.map(|id| id.to_hex()),
         category_id: project.category_id.map(|id| id.to_hex()),
         title: project.title,
-        description: project.description,
+        description: if can_view_money {
+            project.description
+        } else {
+            crate::redact::strip_money_opt(project.description)
+        },
         status: project.status.as_str().to_string(),
         status_label: project.status.label().to_string(),
         priority: project.priority.as_str().to_string(),
@@ -802,7 +806,11 @@ fn project_data(project: Project, can_view_money: bool) -> Option<ProjectData> {
         completed_at: project
             .completed_at
             .map(|date| date.to_chrono().to_rfc3339()),
-        notes: project.notes,
+        notes: if can_view_money {
+            project.notes
+        } else {
+            crate::redact::strip_money_opt(project.notes)
+        },
     })
 }
 
