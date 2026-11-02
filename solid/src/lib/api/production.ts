@@ -5,7 +5,9 @@ import type {
   PlantView,
   SequenceMovePayload,
   TakeWorkOrderPayload,
+  WeeklyPieces,
   WorkOrder,
+  WorkOrderSearchHit,
   WorkQueue,
 } from './types'
 
@@ -26,5 +28,8 @@ export const moveWorkOrder = (id: string, payload: SequenceMovePayload) =>
   action(id, 'sequence', payload)
 
 export const getPlant = () => apiGet<PlantView>('/api/production/plant')
+export const getWeeklyPieces = () => apiGet<WeeklyPieces>('/api/production/weekly_pieces')
+export const searchWorkOrders = (q: string) =>
+  apiGet<WorkOrderSearchHit[]>('/api/production/search', { q })
 export const setMachineState = (resourceId: string, payload: MachineStatePayload) =>
   apiPost<void>(`/api/production/machines/${resourceId}/state`, payload)

@@ -9,6 +9,9 @@ import { createMutation, createQuery, useQueryClient } from '@tanstack/solid-que
 import { ArrowLeft } from 'lucide-solid'
 import { type JSX, For, Show, createMemo, createSignal } from 'solid-js'
 
+import { WeeklyPiecesCard } from '../components/production/WeeklyPiecesCard'
+import { WorkOrderSearch, matchesWorkOrder } from '../components/production/WorkOrderSearch'
+
 import { Badge, type BadgeTone } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Card, CardContent } from '../components/ui/Card'
@@ -91,7 +94,10 @@ export default function Plant(): JSX.Element {
     for (const m of plantQuery.data?.machines ?? []) byId.set(m.resource_id, m)
     return byId
   })
-  const pending = createMemo(() => (boardQuery.data ?? []).filter((o) => !o.assignee))
+  const [query, setQuery] = createSignal('')
+  const pending = createMemo(() =>
+    (boardQuery.data ?? []).filter((o) => !o.assignee && matchesWorkOrder(o, query())),
+  )
 
   // Assigning: drag an order onto a person, or tap the order and then the person.
   const [picked, setPicked] = createSignal<string | null>(null)
@@ -131,6 +137,8 @@ export default function Plant(): JSX.Element {
           Cola de programación
         </A>
       </div>
+
+      <WeeklyPiecesCard compact />
 
       <Show when={plantQuery.isLoading}>
         <div class="flex justify-center py-10">
@@ -249,6 +257,7 @@ export default function Plant(): JSX.Element {
                   <h2 class="text-sm font-semibold text-foreground">Órdenes pendientes</h2>
                   <span class="text-xs text-muted-foreground">{pending().length}</span>
                 </div>
+                <WorkOrderSearch onQuery={setQuery} placeholder="Buscar número de parte o folio" />
                 <Show when={canManage() && pending().length > 0}>
                   <p class="text-xs text-muted-foreground">
                     Arrastra una OT sobre un programador, o tócala y luego toca a la persona.

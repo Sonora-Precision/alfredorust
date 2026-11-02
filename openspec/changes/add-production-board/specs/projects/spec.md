@@ -133,6 +133,33 @@ without money for users who cannot see it.
 - WHEN they create or rename a process step
 - THEN the request is rejected
 
+### Requirement: Everyone sees the week's finished pieces
+
+The system SHALL show users with `view_production_board` the finished pieces of
+the current Monday-to-Sunday week in the company time zone and of the week
+before, for the whole team, for each person credited with programming each
+part, and per part for the caller, and SHALL never include money.
+
+#### Scenario: Pieces of all programmers
+
+- GIVEN Carlos Dávila programmed OT-0002 and 7 of its pieces were finished this week
+- WHEN José Márquez reads the weekly pieces
+- THEN the team shows 7 and Carlos Dávila shows 7
+- AND no price or amount is present
+
+### Requirement: Part numbers can be searched wherever orders are assigned
+
+The system SHALL search the company's part numbers by partial part name or
+folio, ignoring case, including parts no longer on the board, and SHALL return
+for each its holder or none, current step or final state, queue, place in the
+sequence and finished over ordered pieces, without money.
+
+#### Scenario: Partial search finds a part off the board
+
+- GIVEN PART-B finished every step and left the board
+- WHEN a programmer searches "part-b"
+- THEN PART-B is found with status "sin pasos pendientes", its last holder and its pieces
+
 ### Requirement: Weekly production report per person
 
 The system SHALL record an append-only event for every assignment, pin and

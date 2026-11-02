@@ -121,6 +121,31 @@ admin.
 - **Captura de piezas**: se escribe el total ("10,000") o un cambio ("+250",
   "−5") en vez de dar clics; se limita entre 0 y lo pedido.
 
+**Piezas de la semana para todos** (Daniel, 2026-11-02: "cantidad de piezas, no
+cantidad de dinero"; luego eligió "las de todos"): `GET
+/api/production/weekly_pieces` (con `view_production_board`) da, para la semana
+lunes–domingo de Hermosillo y la anterior, las piezas terminadas del equipo,
+las de **cada persona** (quien programó cada parte, mismo crédito que el
+reporte) y el desglose por parte de quien consulta. Nunca dinero. Esto
+reemplaza "sin ranking por persona" sólo para piezas; el valor producido por
+persona sigue siendo sólo del admin. En el Tablero se ve la tarjeta completa; en
+la Vista de planta, el total del equipo.
+
+**Buscador de números de parte** (Daniel, 2026-11-02): en cada pantalla donde se
+asigna o se toma una OT (Tablero, órdenes pendientes de la Vista de planta,
+asignaciones por programador) hay una caja que busca mientras se escribe,
+parcial y sin importar mayúsculas, por número de parte o folio ("4471" →
+"CH-4471-A"). `GET /api/production/search?q=` busca en **todas** las partes de la
+empresa, también las que salieron del tablero, y por cada una dice quién la
+trae (o "Libre"), su paso actual o "Terminada" / "Sin pasos pendientes" /
+"Proyecto cerrado", la cola y su lugar en la secuencia y las piezas
+terminadas/pedidas. La misma caja filtra la lista de la pantalla. Sin dinero.
+
+**El admin ve todo lo asignado** (Daniel, 2026-11-02): el Tablero muestra a quien
+gestiona la sección "Asignaciones por programador": cada persona con todas sus
+OT en todas las colas (folio, parte, proyecto, paso, piezas).
+`GET /api/production/members` trae esas OT completas en `orders`.
+
 **Quién aparece como responsable posible** de una cola: los admins de la
 empresa y el staff con el permiso de esa cola. En `sp` la Cola de
 Programación tiene hoy a Daniel Rivera (admin), Jesús Sigala, José Márquez y

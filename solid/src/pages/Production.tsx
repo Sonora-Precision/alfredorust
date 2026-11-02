@@ -17,7 +17,11 @@ import {
   PinOff,
   Undo2,
 } from 'lucide-solid'
-import { type JSX, For, Show, createMemo } from 'solid-js'
+import { type JSX, For, Show, createMemo, createSignal } from 'solid-js'
+
+import { AssignmentsByPerson } from '../components/production/AssignmentsByPerson'
+import { WeeklyPiecesCard } from '../components/production/WeeklyPiecesCard'
+import { WorkOrderSearch, matchesWorkOrder } from '../components/production/WorkOrderSearch'
 
 import { Badge, type BadgeTone } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
@@ -73,10 +77,13 @@ export default function Production(): JSX.Element {
     refetchInterval: REFRESH_MS,
   }))
 
-  const orders = () => boardQuery.data ?? []
+  const allOrders = () => boardQuery.data ?? []
   const me = () => auth.user()
-  const mine = createMemo(() => orders().filter((o) => o.assignee?.username === me()))
-  const free = createMemo(() => orders().filter((o) => !o.assignee))
+  const mine = createMemo(() => allOrders().filter((o) => o.assignee?.username === me()))
+  const free = createMemo(() => allOrders().filter((o) => !o.assignee))
+  // The search box also narrows the queue below it.
+  const [query, setQuery] = createSignal('')
+  const orders = createMemo(() => allOrders().filter((o) => matchesWorkOrder(o, query())))
 
   const refresh = () => void qc.invalidateQueries({ queryKey: ['production'] })
   const run = createMutation(() => ({
@@ -122,6 +129,10 @@ export default function Production(): JSX.Element {
         </div>
       </Show>
 
+      <WorkOrderSearch onQuery={setQuery} />
+
+      <WeeklyPiecesCard myId={auth.userId()} />
+
       <Show when={!boardQuery.isLoading && canTake() && (!canManage() || mine().length > 0)}>
         <NextProgram
           mine={mine()}
@@ -140,12 +151,17 @@ export default function Production(): JSX.Element {
         <MembersStrip members={membersQuery.data ?? []} />
       </Show>
 
+      <Show when={canManage() && (membersQuery.data?.length ?? 0) > 0}>
+        <AssignmentsByPerson members={membersQuery.data ?? []} query={query()} />
+      </Show>
+
       <Show when={!boardQuery.isLoading}>
         <section class="space-y-2">
           <div class="flex items-baseline justify-between">
             <h2 class="text-sm font-semibold text-foreground">Secuencia de producción</h2>
             <span class="text-xs text-muted-foreground">
               {orders().length} OT · {free().length} sin asignar
+              <Show when={query()}> · filtrado</Show>
             </span>
           </div>
           <Show

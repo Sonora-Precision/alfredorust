@@ -536,6 +536,34 @@ export interface BoardMemberLoad {
   is_admin: boolean
   /** Folios whose current step this person holds, in sequence order. */
   assigned: string[]
+  /** The same orders in full, across every queue. */
+  orders: WorkOrder[]
+}
+
+export interface WeeklyPieces {
+  week_start: string
+  week_end: string
+  team: number
+  team_previous_week: number
+  /** Everyone's finished pieces (pieces only, never money); id null = no programmer yet. */
+  people: { id: string | null; name: string; pieces: number; previous_week: number }[]
+  mine_by_part: { id: string; folio: string; part: string; pieces: number }[]
+}
+
+export interface WorkOrderSearchHit {
+  id: string
+  folio: string
+  part: string
+  project_id: string
+  project: string
+  client: string | null
+  assignee: WorkOrderPerson | null
+  status: string
+  status_label: string
+  queue: WorkQueue | null
+  position: number | null
+  quantity: number
+  completed_quantity: number
 }
 
 export type SequenceMovePayload = { before_id: string } | { after_id: string } | { unpin: true }
