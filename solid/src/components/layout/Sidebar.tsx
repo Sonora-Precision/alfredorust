@@ -35,7 +35,14 @@ export function Sidebar(): JSX.Element {
   // Current path (SPA is served at root now) — drives active-group auto-open and
   // current-item highlighting.
   const path = () => location.pathname || '/'
-  const isActive = (href: string) => (href === '/' ? path() === '/' : path().startsWith(href))
+  // A prefix match only counts when no other nav entry matches the path more specifically
+  // ("/produccion" is not active on "/produccion/planta").
+  const allHrefs = NAV.flatMap((e) => (isGroup(e) ? e.children.map((c) => c.href) : [e.href]))
+  const isActive = (href: string) => {
+    if (href === '/') return path() === '/'
+    if (!path().startsWith(href)) return false
+    return !allHrefs.some((h) => h.length > href.length && h.startsWith(href) && path().startsWith(h))
+  }
   const groupOpen = (group: NavGroupDef, children: { href: string }[]) =>
     manualOpen().has(group.id) || children.some((c) => isActive(c.href))
   const toggleGroup = (id: string) =>
