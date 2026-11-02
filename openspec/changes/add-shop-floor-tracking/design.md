@@ -89,25 +89,19 @@ transacción. **Sin efectos financieros.**
 
 | Campo | Tipo | Notas |
 |---|---|---|
-| `quantity_completed` | `f64`, default 0 | `0 ≤ completed ≤ quantity`, si no 400 |
+| `completed_quantity` | `f64`, default 0 | `0 ≤ completed ≤ quantity`, si no 400; el `update` completo no puede bajar `quantity` por debajo |
 | `unit_price` | `Option<f64>` | **dinero**: sólo admin |
 | `planned_resource_ids` | `Vec<ObjectId>` | máquinas planeadas ("Machine" en Notion) |
-| `material_status` | `Option<MaterialStatus>` | enum abajo |
+| `material` | `Option<MaterialRequirement>` | ver §1.6 |
+| `process_steps` | `Vec<PartStep>` | pasos marcados de la ruta de proceso, ver §1.7 |
 
 `name` sigue siendo el número de parte. `estimated_cost` también es dinero.
-
-```rust
-enum MaterialStatus { Pending, Missing, Purchased, Ready, CustomerSupplied }
-// En espera · Faltante · Comprado · Habilitado · Lo proporciona el cliente
-```
-(Notion también tiene "Maquinado" en material; se pregunta en *Preguntas
-abiertas* antes de fijar el enum.)
 
 **Avance** (calculado al leer, no se guarda):
 
 ```
-avance_parte    = quantity_completed / quantity
-avance_proyecto = Σ quantity_completed / Σ quantity   (excluye conceptos en estado is_cancelled)
+avance_parte    = completed_quantity / quantity
+avance_proyecto = Σ completed_quantity / Σ quantity   (excluye conceptos en estado is_cancelled)
 ```
 Se expone en `ProjectData.progress` (0–1, `null` si no hay partes) y en cada
 concepto. `status_summary` (`project_concepts.rs:399`) se mantiene.
@@ -116,10 +110,14 @@ concepto. `status_summary` (`project_concepts.rs:399`) se mantiene.
 
 ```
 POST /api/admin/project_concepts/{id}/progress
-{ quantity_completed?, status_id?, material_status?, notes? }
+{ completed_quantity?, status_id?, notes?,
+  operation_id?, state?,                            // §1.7, un paso por llamada
+  material?: { quoted?, purchased?, received? } }  // §1.6, sólo banderas
 permiso: update_part_progress (admin implícito)
 ```
-`update` completo y `create/delete` siguen sólo admin.
+`update` completo y `create/delete` siguen sólo admin. Cambiar material
+(tipo/medidas/surtido por cliente) o agregar/quitar operaciones de la ruta de
+una parte es parte del `update` completo (admin).
 
 ### 1.4 Lectura para staff (arregla hueco actual)
 
@@ -133,6 +131,87 @@ que `total_budget`, `projects.rs:794-798`). Lo mismo para `project_stages` GET.
 
 `ProjectDetail.tsx:90` manda `notes: ''` al editar → borra las notas existentes
 del concepto. Se corrige cargando las notas reales.
+
+### 1.6 Material requerido por número de parte
+
+Sustituye la "hoja de material requerido" que el taller lleva en Excel y el
+campo "Material" de Notion.
+
+```rust
+pub struct MaterialRequirement {
+    description: Option<String>,   // "aluminio 6061", "aluminio rectificado", "perfil"
+    dimensions: Option<String>,    // "5/8 x 48 x 48", "Red 1.375 x 24" — texto libre
+    customer_supplied: bool,       // "surtido por cliente"
+    quoted: bool,                  // cotizado
+    purchased: bool,               // comprado
+    received: bool,                // recibido
+}
+```
+
+Las medidas son texto libre a propósito: el taller mezcla fracciones, decimales,
+placa, redondo y perfil. Estado de material derivado (no se guarda):
+`Surtido por cliente` · `Recibido` · `Comprado` · `Cotizado` · `Pendiente`
+(el primero que aplique en ese orden). Vista "Material requerido" del proyecto
+= tabla de partes con estas columnas; vista global "Material pendiente" =
+partes de proyectos abiertos con material no recibido ni surtido por cliente
+(sirve como lista de compras). **Sin efectos financieros**: marcar "comprado"
+no crea gastos.
+
+### 1.7 Ruta de proceso (checklist por número de parte)
+
+Sustituye las columnas de la hoja de seguimiento (material, material
+habilitado, programa, setup 1–4, machueleado/rimado, rebabeado/limpieza).
+
+**Catálogo de operaciones por empresa** — nueva colección `process_operations`,
+mismo patrón que `concept_statuses` (nombre, posición, activo):
+
+```rust
+pub struct ProcessOperation { id, company_id, name, position: i32, is_active, … }
+```
+
+Sembrado para `sp` como **dato** (editable): Material · Material habilitado ·
+Programa · Setup 1 · Setup 2 · Setup 3 · Setup 4 · Machueleado / Rimado ·
+Rebabeado / Limpieza.
+
+**Ruta de cada parte** — la ruta son las operaciones activas del catálogo. En la
+parte sólo se guardan los pasos que alguien marcó; los demás están pendientes.
+Así una operación agregada después aparece en todas las partes, incluidas las ya
+creadas, sin migrar nada (implementado así en vez de copiar al crear):
+
+```rust
+pub struct PartStep {
+    operation_id: ObjectId,
+    name: String,                       // copia: sobrevive renombres/borrados del catálogo
+    state: StepState,                   // Pending | Done | NotApplicable
+    updated_by: Option<String>,         // username
+    updated_at: Option<DateTime>,
+}
+```
+
+Cada marca es una actualización atómica de un solo paso (`$set` posicional o
+`$push` condicionado), para que clics rápidos en varios pasos de la misma parte
+no se pisen.
+
+- `Done` = ✔, `NotApplicable` = N/A (p. ej. Setup 3/4 en una pieza de 2
+  setups). Se guarda quién y cuándo marcó cada paso.
+- La ruta es **por número de parte, no por pieza**, igual que la hoja actual;
+  las piezas terminadas siguen siendo `quantity_completed`.
+- Avance de ruta de una parte = `Done ÷ (total − NotApplicable)`; se muestra
+  junto al avance por piezas, **pero el % del proyecto sigue siendo por piezas
+  terminadas** (decisión de Daniel).
+- Vista del proyecto = matriz partes × operaciones con ✔ / N/A / vacío,
+  editable con un clic para quien tenga `update_part_progress` (DOM normal:
+  decenas de celdas, ver guía de renderizado en `CLAUDE.md`).
+- Quitar una operación del catálogo sólo quita la columna; los pasos ya
+  marcados en las partes se conservan con su nombre. También se puede
+  desactivar (`is_active`) para ocultarla sin perder el orden.
+
+**Implementado (2026-11-02), sólo admin escribe** hasta la fase 2:
+`GET/POST /api/admin/process_operations`, `…/{id}/update`, `…/{id}/delete`,
+`POST /api/admin/project_concepts/{id}/progress` (`completed_quantity` y/o
+`operation_id`+`state`). El listado de conceptos devuelve `completed_quantity`
+y `process_steps`. El % se calcula en Solid (pestaña "Seguimiento" del detalle
+de proyecto).
 
 ---
 
@@ -284,7 +363,11 @@ idempotente por `notion_page_id` guardado en `notes`/campo de origen:
    notas, etapa mapeada; factura por folio del título si el CFDI existe (las
    F-94…F-99 son de dic-2025 y hoy no están descargadas).
 3. Items (`🔧 Items`): número de parte, piezas pedidas/terminadas, estado,
-   máquina, material, notas.
+   máquina, notas. "Material" de Notion → banderas de §1.6 (`Comprado` →
+   cotizado+comprado, `Mat habilitado` → recibido + operación "Material
+   habilitado" ✔, `for costumer` → surtido por cliente, `Faltante`/`En espera`
+   → pendiente); los casos ambiguos (`Maquinado`) se listan para revisión
+   manual en vez de adivinarse.
 4. Archivos (fase 3 lista): adjuntos de proyecto como `purchase_order`; los de
    cada item según extensión.
 
@@ -298,15 +381,17 @@ Se corre primero contra `bodad` (tenant de pruebas) y luego `sp`.
   consulta filtra por la empresa activa; el `project_id`/`concept_id`/`file_id`
   de la ruta se valida contra ella (404 si es de otra).
 - **¿Quién ve?** Tabla §1.2, §1.3, §3.3. Dinero y archivos comerciales: admin.
-- **¿Quién modifica?** Admin todo; `update_part_progress` sólo avance/estado/
-  material/notas; `upload_cnc_files` sólo versiones de `.nc`/listas.
-- **Colecciones**: nuevas `project_stages`, `permission_profiles`,
+- **¿Quién modifica?** Admin todo; `update_part_progress` sólo piezas
+  terminadas, estado, pasos de la ruta, banderas de material y notas;
+  `upload_cnc_files` sólo versiones de `.nc`/listas.
+- **Colecciones**: nuevas `project_stages`, `process_operations`, `permission_profiles`,
   `project_files`, `project_file_versions`, `project_file_downloads`;
   modificadas `projects`, `project_concepts`, `user_companies`; leída `cfdis`.
 - **Efectos financieros**: ninguno. Ligar facturas es sólo lectura.
 - **Pruebas**: §tasks — aislamiento entre tenants, redacción de dinero por
   perfil, migración de etapas, límites de avance, permisos por tipo de archivo.
-- **Debe fallar ruidosamente**: `quantity_completed` fuera de rango, CFDI ajeno o
+- **Debe fallar ruidosamente**: operación de otra empresa o que no está en la
+  ruta de la parte, `quantity_completed` fuera de rango, CFDI ajeno o
   recibido, subir tipo/extension no permitido, confirmar versión cuyo objeto no
   existe o difiere en tamaño, borrar perfil o etapa en uso.
 
@@ -315,7 +400,9 @@ Se corre primero contra `bodad` (tenant de pruebas) y luego `sp`.
 1. **Almacenamiento**: ¿R2 en la cuenta de Cloudflare de Luis Alfredo? (≈ USD
    0.015/GB-mes, sin costo de salida). Alternativa temporal: disco del servidor
    con límite < 100 MB por archivo.
-2. **Material**: ¿qué significa "Maquinado" como estado de material en Notion?
+2. **Ruta de proceso**: ¿quién marca cada paso? Propuesta: supervisor y admin
+   todos; ¿el programador marca "Programa" al subir el `.nc`? (se podría marcar
+   solo al subir la primera versión).
 3. **Setupista**: ¿captura horas de máquina o sólo el supervisor?
 4. **Orden con G1**: ¿G1.4 se hace aquí (fase 1) aunque G1.1–G1.3 no existan?
    Se propone que sí: no depende de ellas.

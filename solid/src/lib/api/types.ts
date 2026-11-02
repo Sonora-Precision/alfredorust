@@ -458,6 +458,38 @@ export interface ProjectConcept {
   estimated_cost?: number | null
   notes?: string | null
   position: number
+  completed_quantity: number
+  /** Only the steps someone marked; other catalog operations are pending. */
+  process_steps: PartStep[]
+}
+
+export type StepState = 'pending' | 'done' | 'not_applicable'
+
+export interface PartStep {
+  operation_id: string
+  name: string
+  state: StepState
+  updated_by?: string | null
+  updated_at?: string | null
+}
+
+export interface ProcessOperation {
+  id: string
+  name: string
+  position: number
+  is_active: boolean
+}
+
+export interface ProcessOperationPayload {
+  name: string
+  position: number
+  is_active: boolean
+}
+
+export interface PartProgressPayload {
+  completed_quantity?: number
+  operation_id?: string
+  state?: StepState
 }
 
 // --- machine time from the shop floor (DNC runs pushed by taller-vision) -------------

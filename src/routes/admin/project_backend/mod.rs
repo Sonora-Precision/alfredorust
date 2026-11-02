@@ -120,7 +120,19 @@ pub struct ProjectConceptData {
     pub estimated_cost: Option<f64>,
     pub notes: Option<String>,
     pub position: i32,
+    pub completed_quantity: f64,
+    /// Only the steps someone marked; other catalog operations are pending.
+    pub process_steps: Vec<PartStepData>,
     pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct PartStepData {
+    pub operation_id: String,
+    pub name: String,
+    pub state: &'static str,
+    pub updated_by: Option<String>,
     pub updated_at: Option<String>,
 }
 
@@ -138,6 +150,18 @@ pub(crate) fn project_concept_data(c: ProjectConcept) -> Option<ProjectConceptDa
         estimated_cost: c.estimated_cost,
         notes: c.notes,
         position: c.position,
+        completed_quantity: c.completed_quantity,
+        process_steps: c
+            .process_steps
+            .into_iter()
+            .map(|s| PartStepData {
+                operation_id: s.operation_id.to_hex(),
+                name: s.name,
+                state: s.state.as_str(),
+                updated_by: s.updated_by,
+                updated_at: s.updated_at.map(iso),
+            })
+            .collect(),
         created_at: c.created_at.map(iso),
         updated_at: c.updated_at.map(iso),
     })

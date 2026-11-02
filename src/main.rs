@@ -671,6 +671,22 @@ async fn main() {
             post(routes::api_project_concepts_delete),
         )
         .route(
+            "/api/admin/project_concepts/{id}/progress",
+            post(routes::api_project_concept_progress),
+        )
+        .route(
+            "/api/admin/process_operations",
+            get(routes::api_process_operations_index).post(routes::api_process_operations_create),
+        )
+        .route(
+            "/api/admin/process_operations/{id}/update",
+            post(routes::api_process_operations_update),
+        )
+        .route(
+            "/api/admin/process_operations/{id}/delete",
+            post(routes::api_process_operations_delete),
+        )
+        .route(
             "/api/admin/resource_usages",
             get(routes::api_resource_usages_index).post(routes::api_resource_usages_create),
         )

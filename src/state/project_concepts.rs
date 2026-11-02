@@ -285,6 +285,8 @@ pub async fn create_project_concept(
             estimated_cost,
             notes,
             position,
+            completed_quantity: 0.0,
+            process_steps: Vec::new(),
             created_at: Some(DateTime::from_system_time(SystemTime::now())),
             updated_at: None,
         })
@@ -318,6 +320,14 @@ pub async fn update_project_concept(
     get_concept_status_by_id_for_company(state, status_id, company_id)
         .await?
         .context("concept status not found for company")?;
+    if let Some(current) = get_project_concept_by_id_for_company(state, id, company_id).await? {
+        if quantity < current.completed_quantity {
+            bail!(
+                "quantity cannot be below the {} pieces already finished",
+                current.completed_quantity
+            );
+        }
+    }
 
     state
         .project_concepts

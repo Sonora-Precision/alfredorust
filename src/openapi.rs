@@ -130,6 +130,11 @@ impl Modify for SecurityAddon {
         crate::routes::admin::project_backend::api_project_concepts_update,
         crate::routes::admin::project_backend::api_project_concepts_advance,
         crate::routes::admin::project_backend::api_project_concepts_delete,
+        crate::routes::admin::part_progress::api_project_concept_progress,
+        crate::routes::admin::part_progress::api_process_operations_index,
+        crate::routes::admin::part_progress::api_process_operations_create,
+        crate::routes::admin::part_progress::api_process_operations_update,
+        crate::routes::admin::part_progress::api_process_operations_delete,
 
         // resources — usage grid + usages (project_backend)
         crate::routes::admin::machine_runs::api_machine_runs_ingest,

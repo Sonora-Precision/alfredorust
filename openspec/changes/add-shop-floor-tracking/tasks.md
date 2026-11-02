@@ -11,9 +11,15 @@ en `tests/common/harness.rs::build_app` (copia manual del router).
 - [ ] Rejilla de recursos: excluir proyectos en etapa `is_cancelled` (antes `ProjectStatus::Cancelado`).
 - [ ] Proyecto: `due_date`, `assigned_user_ids`, `po_number`, `quote_number`; redacción para no-admin.
 - [ ] Facturas ligadas: link/unlink con validación (empresa, tipo I, emitido); detalle admin.
-- [ ] Concepto: `quantity_completed`, `unit_price`, `planned_resource_ids`, `material_status`; validación de rango.
+- [x] Concepto: `completed_quantity` con validación de rango (y `update` no baja `quantity` por debajo).
+- [ ] Concepto: `unit_price`, `planned_resource_ids`.
+- [ ] Material requerido por parte (`MaterialRequirement`: descripción, medidas, surtido por cliente, cotizado, comprado, recibido) + estado derivado + vista "Material pendiente".
+- [x] Catálogo `process_operations` (CRUD) + pasos por parte (`PartStep` con Pending/Done/N/A, quién y cuándo); pasos no marcados = pendientes (sin copiar al crear).
+- [x] Solid: matriz partes × operaciones (✔ / N/A), piezas terminadas y % (pestaña "Seguimiento").
+- [ ] Solid: tabla de material requerido en el detalle del proyecto.
 - [ ] `progress` calculado en proyecto y concepto.
-- [ ] `POST /project_concepts/{id}/progress` con `update_part_progress` (permiso se agrega aquí, perfiles en fase 2).
+- [x] `POST /project_concepts/{id}/progress` (piezas terminadas y un paso por llamada; sólo admin por ahora).
+- [ ] Permiso `update_part_progress` en ese endpoint; `status_id`, `notes` y banderas de material.
 - [ ] Abrir lectura de conceptos/estados/etapas a `view_projects` con redacción de dinero.
 - [ ] Solid: etapas configurables (página + badge por color), columnas de avance/entrega/asignados, captura de piezas terminadas, facturas (admin); corregir `ProjectDetail.tsx:90` (borra notas).
 - [ ] spcli: `projects stages …`, `projects set-stage`, `projects concepts progress`; actualizar `docs/spcli.md` y skill.

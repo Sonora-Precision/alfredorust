@@ -7,8 +7,9 @@ use std::env;
 
 use crate::models::{
     Account, ApiToken, Category, Company, ConceptStatus, Contact, Forecast, MachineRun,
-    PlannedEntry, Project, ProjectConcept, RecurringPlan, Resource, ResourceLog, ResourceUsage,
-    ResourceUsageAllocation, SatConfig, ServiceOrder, Session, Transaction, User, UserCompany,
+    PlannedEntry, ProcessOperation, Project, ProjectConcept, RecurringPlan, Resource, ResourceLog,
+    ResourceUsage, ResourceUsageAllocation, SatConfig, ServiceOrder, Session, Transaction, User,
+    UserCompany,
 };
 use bson::Document;
 
@@ -48,6 +49,7 @@ mod companies;
 mod finance;
 mod machine_runs;
 mod orders;
+mod process_operations;
 mod project_concepts;
 mod projects;
 mod resource_logs;
@@ -63,6 +65,7 @@ pub use companies::*;
 pub use finance::*;
 pub use machine_runs::*;
 pub use orders::*;
+pub use process_operations::*;
 pub use project_concepts::*;
 pub use projects::*;
 pub use resource_logs::*;
@@ -102,6 +105,7 @@ pub struct AppState {
     pub resource_usages: Collection<ResourceUsage>,
     pub resource_usage_allocations: Collection<ResourceUsageAllocation>,
     pub machine_runs: Collection<MachineRun>,
+    pub process_operations: Collection<ProcessOperation>,
 }
 
 pub async fn init_state() -> Result<AppState> {
@@ -242,6 +246,7 @@ pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppStat
         resource_usage_allocations: db
             .collection::<ResourceUsageAllocation>("resource_usage_allocations"),
         machine_runs: db.collection::<MachineRun>("machine_runs"),
+        process_operations: db.collection::<ProcessOperation>("process_operations"),
     };
 
     let interrupted = fail_interrupted_cfdi_jobs(&state).await?;

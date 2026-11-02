@@ -57,8 +57,9 @@ pieces, excluding concepts in a cancelled status.
 ### Requirement: Progress updates are narrower than concept edits
 
 The system SHALL let users with `update_part_progress` change only finished
-pieces, concept status, material status and notes, and SHALL keep concept
-create, full update and delete admin-only.
+pieces, concept status, process-step states, material quoted/purchased/received
+flags and notes, and SHALL keep concept create, full update and delete
+admin-only.
 
 #### Scenario: Supervisor records progress
 
@@ -71,6 +72,65 @@ create, full update and delete admin-only.
 - GIVEN a staff user with `update_part_progress`
 - WHEN they call the full concept update endpoint
 - THEN the request is rejected
+
+### Requirement: Each part has a configurable process checklist
+
+The system SHALL keep a per-company catalog of process operations, SHALL treat
+every active operation as a step of each part's process route (pending until
+marked), and SHALL store for each marked step a state of pending, done or not
+applicable together with who changed it and when.
+
+#### Scenario: Parts show the company route
+
+- GIVEN a company catalog "Material, Programa, Setup 1, Setup 2"
+- AND a part created before the catalog existed
+- WHEN a user opens the project
+- THEN the part shows those four steps, all pending, in catalog order
+
+#### Scenario: Quick marks on one part are all kept
+
+- GIVEN a part and nine catalog operations
+- WHEN nine step marks for that part arrive at the same time
+- THEN the part stores all nine
+
+#### Scenario: Supervisor marks steps
+
+- GIVEN a staff user with `update_part_progress`
+- WHEN they mark "Setup 1" done and "Setup 2" not applicable
+- THEN both states are stored with their user and timestamp
+- AND the part route progress is 1 of 3 applicable steps
+
+#### Scenario: Unknown or foreign operation
+
+- GIVEN an operation id that is not in the part route or belongs to another company
+- WHEN a user marks it
+- THEN the request fails and the route is unchanged
+
+#### Scenario: Catalog rename keeps history
+
+- GIVEN parts whose route includes "Machueleado"
+- WHEN an admin renames or deactivates that catalog operation
+- THEN existing routes keep their step and recorded state
+
+### Requirement: Material requirement per part
+
+The system SHALL store per part the material description, free-text dimensions,
+whether the customer supplies it, and quoted, purchased and received flags, and
+SHALL list parts of open projects whose material is neither received nor
+customer-supplied.
+
+#### Scenario: Pending material list
+
+- GIVEN an open project with one part purchased but not received and one part
+  customer-supplied
+- WHEN an admin lists pending material
+- THEN only the purchased-not-received part is listed
+
+#### Scenario: Marking purchased has no financial effect
+
+- GIVEN a part with material not purchased
+- WHEN a user marks it purchased
+- THEN no transaction or planned entry is created
 
 ### Requirement: Staff with project view permission can read project detail
 

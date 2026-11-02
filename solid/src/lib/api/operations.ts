@@ -7,6 +7,9 @@ import type {
   Order,
   OrderDetail,
   OrderPayload,
+  PartProgressPayload,
+  ProcessOperation,
+  ProcessOperationPayload,
   Project,
   ProjectConcept,
   ProjectConceptPayload,
@@ -65,6 +68,19 @@ export const advanceProjectConcept = (id: string) =>
   apiPost<void>(`/api/admin/project_concepts/${id}/advance`)
 export const deleteProjectConcept = (id: string) =>
   apiPost<void>(`/api/admin/project_concepts/${id}/delete`)
+export const updatePartProgress = (id: string, payload: PartProgressPayload) =>
+  apiPost<ProjectConcept>(`/api/admin/project_concepts/${id}/progress`, payload)
+
+// --- process operations (checklist columns of every part) ----------------------------
+
+export const listProcessOperations = () =>
+  apiGet<ProcessOperation[]>('/api/admin/process_operations')
+export const createProcessOperation = (payload: ProcessOperationPayload) =>
+  apiPost<void>('/api/admin/process_operations', payload)
+export const updateProcessOperation = (id: string, payload: ProcessOperationPayload) =>
+  apiPost<void>(`/api/admin/process_operations/${id}/update`, payload)
+export const deleteProcessOperation = (id: string) =>
+  apiPost<void>(`/api/admin/process_operations/${id}/delete`)
 
 // --- concept statuses ----------------------------------------------------------------
 

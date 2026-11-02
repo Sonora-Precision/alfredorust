@@ -13,10 +13,12 @@ import { Button } from '../components/ui/Button'
 import { Card, CardContent } from '../components/ui/Card'
 import { Input } from '../components/ui/Input'
 import { Modal } from '../components/ui/Modal'
+import { PartTracking } from '../components/projects/PartTracking'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Select } from '../components/ui/Select'
 import { Spinner } from '../components/ui/Spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeadCell, TableRow } from '../components/ui/Table'
+import { Tabs } from '../components/ui/Tabs'
 import { toast } from '../components/ui/Toast'
 import { humanizeError } from '../lib/api/client'
 import { advanceProjectConcept, createProjectConcept, deleteProjectConcept, getProject, getProjectMachineTime, listConceptStatuses, listProjectConcepts, updateProjectConcept } from '../lib/api/operations'
@@ -86,6 +88,8 @@ export default function ProjectDetail(): JSX.Element {
     queryFn: () => getProjectMachineTime(params.id),
   }))
   const machineOf = (conceptId: string) => machineQuery.data?.concepts.find((m) => m.concept_id === conceptId)
+
+  const [tab, setTab] = createSignal('seguimiento')
 
   const statusName = (sid: string): string => (statusesQuery.data ?? []).find((s) => s.id === sid)?.name ?? ''
 
@@ -187,6 +191,78 @@ export default function ProjectDetail(): JSX.Element {
     },
   }))
 
+  // Full part data (quantities, status, machine time) and the edit/delete actions.
+  const detailTable = () => (
+    <Card glass>
+      <Table>
+        <TableHead>
+          <TableRow>
+            <TableHeadCell>Orden</TableHeadCell>
+            <TableHeadCell>Concepto</TableHeadCell>
+            <TableHeadCell>Cantidad</TableHeadCell>
+            <TableHeadCell>Estado</TableHeadCell>
+            <TableHeadCell>Estimado (h)</TableHeadCell>
+            <TableHeadCell>Máquina (real)</TableHeadCell>
+            <TableHeadCell>Ciclos</TableHeadCell>
+            <Show when={isAdmin()}>
+              <TableHeadCell class="text-right">Acciones</TableHeadCell>
+            </Show>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          <For each={conceptsQuery.data ?? []}>{(c) => (
+            <TableRow>
+              <TableCell class="tnum text-muted-foreground">{c.position}</TableCell>
+              <TableCell class="font-medium text-foreground">{c.name}</TableCell>
+              <TableCell class="tnum">
+                {c.quantity.toLocaleString('es-MX', { maximumFractionDigits: 3 })} {c.unit ?? ''}
+              </TableCell>
+              <TableCell>
+                <Show when={statusName(c.status_id)} fallback={<span class="text-muted-foreground">—</span>}>
+                  <Badge tone={statusBadgeTone(statusName(c.status_id))}>{statusName(c.status_id)}</Badge>
+                </Show>
+              </TableCell>
+              <TableCell class="tnum">{c.estimated_hours != null ? c.estimated_hours.toFixed(1) : ''}</TableCell>
+              <TableCell class="tnum">
+                <Show when={machineOf(c.id)?.runs} fallback={<span class="text-muted-foreground">—</span>}>
+                  <span title={`${machineOf(c.id)!.machines.join(', ')} · ${machineOf(c.id)!.programs.join(', ')}\nCortando ${horas(machineOf(c.id)!.cutting_minutes)}${machineOf(c.id)!.shared_minutes > 0 ? `\n${horas(machineOf(c.id)!.shared_minutes)} repartidas con otros proyectos que piden la misma pieza (por número de piezas)` : ''}`}>
+                    {machineOf(c.id)!.shared_minutes > 0 ? '≈ ' : ''}{horas(machineOf(c.id)!.minutes)}
+                  </span>
+                  <span class="ml-1 text-xs text-muted-foreground">{machineOf(c.id)!.machines.join(', ')}</span>
+                </Show>
+              </TableCell>
+              <TableCell class="tnum">{machineOf(c.id)?.cycles ? machineOf(c.id)!.cycles.toLocaleString('es-MX', { maximumFractionDigits: 1 }) : ''}</TableCell>
+              <Show when={isAdmin()}>
+                <TableCell class="text-right">
+                  <div class="flex justify-end gap-1">
+                    <Button
+                      variant="ghost"
+                      class="text-emerald-700 hover:bg-emerald-50"
+                      disabled={advanceMutation.isPending}
+                      onClick={() => advanceMutation.mutate(c.id)}
+                    >
+                      Avanzar
+                    </Button>
+                    <Button variant="ghost" onClick={() => openEdit(c)}>
+                      Editar
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      class="text-destructive hover:bg-destructive/10"
+                      onClick={() => setDeleteTarget(c)}
+                    >
+                      Eliminar
+                    </Button>
+                  </div>
+                </TableCell>
+              </Show>
+            </TableRow>
+          )}</For>
+        </TableBody>
+      </Table>
+    </Card>
+  )
+
   return (
     <div class="space-y-6">
       <A href="/projects" class="text-sm text-muted-foreground hover:underline">
@@ -211,7 +287,7 @@ export default function ProjectDetail(): JSX.Element {
         </div>
       </Show>
 
-      <Card glass>
+      <div>
         <Show when={!conceptsQuery.isLoading} fallback={
           <CardContent class="flex items-center justify-center gap-2 py-16 text-muted-foreground">
             <Spinner />
@@ -234,76 +310,29 @@ export default function ProjectDetail(): JSX.Element {
                 </CardContent>
               }
             >
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableHeadCell>Orden</TableHeadCell>
-                    <TableHeadCell>Concepto</TableHeadCell>
-                    <TableHeadCell>Cantidad</TableHeadCell>
-                    <TableHeadCell>Estado</TableHeadCell>
-                    <TableHeadCell>Estimado (h)</TableHeadCell>
-                    <TableHeadCell>Máquina (real)</TableHeadCell>
-                    <TableHeadCell>Ciclos</TableHeadCell>
-                    <Show when={isAdmin()}>
-                      <TableHeadCell class="text-right">Acciones</TableHeadCell>
-                    </Show>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  <For each={conceptsQuery.data ?? []}>{(c) => (
-                    <TableRow>
-                      <TableCell class="tnum text-muted-foreground">{c.position}</TableCell>
-                      <TableCell class="font-medium text-foreground">{c.name}</TableCell>
-                      <TableCell class="tnum">
-                        {c.quantity.toLocaleString('es-MX', { maximumFractionDigits: 3 })} {c.unit ?? ''}
-                      </TableCell>
-                      <TableCell>
-                        <Show when={statusName(c.status_id)} fallback={<span class="text-muted-foreground">—</span>}>
-                          <Badge tone={statusBadgeTone(statusName(c.status_id))}>{statusName(c.status_id)}</Badge>
-                        </Show>
-                      </TableCell>
-                      <TableCell class="tnum">{c.estimated_hours != null ? c.estimated_hours.toFixed(1) : ''}</TableCell>
-                      <TableCell class="tnum">
-                        <Show when={machineOf(c.id)?.runs} fallback={<span class="text-muted-foreground">—</span>}>
-                          <span title={`${machineOf(c.id)!.machines.join(', ')} · ${machineOf(c.id)!.programs.join(', ')}\nCortando ${horas(machineOf(c.id)!.cutting_minutes)}${machineOf(c.id)!.shared_minutes > 0 ? `\n${horas(machineOf(c.id)!.shared_minutes)} repartidas con otros proyectos que piden la misma pieza (por número de piezas)` : ''}`}>
-                            {machineOf(c.id)!.shared_minutes > 0 ? '≈ ' : ''}{horas(machineOf(c.id)!.minutes)}
-                          </span>
-                          <span class="ml-1 text-xs text-muted-foreground">{machineOf(c.id)!.machines.join(', ')}</span>
-                        </Show>
-                      </TableCell>
-                      <TableCell class="tnum">{machineOf(c.id)?.cycles ? machineOf(c.id)!.cycles.toLocaleString('es-MX', { maximumFractionDigits: 1 }) : ''}</TableCell>
-                      <Show when={isAdmin()}>
-                        <TableCell class="text-right">
-                          <div class="flex justify-end gap-1">
-                            <Button
-                              variant="ghost"
-                              class="text-emerald-700 hover:bg-emerald-50"
-                              disabled={advanceMutation.isPending}
-                              onClick={() => advanceMutation.mutate(c.id)}
-                            >
-                              Avanzar
-                            </Button>
-                            <Button variant="ghost" onClick={() => openEdit(c)}>
-                              Editar
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              class="text-destructive hover:bg-destructive/10"
-                              onClick={() => setDeleteTarget(c)}
-                            >
-                              Eliminar
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </Show>
-                    </TableRow>
-                  )}</For>
-                </TableBody>
-              </Table>
+              <Tabs
+                value={tab()}
+                onChange={setTab}
+                items={[
+                  {
+                    value: 'seguimiento',
+                    label: 'Seguimiento',
+                    content: (
+                      <PartTracking
+                        projectId={params.id}
+                        concepts={conceptsQuery.data ?? []}
+                        statuses={statusesQuery.data ?? []}
+                        canEdit={isAdmin()}
+                      />
+                    ),
+                  },
+                  { value: 'detalle', label: 'Detalle', content: detailTable() },
+                ]}
+              />
             </Show>
           </Show>
         </Show>
-      </Card>
+      </div>
 
       {/* Create / edit modal */}
       <Modal

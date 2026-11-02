@@ -36,7 +36,10 @@ Cinco fases, cada una desplegable y útil por sí sola.
    migración), y en el proyecto: fecha de entrega, asignados, número de OC y de
    cotización, facturas CFDI ligadas, % de avance calculado. En el concepto
    (= número de parte): piezas terminadas, precio unitario, máquina planeada,
-   estado de material. Lectura de proyecto completo para staff con
+   **material requerido** (material, medidas, surtido por cliente, cotizado /
+   comprado / recibido) y **ruta de proceso** (checklist configurable: material,
+   material habilitado, programa, setups, machueleado, rebabeado — ✔ / N/A),
+   que reemplazan la hoja de seguimiento en Excel del taller. Lectura de proyecto completo para staff con
    `view_projects`, con dinero redactado.
 2. **Perfiles y permisos** — perfiles por empresa (plantillas de permisos):
    Supervisor, Programador, Setupista sembrados por defecto; nuevos permisos

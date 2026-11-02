@@ -343,7 +343,7 @@ const CONCEPT_STATUSES: ConceptStatusFull[] = [
   { id: ST.cancelado, name: 'Cancelado', position: 6, color: 'rose', is_initial: false, is_terminal: false, is_cancelled: true, is_active: true },
 ]
 
-const PROJECT_CONCEPTS: Record<string, ProjectConcept[]> = {
+const PROJECT_CONCEPTS: Record<string, Omit<ProjectConcept, 'completed_quantity' | 'process_steps'>[]> = {
   [PRJ.a]: [
     { id: 'pc-a1', status_id: ST.cnc, name: 'Desbaste flechas', quantity: 200, unit: 'pza', description: 'Careado y cilindrado', estimated_hours: 60, estimated_cost: 90000, position: 0 },
     { id: 'pc-a2', status_id: ST.calidad, name: 'Inspección dimensional', quantity: 200, unit: 'pza', estimated_hours: 16, estimated_cost: 24000, position: 1 },
@@ -712,10 +712,11 @@ function resolve(path: string): unknown {
 
   // projects: list, then nested concepts / status_summary, then detail
   if (path === '/api/admin/projects') return PROJECTS
+  if (path === '/api/admin/process_operations') return []
   if (path.endsWith('/status_summary')) return {}
   if (path.endsWith('/concepts')) {
     const pid = seg(path)[seg(path).length - 2]
-    return PROJECT_CONCEPTS[pid] ?? []
+    return (PROJECT_CONCEPTS[pid] ?? []).map((c) => ({ completed_quantity: 0, process_steps: [], ...c }))
   }
   if (path.startsWith('/api/admin/projects/')) return projectDetail(seg(path).pop() as string)
 
