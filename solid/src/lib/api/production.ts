@@ -1,6 +1,8 @@
 import { apiGet, apiPost } from './client'
 import type {
   BoardMemberLoad,
+  MachineStatePayload,
+  PlantView,
   SequenceMovePayload,
   TakeWorkOrderPayload,
   WorkOrder,
@@ -22,3 +24,7 @@ export const releaseWorkOrder = (id: string) => action(id, 'release')
 export const completeWorkOrder = (id: string) => action(id, 'complete')
 export const moveWorkOrder = (id: string, payload: SequenceMovePayload) =>
   action(id, 'sequence', payload)
+
+export const getPlant = () => apiGet<PlantView>('/api/production/plant')
+export const setMachineState = (resourceId: string, payload: MachineStatePayload) =>
+  apiPost<void>(`/api/production/machines/${resourceId}/state`, payload)

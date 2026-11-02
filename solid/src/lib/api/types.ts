@@ -119,6 +119,7 @@ export interface UserMembershipData {
 export interface UserRowData {
   id: string
   username: string
+  display_name?: string | null
   role: string
   companies: string[]
   memberships: UserMembershipData[]
@@ -136,6 +137,8 @@ export interface UserPayload {
   username: string
   secret?: string | null
   memberships: UserMembershipPayload[]
+  /** Shop-floor name; "" clears it. */
+  display_name?: string
 }
 
 // --- accounts (finance) ---------------------------------------------------------
@@ -496,6 +499,8 @@ export interface ProcessOperationPayload {
 export interface WorkOrderPerson {
   id: string
   username: string
+  /** Shop-floor name (display name, or the handle before the @). */
+  name: string
 }
 
 export interface WorkOrder {
@@ -522,12 +527,68 @@ export interface WorkOrder {
 export interface BoardMemberLoad {
   id: string
   username: string
+  name: string
   is_admin: boolean
   /** Folios whose current step this person holds, in sequence order. */
   assigned: string[]
 }
 
 export type SequenceMovePayload = { before_id: string } | { after_id: string } | { unpin: true }
+
+// --- plant view ----------------------------------------------------------------------
+
+export type MachineStatus = 'working' | 'setup' | 'stopped'
+
+export interface PlacedMachine {
+  resource_id: string
+  x: number
+  y: number
+  w: number
+  h: number
+  rotation: number
+  area: string | null
+}
+
+export interface PlantLayout {
+  width: number
+  height: number
+  walls: [number, number][]
+  rooms: [number, number][][]
+  labels: { text: string; x: number; y: number }[]
+  machines: PlacedMachine[]
+}
+
+export interface PlantMachine {
+  resource_id: string
+  name: string
+  status: MachineStatus | null
+  source: 'dnc' | 'manual' | 'none'
+  since: string | null
+  note: string | null
+  program: string | null
+  part_number: string | null
+  order: {
+    id: string
+    folio: string
+    part: string
+    project: string
+    client: string | null
+    quantity: number
+    completed_quantity: number
+  } | null
+  programmer: WorkOrderPerson | null
+}
+
+export interface PlantView {
+  layout: PlantLayout | null
+  machines: PlantMachine[]
+}
+
+export interface MachineStatePayload {
+  status: MachineStatus
+  concept_id?: string | null
+  note?: string | null
+}
 
 export interface TakeWorkOrderPayload {
   related_to?: string
