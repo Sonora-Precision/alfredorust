@@ -9,36 +9,52 @@ Programador (José Márquez, Carlos Dávila). Las tareas de Setup, Máquina y
 Acabado en la UI, y los perfiles Supervisor/Setupista, se marcan **(B)** y se
 dejan para después; el modelo y la API se construyen genéricos desde A.
 
-- [ ] (A) Alta de José Márquez, Carlos Dávila y Jesús Sigala como staff de `sp` con perfil Programador (ops, con sus correos).
-- [ ] (A) Admins elegibles como responsables y acreditados en carga y reporte (Daniel Rivera programa).
+**Corte 1 de la entrega A (rama `feat/production-board`, 2026-11-02).** Hecho lo
+marcado con [x]. Diferencias con el diseño, a propósito, mientras no existan
+las piezas de `add-shop-floor-tracking`:
+
+- Las etapas configurables (G1.4) no existen: entran al tablero los proyectos
+  que no estén Entregado ni Cancelado, en lugar de `ProjectStage.on_board`.
+- No hay fecha de entrega: la secuencia automática usa `scheduled_at` del
+  proyecto como fecha.
+- No hay perfiles: los permisos nuevos se dan uno por uno en Usuarios. Tomar
+  pide `take_work_orders` (no `upload_cnc_files`, que no existe).
+- Los usuarios sólo tienen correo: el tablero muestra la parte antes de la @.
+- Subir/bajar con botones (↑ ↓) en vez de arrastrar; el drag llega con la
+  Vista de planta.
+- `workload` se llama `GET /api/production/members`; "marcar terminado" es
+  `POST …/complete` (el responsable o quien gestiona el tablero).
+
+- [ ] (A) Alta de José Márquez, Carlos Dávila y Jesús Sigala como staff de `sp` con perfil Programador (ops, con sus correos). José hecho (2026-11-02).
+- [x] (A) Admins elegibles como responsables y acreditados en carga y reporte (Daniel Rivera programa).
 
 ## 1. Modelo
 
-- [ ] `work_order_number` + contador atómico por empresa; asignar al crear; migración idempotente por `created_at`.
-- [ ] `WorkQueue` y `ProcessOperation.queue`; sembrar colas de `sp` (Programa → Programación CNC, Setup 1–4 → Setup, Machueleado/Rebabeado → Acabado).
+- [x] `work_order_number` + contador atómico por empresa; asignar al crear; migración idempotente por `created_at` (perezosa, en la primera lectura del tablero).
+- [x] `WorkQueue` y `ProcessOperation.queue`. [ ] Sembrar colas de `sp` (ops, por API tras el deploy).
 - [ ] `ProjectStage.on_board` (default según inicial/terminal/cancelada).
-- [ ] `ProjectConcept.sequence_rank`, `priority_override`.
-- [ ] `PartStep.assignee_user_id`, `assigned_at`.
-- [ ] `WorkOrderEvent` + colección `work_order_events` + índices; escribir eventos en asignar/tomar/soltar/fijar y en `…/progress` (StepDone/StepReopened con `credited_user_id`).
+- [x] `ProjectConcept.sequence_rank`, `priority_override` (sin endpoint para el override todavía).
+- [x] `PartStep.assignee_user_id`, `assigned_at`.
+- [x] `WorkOrderEvent` + colección `work_order_events` + índices; escribir eventos en asignar/tomar/soltar/fijar y en `…/progress` (StepDone/StepReopened, con crédito en `subject_user_id`).
 
 ## 2. API
 
-- [ ] `GET /api/production/board` (paso actual, filtro de etapas, orden de secuencia, cola de máquina por recurso, `mine`).
-- [ ] `sequence` (punto medio + renumerado), `priority`.
-- [ ] `assign`, `take` (atómico, 409 si ya tiene responsable), `release`.
-- [ ] `GET /api/production/workload`.
+- [x] `GET /api/production/board` (paso actual, orden de secuencia, `mine`). [ ] Cola de máquina por recurso (B).
+- [x] `sequence` (renumerado desde arriba hasta la OT movida). [ ] `priority`.
+- [x] `assign`, `take` (atómico, 409 si ya tiene responsable; sólo la primera libre salvo `related_to`), `release`, `complete`.
+- [x] `GET /api/production/members` (carga por persona).
 - [ ] `GET /api/production/reports/weekly` (semana ISO en `America/Hermosillo`, neto de reaperturas, 4 semanas previas, CSV).
 - [ ] Evento `PiecesRecorded` (delta + precio congelado) en cada cambio de `completed_quantity`.
 - [ ] Valor producido = Σ delta × precio en la semana, acreditado a la persona de cada paso; sólo en sesión admin; "sin precio" no suma; sin crédito → "sin asignar".
-- [ ] Permisos `view_production_board`, `take_work_orders`, `manage_production_board`, `view_production_reports`; agregarlos a perfiles sembrados.
-- [ ] DTO de OT sin campos de dinero para cualquier rol.
+- [x] Permisos `view_production_board`, `take_work_orders`, `manage_production_board`. [ ] `view_production_reports`; perfiles sembrados.
+- [x] DTO de OT sin campos de dinero ni descripción para cualquier rol.
 
 ## 3. SPA
 
 - [ ] (B) Pestañas de Setup, Máquina (por recurso) y Acabado.
-- [ ] Página Tablero de Producción con pestañas por cola, "Mis asignaciones", arrastrar para fijar, Tomar/Soltar/Marcar terminado.
+- [x] Página Tablero de Producción (Cola de Programación): secuencia con ↑ ↓ y quitar fijado, asignar con selector, "Tu siguiente programa" con Marcar terminado/Soltar, Tomar la siguiente libre, Agrupar partes parecidas (mismo proyecto o familia de parte). Se actualiza cada 30 s. Inicio de staff con `view_production_board` = el tablero.
 - [ ] Vista de piso (pantalla completa, consulta cada 30 s, última actualización).
-- [ ] Carga por programador.
+- [x] Carga por programador (tira con color de carga, límite 5).
 - [ ] Precio unitario obligatorio al crear/editar número de parte; aviso "OT sin precio" (admin) en Tablero y reporte.
 - [ ] Reporte semanal con detalle por persona y CSV.
 - [ ] Entrada en el menú y en la paleta de comandos.

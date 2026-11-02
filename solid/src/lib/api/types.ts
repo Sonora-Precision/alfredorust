@@ -473,17 +473,65 @@ export interface PartStep {
   updated_at?: string | null
 }
 
+export type WorkQueue = 'programming' | 'setup' | 'machining' | 'finishing'
+
 export interface ProcessOperation {
   id: string
   name: string
   position: number
   is_active: boolean
+  /** Production-board queue; null = checklist only. */
+  queue?: WorkQueue | null
 }
 
 export interface ProcessOperationPayload {
   name: string
   position: number
   is_active: boolean
+  queue?: WorkQueue | null
+}
+
+// --- production board (no money, no part description) ------------------------------
+
+export interface WorkOrderPerson {
+  id: string
+  username: string
+}
+
+export interface WorkOrder {
+  id: string
+  folio: string
+  work_order_number: number | null
+  part: string
+  quantity: number
+  completed_quantity: number
+  unit: string | null
+  project_id: string
+  project: string
+  client: string | null
+  priority: 'urgent' | 'high' | 'medium' | 'low'
+  priority_label: string
+  pinned: boolean
+  scheduled_at: string | null
+  queue: WorkQueue
+  operation_id: string
+  operation: string
+  assignee: WorkOrderPerson | null
+}
+
+export interface BoardMemberLoad {
+  id: string
+  username: string
+  is_admin: boolean
+  /** Folios whose current step this person holds, in sequence order. */
+  assigned: string[]
+}
+
+export type SequenceMovePayload = { before_id: string } | { after_id: string } | { unpin: true }
+
+export interface TakeWorkOrderPayload {
+  related_to?: string
+  reason?: string
 }
 
 export interface PartProgressPayload {
