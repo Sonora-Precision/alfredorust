@@ -414,6 +414,28 @@ pub fn build_app(state: Arc<AppState>) -> Router {
             "/api/admin/process_operations/{id}/delete",
             post(routes::api_process_operations_delete),
         )
+        .route("/api/production/board", get(routes::api_production_board))
+        .route("/api/production/members", get(routes::api_production_members))
+        .route(
+            "/api/production/work_orders/{id}/assign",
+            post(routes::api_work_order_assign),
+        )
+        .route(
+            "/api/production/work_orders/{id}/take",
+            post(routes::api_work_order_take),
+        )
+        .route(
+            "/api/production/work_orders/{id}/release",
+            post(routes::api_work_order_release),
+        )
+        .route(
+            "/api/production/work_orders/{id}/sequence",
+            post(routes::api_work_order_sequence),
+        )
+        .route(
+            "/api/production/work_orders/{id}/complete",
+            post(routes::api_work_order_complete),
+        )
         .route("/admin/projects/new", get(routes::projects_new))
         .route("/admin/projects/{id}/edit", get(routes::projects_edit))
         .route("/admin/projects/{id}/update", post(routes::projects_update))

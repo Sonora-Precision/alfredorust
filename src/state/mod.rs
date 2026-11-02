@@ -9,7 +9,7 @@ use crate::models::{
     Account, ApiToken, Category, Company, ConceptStatus, Contact, Forecast, MachineRun,
     PlannedEntry, ProcessOperation, Project, ProjectConcept, RecurringPlan, Resource, ResourceLog,
     ResourceUsage, ResourceUsageAllocation, SatConfig, ServiceOrder, Session, Transaction, User,
-    UserCompany,
+    UserCompany, WorkOrderEvent,
 };
 use bson::Document;
 
@@ -50,6 +50,7 @@ mod finance;
 mod machine_runs;
 mod orders;
 mod process_operations;
+mod production;
 mod project_concepts;
 mod projects;
 mod resource_logs;
@@ -66,6 +67,7 @@ pub use finance::*;
 pub use machine_runs::*;
 pub use orders::*;
 pub use process_operations::*;
+pub use production::*;
 pub use project_concepts::*;
 pub use projects::*;
 pub use resource_logs::*;
@@ -106,6 +108,9 @@ pub struct AppState {
     pub resource_usage_allocations: Collection<ResourceUsageAllocation>,
     pub machine_runs: Collection<MachineRun>,
     pub process_operations: Collection<ProcessOperation>,
+    /// Per-company sequences, e.g. the work-order folio.
+    pub counters: Collection<Document>,
+    pub work_order_events: Collection<WorkOrderEvent>,
 }
 
 pub async fn init_state() -> Result<AppState> {
@@ -218,6 +223,34 @@ pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppStat
         .await
         .context("creating the unique machine run index")?;
 
+    db.collection::<Document>("company_counters")
+        .create_index(
+            IndexModel::builder()
+                .keys(mongodb::bson::doc! { "company_id": 1, "name": 1 })
+                .options(
+                    IndexOptions::builder()
+                        .name("unique_company_counter".to_string())
+                        .unique(true)
+                        .build(),
+                )
+                .build(),
+        )
+        .await
+        .context("creating the unique company counter index")?;
+    db.collection::<WorkOrderEvent>("work_order_events")
+        .create_index(
+            IndexModel::builder()
+                .keys(mongodb::bson::doc! { "company_id": 1, "kind": 1, "at": 1 })
+                .options(
+                    IndexOptions::builder()
+                        .name("work_order_events_by_kind".to_string())
+                        .build(),
+                )
+                .build(),
+        )
+        .await
+        .context("creating the work order events index")?;
+
     let state = AppState {
         cfdi_archive_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
         cfdi_transaction_sync_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
@@ -247,6 +280,8 @@ pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppStat
             .collection::<ResourceUsageAllocation>("resource_usage_allocations"),
         machine_runs: db.collection::<MachineRun>("machine_runs"),
         process_operations: db.collection::<ProcessOperation>("process_operations"),
+        counters: db.collection::<Document>("company_counters"),
+        work_order_events: db.collection::<WorkOrderEvent>("work_order_events"),
     };
 
     let interrupted = fail_interrupted_cfdi_jobs(&state).await?;

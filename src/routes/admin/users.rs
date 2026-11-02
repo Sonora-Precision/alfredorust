@@ -599,15 +599,8 @@ fn form_view_from_data(data: &UserFormData) -> UserFormView {
 fn permissions_from_values(values: &HashSet<String>) -> Vec<UserPermission> {
     let mut permissions = Vec::new();
     for value in values {
-        match value.as_str() {
-            "view_projects" => permissions.push(UserPermission::ViewProjects),
-            "view_project_money" => permissions.push(UserPermission::ViewProjectMoney),
-            "edit_resource_usage_today" => permissions.push(UserPermission::EditResourceUsageToday),
-            "view_resource_usage_history" => {
-                permissions.push(UserPermission::ViewResourceUsageHistory)
-            }
-            "view_timeline" => permissions.push(UserPermission::ViewTimeline),
-            _ => {}
+        if let Some(permission) = UserPermission::parse(value) {
+            permissions.push(permission);
         }
     }
     permissions

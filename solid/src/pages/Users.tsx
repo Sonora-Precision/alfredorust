@@ -36,6 +36,9 @@ const PERMISSIONS: { key: string; label: string }[] = [
   { key: 'view_resource_usage_history', label: 'Ver historial uso recursos' },
   { key: 'view_project_money', label: 'Ver montos de proyectos' },
   { key: 'view_timeline', label: 'Ver timeline financiero' },
+  { key: 'view_production_board', label: 'Ver tablero de producción' },
+  { key: 'take_work_orders', label: 'Tomar órdenes de trabajo' },
+  { key: 'manage_production_board', label: 'Asignar y priorizar órdenes' },
 ]
 
 /** One assignable company membership row in the edit form. */

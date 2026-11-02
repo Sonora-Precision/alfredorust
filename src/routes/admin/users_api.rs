@@ -94,14 +94,7 @@ fn role_from_str(value: &str) -> UserRole {
 }
 
 fn permission_from_str(value: &str) -> Option<UserPermission> {
-    match value {
-        "view_projects" => Some(UserPermission::ViewProjects),
-        "view_project_money" => Some(UserPermission::ViewProjectMoney),
-        "edit_resource_usage_today" => Some(UserPermission::EditResourceUsageToday),
-        "view_resource_usage_history" => Some(UserPermission::ViewResourceUsageHistory),
-        "view_timeline" => Some(UserPermission::ViewTimeline),
-        _ => None,
-    }
+    UserPermission::parse(value)
 }
 
 fn user_row_data(user: UserWithCompany) -> UserRowData {

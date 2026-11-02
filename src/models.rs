@@ -22,6 +22,12 @@ pub enum UserPermission {
     EditResourceUsageToday,
     ViewResourceUsageHistory,
     ViewTimeline,
+    /// See the production board (work-order queues) and the plant view.
+    ViewProductionBoard,
+    /// Take a free work order, release your own and mark your step done.
+    TakeWorkOrders,
+    /// Assign work orders to anyone and change the production sequence.
+    ManageProductionBoard,
 }
 
 impl UserPermission {
@@ -32,6 +38,23 @@ impl UserPermission {
             UserPermission::EditResourceUsageToday => "edit_resource_usage_today",
             UserPermission::ViewResourceUsageHistory => "view_resource_usage_history",
             UserPermission::ViewTimeline => "view_timeline",
+            UserPermission::ViewProductionBoard => "view_production_board",
+            UserPermission::TakeWorkOrders => "take_work_orders",
+            UserPermission::ManageProductionBoard => "manage_production_board",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "view_projects" => Some(UserPermission::ViewProjects),
+            "view_project_money" => Some(UserPermission::ViewProjectMoney),
+            "edit_resource_usage_today" => Some(UserPermission::EditResourceUsageToday),
+            "view_resource_usage_history" => Some(UserPermission::ViewResourceUsageHistory),
+            "view_timeline" => Some(UserPermission::ViewTimeline),
+            "view_production_board" => Some(UserPermission::ViewProductionBoard),
+            "take_work_orders" => Some(UserPermission::TakeWorkOrders),
+            "manage_production_board" => Some(UserPermission::ManageProductionBoard),
+            _ => None,
         }
     }
 }
@@ -902,6 +925,20 @@ pub struct ProjectConcept {
     #[serde(default)]
     pub position: i32,
 
+    /// Work-order folio (OT-0142), sequential per company and never reused. Parts created
+    /// before the production board get one the first time the board is read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_order_number: Option<i64>,
+
+    /// Manual place in the production sequence. Pinned orders (with a rank) go first, by
+    /// rank; the rest follow the automatic order (priority, date, folio).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sequence_rank: Option<f64>,
+
+    /// Overrides the project priority for this part only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub priority_override: Option<ProjectPriority>,
+
     /// Pieces finished so far (0..=quantity). Project progress is Σ finished ÷ Σ ordered.
     #[serde(default)]
     pub completed_quantity: f64,
@@ -962,6 +999,45 @@ pub struct PartStep {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<DateTime>,
+
+    /// Who is responsible for this step on the production board.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assignee_user_id: Option<ObjectId>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assigned_at: Option<DateTime>,
+}
+
+/// Production-board queue an operation belongs to. Operations without a queue (e.g.
+/// Material) stay in the checklist but never put a part on the board.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkQueue {
+    Programming,
+    Setup,
+    Machining,
+    Finishing,
+}
+
+impl WorkQueue {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "programming" => Some(WorkQueue::Programming),
+            "setup" => Some(WorkQueue::Setup),
+            "machining" => Some(WorkQueue::Machining),
+            "finishing" => Some(WorkQueue::Finishing),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            WorkQueue::Programming => "programming",
+            WorkQueue::Setup => "setup",
+            WorkQueue::Machining => "machining",
+            WorkQueue::Finishing => "finishing",
+        }
+    }
 }
 
 /// Per-company catalog of process operations (Material, Programa, Setup 1, …) shown as the
@@ -979,10 +1055,63 @@ pub struct ProcessOperation {
     pub is_active: bool,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub queue: Option<WorkQueue>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created_at: Option<DateTime>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<DateTime>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkOrderEventKind {
+    Assigned,
+    Unassigned,
+    Taken,
+    Released,
+    StepDone,
+    StepReopened,
+    Pinned,
+    Unpinned,
+}
+
+/// Append-only log of what happened to a work order; the weekly report and the plant view
+/// read from it, so nothing is captured twice.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkOrderEvent {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+
+    pub company_id: ObjectId,
+    pub concept_id: ObjectId,
+    pub project_id: ObjectId,
+    pub kind: WorkOrderEventKind,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operation_id: Option<ObjectId>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operation_name: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub queue: Option<WorkQueue>,
+
+    pub actor_user_id: ObjectId,
+
+    /// Assigned / Taken: the new assignee. StepDone: who gets the credit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subject_user_id: Option<ObjectId>,
+
+    /// Taken next to a similar part: the order it was grouped with, and why.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub related_to: Option<ObjectId>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+
+    pub at: DateTime,
 }
 
 /// ---------- RESOURCES ----------
