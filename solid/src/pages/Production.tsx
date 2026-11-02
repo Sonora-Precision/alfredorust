@@ -4,8 +4,19 @@
 // down; programmers see "Tu siguiente programa", mark it done, release it, take the next
 // free one or group a similar part. Tens of cards at most, so plain DOM (CLAUDE.md
 // rendering guide). Never shows money or the part description.
+import { A } from '@solidjs/router'
 import { createMutation, createQuery, useQueryClient } from '@tanstack/solid-query'
-import { ArrowDown, ArrowUp, Check, Hand, Layers, Pin, PinOff, Undo2 } from 'lucide-solid'
+import {
+  ArrowDown,
+  ArrowUp,
+  Check,
+  Hand,
+  Layers,
+  Map as MapIcon,
+  Pin,
+  PinOff,
+  Undo2,
+} from 'lucide-solid'
 import { type JSX, For, Show, createMemo } from 'solid-js'
 
 import { Badge, type BadgeTone } from '../components/ui/Badge'
@@ -29,9 +40,6 @@ const PRIORITY_TONE: Record<WorkOrder['priority'], BadgeTone> = {
   medium: 'neutral',
   low: 'neutral',
 }
-
-/** "programacion@sonoraprecision.com" → "programacion". */
-const shortName = (username: string) => username.split('@')[0]
 
 /** Part family: everything before the last "-" ("ZBL149-17" → "ZBL149"). */
 const partFamily = (part: string) => (part.includes('-') ? part.slice(0, part.lastIndexOf('-')) : part)
@@ -94,10 +102,19 @@ export default function Production(): JSX.Element {
 
   return (
     <div class="space-y-6">
-      <PageHeader
-        title="Tablero de Producción"
-        subtitle="Cola de Programación CNC · se actualiza cada 30 s"
-      />
+      <div class="flex flex-wrap items-end justify-between gap-3">
+        <PageHeader
+          title="Tablero de Producción"
+          subtitle="Cola de Programación CNC · se actualiza cada 30 s"
+        />
+        <A
+          href="/produccion/planta"
+          class="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground hover:bg-muted"
+        >
+          <MapIcon class="h-4 w-4" />
+          Vista de planta
+        </A>
+      </div>
 
       <Show when={boardQuery.isLoading}>
         <div class="flex justify-center py-10">
@@ -223,7 +240,7 @@ function OrderCard(props: OrderCardProps): JSX.Element {
           when={props.canManage}
           fallback={
             <span class="text-sm text-muted-foreground">
-              {props.order.assignee ? shortName(props.order.assignee.username) : 'Sin asignar'}
+              {props.order.assignee ? props.order.assignee.name : 'Sin asignar'}
             </span>
           }
         >
@@ -243,7 +260,7 @@ function OrderCard(props: OrderCardProps): JSX.Element {
             <For each={props.members}>
               {(m) => (
                 <option value={m.id} selected={props.order.assignee?.id === m.id}>
-                  {shortName(m.username)}
+                  {m.name}
                 </option>
               )}
             </For>
@@ -290,7 +307,7 @@ function MembersStrip(props: { members: BoardMemberLoad[] }): JSX.Element {
           <Card glass glow={false}>
             <CardContent class="flex items-center justify-between gap-2 p-3">
               <div class="min-w-0">
-                <p class="truncate text-sm font-medium text-foreground">{shortName(m.username)}</p>
+                <p class="truncate text-sm font-medium text-foreground">{m.name}</p>
                 <p class="truncate text-xs text-muted-foreground">
                   {m.assigned[0] ? `Haciendo ${m.assigned[0]}` : 'Sin programa'}
                 </p>

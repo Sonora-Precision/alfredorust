@@ -62,18 +62,25 @@ las piezas de `add-shop-floor-tracking`:
 ## 3b. Vista de planta
 
 - [x] (ops) Alta de Sierra cinta, SL-30, Mori SL-15 y Shizuoka en `sp`; borrar la "ZZD" (2026-11-02).
-- [ ] `Resource.area` y agrupación por área (Corte, Tornos CNC, Centros de maquinado: VF-3, VF-6, Shizuoka).
-- [ ] Semáforo: verde por corrida activa (`machine_runs`), ámbar por paso de Setup en curso, rojo con motivo y desde cuándo; leyenda visible.
-- [ ] Estado manual de máquina (`POST /api/production/machines/{id}/state`) para las máquinas sin DNC (Mori SL-15, Sierra cinta).
-- [ ] Ruta `/produccion/planta`: tarjetas de máquina, área de programación, fila de órdenes pendientes y metas del equipo.
-- [ ] Asignar arrastrando la OT sobre un programador, o con dos toques (pointer events); los programadores sólo pueden tomar para sí mismos.
-- [ ] Programadores con número de programas asignados y color de carga (Libre 0 / Con trabajo / Saturado ≥ límite, por defecto 5, configurable).
+**Corte 2 (rama `feat/plant-view`, 2026-11-02).** El área va en cada máquina del
+layout (`PlacedMachine.area`), no en `Resource`. El ámbar sale sólo del estado
+manual: sin máquina planeada por OT todavía no se puede deducir de la ruta.
+Una máquina sin corridas ni estado manual se ve gris, "Sin datos".
+
+- [x] Layout de planta por empresa (`plant_layouts`: paredes, cuartos, etiquetas, máquinas con área) + `POST /api/production/plant_layout` (admin).
+- [x] Semáforo: verde por corrida DNC viva (≤ 15 min), rojo desde el fin de la última corrida, estado manual si es más reciente; leyenda visible. [ ] Ámbar automático por paso de Setup.
+- [x] Estado manual de máquina (`POST /api/production/machines/{id}/state`, con OT y nota opcionales).
+- [x] Máquina → proyecto/OT que corre (número de parte de la corrida) → quién la programó (crédito de "Programa").
+- [x] Ruta `/produccion/planta`: plano SVG, detalle de máquina, programadores con carga y "corre en…", órdenes pendientes. [ ] Metas del equipo.
+- [x] Asignar arrastrando la OT sobre un programador, o con dos toques; sólo quien gestiona el tablero.
+- [x] Programadores con número de programas asignados y color de carga (límite 5 fijo en la UI).
+- [x] Nombre para mostrar de cada usuario (`display_name`), editable en Usuarios.
 - [ ] Fila de cada programador (secuencia filtrada por sus asignaciones), con "Siguiente" arriba; el admin arrastra para subir una OT prioritaria.
-- [ ] Inicio del programador: tarjeta "Tu siguiente programa" (uno por uno), Marcar terminado → aparece la siguiente; sin fila → Tomar.
+- [x] Inicio del programador: tarjeta "Tu siguiente programa" (uno por uno), Marcar terminado → aparece la siguiente; sin fila → Tomar (corte 1).
 - [ ] Reportar bloqueo con motivo: OT "Bloqueada" para el admin, se libera del programador (eventos `Blocked`/`Unblocked`); `POST …/block` y `…/unblock`.
-- [ ] Agrupar partes parecidas: sugerencias (material y medidas, prefijo de parte, proyecto/cliente, máquina) y `take` con `related_to` + motivo; sólo OT libres; se fijan después de la OT relacionada; el admin ve "Agrupada con…".
+- [x] Agrupar partes parecidas (corte 1: mismo proyecto o familia de parte). [ ] Por material y máquina.
 - [ ] Metas semanales del equipo capturadas por el admin; sin ranking por persona.
-- [ ] Pruebas: semáforo con y sin corrida, setup sin corrida → ámbar, estado manual, el programador no puede asignar a otro.
+- [x] Pruebas: semáforo con y sin corrida, estado manual más nuevo que la corrida, sin datos, programador no puede fijar estado ni layout.
 
 ## 4. Herramientas
 

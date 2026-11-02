@@ -94,6 +94,7 @@ export default function Users(): JSX.Element {
   const [modalOpen, setModalOpen] = createSignal(false)
   const [editingId, setEditingId] = createSignal<string | null>(null)
   const [username, setUsername] = createSignal('')
+  const [displayName, setDisplayName] = createSignal('')
   const [secret, setSecret] = createSignal('')
   // The existing secret of the user being edited, shown read-only under the
   // QR so it can be copied. Empty when creating.
@@ -112,6 +113,7 @@ export default function Users(): JSX.Element {
   const openCreate = () => {
     setEditingId(null)
     setUsername('')
+    setDisplayName('')
     setSecret('')
     setSecretView('')
     setFormError(null)
@@ -122,6 +124,7 @@ export default function Users(): JSX.Element {
   const openEdit = async (row: UserRowData) => {
     setEditingId(row.id)
     setUsername(row.username)
+    setDisplayName(row.display_name ?? '')
     setSecret('')
     setSecretView('')
     setFormError(null)
@@ -130,6 +133,7 @@ export default function Users(): JSX.Element {
     try {
       const detail = await adminApi.getUser(row.id)
       setUsername(detail.username)
+      setDisplayName(detail.display_name ?? '')
       setSecretView(detail.secret)
       if (membershipRows.length > 0) {
         setMembershipRows(
@@ -219,6 +223,7 @@ export default function Users(): JSX.Element {
       }))
     saveMutation.mutate({
       username: username().trim(),
+      display_name: displayName().trim(),
       secret: opt(secret()),
       memberships,
     })
@@ -382,6 +387,21 @@ export default function Users(): JSX.Element {
               disabled={loadingDetail()}
             />
             <p class="text-xs text-muted-foreground">Identificador de acceso. Debe ser único.</p>
+          </div>
+          <div class="space-y-1.5">
+            <label class="block text-sm font-medium text-foreground" for="user-display-name">
+              Nombre para mostrar
+            </label>
+            <Input
+              id="user-display-name"
+              value={displayName()}
+              onInput={setDisplayName}
+              placeholder="ej. José Márquez"
+              disabled={loadingDetail()}
+            />
+            <p class="text-xs text-muted-foreground">
+              Es el que se ve en el tablero de producción. Opcional.
+            </p>
           </div>
           <div class="space-y-1.5">
             <label class="block text-sm font-medium text-foreground">Secreto TOTP</label>
