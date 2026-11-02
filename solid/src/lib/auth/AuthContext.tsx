@@ -29,11 +29,13 @@ export function AuthProvider(props: ParentProps): JSX.Element {
   const [me, setMe] = createSignal<MeResponse | null>(null)
   const [status, setStatus] = createSignal<AuthStatus>('loading')
 
-  const load = async () => {
+  const load = async (afterLogin = false) => {
     // On the public /login page there's no session yet; skip the bootstrap
     // /api/me call so its expected 401 doesn't get logged as a console error
-    // (Lighthouse "Browser errors were logged to the console").
-    if (typeof window !== 'undefined' && window.location.pathname === '/login') {
+    // (Lighthouse "Browser errors were logged to the console"). A refresh right
+    // after a same-host login still runs on /login and must fetch, or the new
+    // session is ignored and RequireAuth bounces back to /login.
+    if (!afterLogin && typeof window !== 'undefined' && window.location.pathname === '/login') {
       setMe(null)
       setStatus('anon')
       return
@@ -74,7 +76,7 @@ export function AuthProvider(props: ParentProps): JSX.Element {
       return current.role === 'admin' || current.permissions.includes(key)
     },
     isAdmin: () => me()?.role === 'admin',
-    refresh: load,
+    refresh: () => load(true),
     logout: async () => {
       try {
         await apiLogout()
