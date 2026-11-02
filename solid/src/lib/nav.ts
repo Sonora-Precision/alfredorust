@@ -51,7 +51,8 @@ const resourceUsage: Gate = (a) =>
   a.hasPermission('view_resource_usage_history')
 
 export const NAV: NavEntry[] = [
-  { id: 'home', label: 'Inicio', icon: Home, href: '/' },
+  // Staff land on their first module (see Dashboard.tsx), so Inicio is admin-only.
+  { id: 'home', label: 'Inicio', icon: Home, href: '/', can: admin },
   { id: 'onboarding', label: 'Configuración inicial', icon: Rocket, href: '/onboarding', can: admin },
   { id: 'tiempo', label: 'Tiempo', icon: Clock, href: '/tiempo', can: adminOr('view_timeline') },
   {
