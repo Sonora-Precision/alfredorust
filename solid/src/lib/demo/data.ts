@@ -102,6 +102,7 @@ const DEMO_COMPANIES: CompanySummary[] = [
 ]
 
 const DEMO_ME: MeResponse = {
+  user_id: 'demo-user-1',
   username: 'demo@auroramfg.mx',
   company: 'Aurora Manufactura',
   company_slug: 'demo',

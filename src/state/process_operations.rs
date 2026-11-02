@@ -139,6 +139,34 @@ pub async fn update_part_progress(
                 concept.quantity
             );
         }
+        // A piece only counts as finished once it went through every step (Daniel,
+        // 2026-11-02): adding pieces needs every active step done or N/A, counting the
+        // step marked in this same request. Lowering (corrections) is always allowed.
+        if completed > concept.completed_quantity {
+            let operations = list_process_operations(state, company_id, false).await?;
+            let pending: Vec<&str> = operations
+                .iter()
+                .filter(|op| {
+                    let Some(op_id) = op.id else { return false };
+                    let st = match update.step {
+                        Some((changed, st)) if changed == op_id => Some(st),
+                        _ => concept
+                            .process_steps
+                            .iter()
+                            .find(|s| s.operation_id == op_id)
+                            .map(|s| s.state),
+                    };
+                    !matches!(st, Some(StepState::Done) | Some(StepState::NotApplicable))
+                })
+                .map(|op| op.name.as_str())
+                .collect();
+            if !pending.is_empty() {
+                bail!(
+                    "para registrar piezas terminadas todos los pasos deben estar ✔ o N/A; faltan: {}",
+                    pending.join(", ")
+                );
+            }
+        }
         state
             .project_concepts
             .update_one(

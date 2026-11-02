@@ -97,6 +97,8 @@ interface PartTrackingProps {
   statuses: ConceptStatusFull[]
   /** Tick steps and finished pieces (programmers and admins). */
   canEdit: boolean
+  /** Which parts this user may tick; programmers only their own. Default: all. */
+  canTick?: (concept: ProjectConcept) => boolean
   /** Add, rename or remove the company's process steps (admins only). */
   canConfigure: boolean
 }
@@ -150,8 +152,17 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
     },
   }))
 
+  const tickable = (concept: ProjectConcept) =>
+    props.canEdit && (props.canTick ? props.canTick(concept) : true)
+
+  /** Steps still pending; pieces can only go up once this is empty (server enforces it). */
+  const pendingSteps = (concept: ProjectConcept) =>
+    activeOps()
+      .filter((op) => stepState(concept, op.id) === 'pending')
+      .map((op) => op.name)
+
   const toggleStep = (concept: ProjectConcept, op: ProcessOperation) => {
-    if (!props.canEdit) return
+    if (!tickable(concept)) return
     progressMutation.mutate({
       id: concept.id,
       payload: { operation_id: op.id, state: NEXT_STATE[stepState(concept, op.id)] },
@@ -214,7 +225,9 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
         <div class="flex items-center justify-between gap-2 px-4 pt-3 text-xs text-muted-foreground">
           <span>
             <Show when={props.canEdit} fallback="Solo lectura.">
-              Clic en una casilla: pendiente → ✔ hecho → N/A → pendiente.
+              Clic en una casilla: pendiente → ✔ hecho → N/A → pendiente. Piezas: escribe el
+              total o +N / −N.
+              <Show when={props.canTick}> Solo puedes palomear tus números de parte.</Show>
             </Show>
           </span>
           <Show when={props.canConfigure && activeOps().length > 0}>
@@ -258,13 +271,18 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
                         <StepCell
                           concept={c}
                           op={op}
-                          canEdit={props.canEdit}
+                          canEdit={tickable(c)}
                           onToggle={() => toggleStep(c, op)}
                         />
                       </TableCell>
                     )}</For>
                     <TableCell class="text-center">
-                      <PiecesCell concept={c} canEdit={props.canEdit} onCommit={(v) => setFinished(c, v)} />
+                      <PiecesCell
+                        concept={c}
+                        canEdit={tickable(c)}
+                        pending={pendingSteps(c)}
+                        onCommit={(v) => setFinished(c, v)}
+                      />
                     </TableCell>
                     <TableCell>
                       <div class="flex items-center gap-2">
@@ -322,15 +340,31 @@ function StepCell(props: {
 function PiecesCell(props: {
   concept: ProjectConcept
   canEdit: boolean
+  /** Steps not yet ✔ or N/A: while any remain, pieces can only go down. */
+  pending: string[]
   onCommit: (value: number) => void
 }): JSX.Element {
+  const blocked = () => props.pending.length > 0
   const [draft, setDraft] = createSignal<string | null>(null)
+  // Type the total ("10,000") or a change ("+250", "-5"); thousands separators are
+  // ignored and the result stays between 0 and the pieces ordered.
   const commit = () => {
-    const d = draft()
+    const d = draft()?.trim()
     setDraft(null)
-    if (d == null) return
-    const v = Number.parseFloat(d.replace(',', '.'))
-    if (!Number.isNaN(v)) props.onCommit(v)
+    if (!d) return
+    const relative = d.startsWith('+') || d.startsWith('-')
+    const v = Number.parseFloat(d.replace(/[\s,]/g, ''))
+    if (Number.isNaN(v)) return
+    const total = relative ? props.concept.completed_quantity + v : v
+    const clamped = Math.min(Math.max(total, 0), props.concept.quantity)
+    if (clamped > props.concept.completed_quantity && blocked()) {
+      toast.error(
+        'Aún no se pueden registrar piezas',
+        `Marca todos los pasos ✔ o N/A. Faltan: ${props.pending.join(', ')}`,
+      )
+      return
+    }
+    if (clamped !== props.concept.completed_quantity) props.onCommit(clamped)
   }
   return (
     <div class="tnum inline-flex items-center gap-1 whitespace-nowrap text-sm">
@@ -348,10 +382,12 @@ function PiecesCell(props: {
           −
         </button>
         <Input
-          class="h-7 w-14 px-1 py-0 text-center"
+          class="h-7 w-24 px-1 py-0 text-center"
           inputmode="decimal"
-          value={draft() ?? String(props.concept.completed_quantity)}
+          title='Escribe el total (ej. 10,000) o suma/resta (ej. +250, -5) y presiona Enter'
+          value={draft() ?? num(props.concept.completed_quantity)}
           onInput={setDraft}
+          onFocus={(ev) => ev.currentTarget.select()}
           onBlur={commit}
           onKeyDown={(ev) => {
             if (ev.key === 'Enter') ev.currentTarget.blur()
@@ -365,7 +401,8 @@ function PiecesCell(props: {
         <button
           type="button"
           class="h-7 w-7 rounded-md border border-input text-muted-foreground hover:bg-muted disabled:opacity-40"
-          disabled={props.concept.completed_quantity >= props.concept.quantity}
+          disabled={blocked() || props.concept.completed_quantity >= props.concept.quantity}
+          title={blocked() ? `Faltan pasos: ${props.pending.join(', ')}` : undefined}
           aria-label="Una pieza más"
           onClick={() => props.onCommit(props.concept.completed_quantity + 1)}
         >
@@ -373,6 +410,11 @@ function PiecesCell(props: {
         </button>
       </Show>
       <span class="text-muted-foreground">/ {num(props.concept.quantity)}</span>
+      <Show when={props.canEdit && blocked()}>
+        <span class="ml-1 text-[11px] text-amber-600" title={props.pending.join(', ')}>
+          Faltan pasos
+        </span>
+      </Show>
     </div>
   )
 }

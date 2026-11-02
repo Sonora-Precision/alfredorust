@@ -12,6 +12,7 @@ export type AuthStatus = 'loading' | 'anon' | 'authed'
 export interface AuthState {
   status: () => AuthStatus
   user: () => string | null
+  userId: () => string | null
   company: () => string | null
   companySlug: () => string | null
   role: () => 'admin' | 'staff' | null
@@ -65,6 +66,7 @@ export function AuthProvider(props: ParentProps): JSX.Element {
   const state: AuthState = {
     status,
     user: () => me()?.username ?? null,
+    userId: () => me()?.user_id ?? null,
     company: () => me()?.company ?? null,
     companySlug: () => me()?.company_slug ?? null,
     role: () => me()?.role ?? null,

@@ -39,6 +39,7 @@ export interface CompanySummary {
 
 /** Bootstrap payload from `GET /api/me`. */
 export interface MeResponse {
+  user_id: string
   username: string
   company: string
   company_slug: string
@@ -476,6 +477,8 @@ export interface PartStep {
   state: StepState
   updated_by?: string | null
   updated_at?: string | null
+  /** Who holds this step on the production board. */
+  assignee_user_id?: string | null
 }
 
 export type WorkQueue = 'programming' | 'setup' | 'machining' | 'finishing'
