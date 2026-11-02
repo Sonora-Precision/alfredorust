@@ -4,6 +4,14 @@ Requiere `add-shop-floor-tracking` fase 1 (ruta de proceso, piezas terminadas,
 fecha de entrega, máquina planeada) y fase 2 (perfiles). Toda ruta nueva se
 registra en `src/main.rs` **y** en `tests/common/harness.rs::build_app`.
 
+**Entrega A (primero):** sólo Cola de Programación CNC y el perfil
+Programador (José Márquez, Carlos Dávila). Las tareas de Setup, Máquina y
+Acabado en la UI, y los perfiles Supervisor/Setupista, se marcan **(B)** y se
+dejan para después; el modelo y la API se construyen genéricos desde A.
+
+- [ ] (A) Alta de José Márquez, Carlos Dávila y Jesús Sigala como staff de `sp` con perfil Programador (ops, con sus correos).
+- [ ] (A) Admins elegibles como responsables y acreditados en carga y reporte (Daniel Rivera programa).
+
 ## 1. Modelo
 
 - [ ] `work_order_number` + contador atómico por empresa; asignar al crear; migración idempotente por `created_at`.
@@ -27,6 +35,7 @@ registra en `src/main.rs` **y** en `tests/common/harness.rs::build_app`.
 
 ## 3. SPA
 
+- [ ] (B) Pestañas de Setup, Máquina (por recurso) y Acabado.
 - [ ] Página Tablero de Producción con pestañas por cola, "Mis asignaciones", arrastrar para fijar, Tomar/Soltar/Marcar terminado.
 - [ ] Vista de piso (pantalla completa, consulta cada 30 s, última actualización).
 - [ ] Carga por programador.

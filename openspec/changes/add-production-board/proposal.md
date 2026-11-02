@@ -62,6 +62,24 @@ qué tiene asignado hoy y cuántas OT sacó cada uno por semana, y cuáles fuero
 - El tablero, la carga y la OT nunca muestran dinero (precio, OC, cotización,
   factura); el único dinero es esa columna del reporte, sólo para admin.
 
+## Alcance inicial (Daniel, 2026-11-02)
+
+Por ahora el único perfil de taller con usuario nuevo es **Programador**:
+**José Márquez**, **Carlos Dávila** y **Jesús Sigala**. Además programa
+**Daniel Rivera** (admin), así que los admins también se pueden asignar,
+tomar OT y aparecen en la carga y en el reporte semanal como cualquier
+programador. No habrá todavía usuarios de Supervisor ni Setupista. Por eso la
+entrega se parte en dos:
+
+- **Entrega A — Programación.** Folio de OT, Cola de Programación CNC,
+  secuencia, asignación y "Tomar" entre los dos programadores, Vista de piso
+  de esa cola, carga por programador y reporte semanal (con valor producido
+  para el admin). Las piezas terminadas las sigue capturando el admin.
+- **Entrega B — resto del piso.** Colas de Setup, Máquina y Acabado, y sus
+  perfiles, cuando haya usuarios para ellas. El modelo (colas en el catálogo,
+  asignación por paso) ya queda listo desde la entrega A, así que B no
+  necesita migración.
+
 ## Efectos secundarios
 
 - Migración idempotente que asigna folio a los conceptos existentes, en orden

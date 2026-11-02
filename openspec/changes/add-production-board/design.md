@@ -94,6 +94,12 @@ paso actual.
 | Tomar una OT libre | staff con `take_work_orders` y permiso de la cola (abajo) |
 | Soltar una OT propia | quien la tiene asignada |
 
+**Quién aparece como responsable posible** de una cola: los admins de la
+empresa y el staff con el permiso de esa cola. En `sp` la Cola de
+Programación tiene hoy a Daniel Rivera (admin), Jesús Sigala, José Márquez y
+Carlos Dávila. Un admin que se asigna, toma o marca un paso recibe el crédito
+igual que un programador.
+
 Permiso por cola: Programación CNC requiere `upload_cnc_files`; Setup y Máquina
 requieren `view_technical_files`. Tomar es atómico: sólo se escribe si el paso
 sigue sin responsable (`assignee_user_id: null` en el filtro); si otro la tomó
