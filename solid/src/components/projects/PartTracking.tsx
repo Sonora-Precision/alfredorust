@@ -18,6 +18,7 @@ import {
   updatePartProgress,
   updateProcessOperation,
 } from '../../lib/api/operations'
+import { assignWorkOrder, listBoardMembers } from '../../lib/api/production'
 import type { ConceptStatusFull, PartProgressPayload, ProcessOperation, ProjectConcept, StepState } from '../../lib/api/types'
 import { cn } from '../../lib/cn'
 
@@ -101,6 +102,10 @@ interface PartTrackingProps {
   canTick?: (concept: ProjectConcept) => boolean
   /** Add, rename or remove the company's process steps (admins only). */
   canConfigure: boolean
+  /** Show who holds each part (needs the production-board permission). */
+  canSeeAssignees: boolean
+  /** Assign or change who holds each part (whoever manages the board). */
+  canAssign: boolean
 }
 
 export function PartTracking(props: PartTrackingProps): JSX.Element {
@@ -111,6 +116,48 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
     queryFn: listProcessOperations,
   }))
   const activeOps = createMemo(() => (opsQuery.data ?? []).filter((o) => o.is_active))
+
+  // Names of the people who can hold orders, to show who has each part.
+  const membersQuery = createQuery(() => ({
+    queryKey: ['production', 'members'],
+    queryFn: listBoardMembers,
+    enabled: props.canSeeAssignees,
+  }))
+  const nameOf = createMemo(() => {
+    const names = new Map<string, string>()
+    for (const m of membersQuery.data ?? []) names.set(m.id, m.name)
+    return names
+  })
+  /** Id of who holds the part's current (first pending) step, else its last held step. */
+  const holderIdOf = (concept: ProjectConcept): string | null => {
+    const current = activeOps().find((op) => stepState(concept, op.id) === 'pending')
+    const step = current
+      ? concept.process_steps.find((s) => s.operation_id === current.id && s.assignee_user_id)
+      : [...concept.process_steps].reverse().find((s) => s.assignee_user_id)
+    return step?.assignee_user_id ?? null
+  }
+  const holderOf = (concept: ProjectConcept): string | null => {
+    const id = holderIdOf(concept)
+    return id ? (nameOf().get(id) ?? 'Asignado') : null
+  }
+
+  // Assigning here is the same as on the board: it sets who holds the current step.
+  const assignMutation = createMutation(() => ({
+    mutationFn: (v: { id: string; userId: string | null }) => assignWorkOrder(v.id, v.userId),
+    onSuccess: (_d, v) => {
+      void qc.invalidateQueries({ queryKey: ['project-concepts', props.projectId] })
+      void qc.invalidateQueries({ queryKey: ['production'] })
+      const name = v.userId ? nameOf().get(v.userId) : null
+      toast.success(name ? `Asignado a ${name}` : 'Asignación quitada')
+    },
+    onError: (err) => {
+      void qc.invalidateQueries({ queryKey: ['project-concepts', props.projectId] })
+      toast.error(
+        'No se pudo asignar',
+        humanizeError(err, 'Solo se asignan partes con un paso pendiente en un proyecto abierto.'),
+      )
+    },
+  }))
 
   const cancelledIds = createMemo(() => new Set(props.statuses.filter((s) => s.is_cancelled).map((s) => s.id)))
   const counted = createMemo(() => props.concepts.filter((c) => !cancelledIds().has(c.status_id)))
@@ -241,6 +288,9 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
             <TableHead>
               <TableRow>
                 <TableHeadCell class="sticky left-0 z-10 bg-card">Número de parte</TableHeadCell>
+                <Show when={props.canSeeAssignees}>
+                  <TableHeadCell>Asignado a</TableHeadCell>
+                </Show>
                 <For each={activeOps()}>{(op) => (
                   <TableHeadCell class="px-1 text-center">
                     <span class="block max-w-[5.5rem] whitespace-normal text-[11px] leading-tight" title={op.name}>
@@ -266,6 +316,45 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
                         </p>
                       </Show>
                     </TableCell>
+                    <Show when={props.canSeeAssignees}>
+                      <TableCell class="whitespace-nowrap text-sm">
+                        <Show
+                          when={props.canAssign}
+                          fallback={
+                            <Show
+                              when={holderOf(c)}
+                              fallback={<span class="text-xs text-amber-600">Libre</span>}
+                            >
+                              {(name) => <span class="font-medium text-foreground">{name()}</span>}
+                            </Show>
+                          }
+                        >
+                          <label class="sr-only" for={`assign-part-${c.id}`}>
+                            Asignar {c.name}
+                          </label>
+                          {/* `selected` per option: a select-level value applies before <For> renders. */}
+                          <select
+                            id={`assign-part-${c.id}`}
+                            class="h-8 rounded-md border border-border bg-background px-2 text-sm text-foreground"
+                            disabled={assignMutation.isPending}
+                            onChange={(e) =>
+                              assignMutation.mutate({ id: c.id, userId: e.currentTarget.value || null })
+                            }
+                          >
+                            <option value="" selected={!holderIdOf(c)}>
+                              Libre
+                            </option>
+                            <For each={membersQuery.data ?? []}>
+                              {(m) => (
+                                <option value={m.id} selected={holderIdOf(c) === m.id}>
+                                  {m.name}
+                                </option>
+                              )}
+                            </For>
+                          </select>
+                        </Show>
+                      </TableCell>
+                    </Show>
                     <For each={activeOps()}>{(op) => (
                       <TableCell class="px-1 text-center">
                         <StepCell

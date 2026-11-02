@@ -333,6 +333,8 @@ export default function ProjectDetail(): JSX.Element {
                             : (c) => c.process_steps.some((s) => s.assignee_user_id === auth.userId())
                         }
                         canConfigure={isAdmin()}
+                        canSeeAssignees={isAdmin() || auth.hasPermission('view_production_board')}
+                        canAssign={isAdmin() || auth.hasPermission('manage_production_board')}
                       />
                     ),
                   },
