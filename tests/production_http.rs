@@ -312,6 +312,107 @@ async fn production_board_queues_sequence_and_assignment() {
         .unwrap();
     assert!(ot3_row["assignee"].is_null());
 
+    // Weekly pieces: 7 finished pieces on OT-0002, which Carlos programmed. Everyone sees
+    // everyone's pieces; only pieces, never money.
+    let (_, body) = get_with_cookie(
+        build_app(shared.clone()),
+        host,
+        "/api/admin/process_operations",
+        &admin,
+    )
+    .await;
+    let ops = json(&body);
+    let op_id = |name: &str| {
+        ops.as_array()
+            .unwrap()
+            .iter()
+            .find(|o| o["name"] == name)
+            .unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    let progress = format!("/api/admin/project_concepts/{ot2}/progress");
+    for (op, st) in [(op_id("Material"), "done"), (op_id("Setup 1"), "not_applicable")] {
+        let (status, body) = post_json_with_cookie(
+            build_app(shared.clone()),
+            host,
+            &progress,
+            &admin,
+            serde_json::json!({ "operation_id": op, "state": st }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "body: {body}");
+    }
+    let (status, body) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        &progress,
+        &carlos,
+        serde_json::json!({ "completed_quantity": 7 }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+
+    let weekly = "/api/production/weekly_pieces";
+    let (status, body) = get_with_cookie(build_app(shared.clone()), host, weekly, &viewer).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, body_jose) = get_with_cookie(build_app(shared.clone()), host, weekly, &jose).await;
+    assert_eq!(status, StatusCode::OK, "body: {body_jose} {body}");
+    let w = json(&body_jose);
+    assert_eq!(w["team"], 7.0);
+    let carlos_row = w["people"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["id"] == carlos_id.to_hex())
+        .unwrap();
+    assert_eq!(carlos_row["pieces"], 7.0);
+    assert!(w["mine_by_part"].as_array().unwrap().is_empty(), "José programmed none");
+    for leak in ["4500", "9000", "585", "unit_price", "value"] {
+        assert!(!body_jose.contains(leak), "{leak} leaked: {body_jose}");
+    }
+    let (_, body) = get_with_cookie(build_app(shared.clone()), host, weekly, &carlos).await;
+    let mine = &json(&body)["mine_by_part"][0];
+    assert_eq!(mine["folio"], "OT-0002");
+    assert_eq!(mine["pieces"], 7.0);
+
+    // Search: partial, any case, by folio or part; finds orders off the board too.
+    let search = |q: &str| format!("/api/production/search?q={q}");
+    let (status, body) =
+        get_with_cookie(build_app(shared.clone()), host, &search("0003"), &jose).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let hit = &json(&body)[0];
+    assert_eq!(hit["folio"], "OT-0003");
+    assert_eq!(hit["status_label"], "Programa");
+    assert_eq!(hit["queue"], "programming");
+    assert!(hit["position"].as_u64().is_some());
+    let (_, body) = get_with_cookie(build_app(shared.clone()), host, &search("part-b"), &jose).await;
+    let hit = &json(&body)[0];
+    assert_eq!(hit["part"], "PART-B");
+    assert_eq!(hit["status"], "sin_pasos", "OT-0002 left the board: {body}");
+    assert_eq!(hit["assignee"]["id"], carlos_id.to_hex());
+    assert_eq!(hit["completed_quantity"], 7.0);
+    for leak in ["4500", "9000", "585"] {
+        assert!(!body.contains(leak), "{leak} leaked: {body}");
+    }
+
+    // Members carry every assigned order in full, for the admin's overview.
+    let (_, body) =
+        get_with_cookie(build_app(shared.clone()), host, "/api/production/members", &admin).await;
+    let members = json(&body);
+    let winner_id = if jose_won { jose_id } else { carlos_id };
+    let row = members
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["id"] == winner_id.to_hex())
+        .unwrap();
+    assert!(
+        row["orders"].as_array().unwrap().iter().any(|o| o["folio"] == "OT-0005"),
+        "{row}"
+    );
+
     common::teardown(Some(ctx)).await;
 }
 

@@ -184,6 +184,9 @@ pub struct MemberLoadData {
     pub is_admin: bool,
     /// Orders whose current step is assigned to this person, in sequence order.
     pub assigned: Vec<String>,
+    /// The same orders in full, across every queue (Daniel, 2026-11-02: the admin sees
+    /// everything assigned to each programmer). No money.
+    pub orders: Vec<WorkOrderData>,
 }
 
 pub async fn api_production_members(
@@ -198,18 +201,22 @@ pub async fn api_production_members(
         Ok(v) => v,
         Err(resp) => return resp,
     };
+    let names = member_names(&members);
     let items: Vec<MemberLoadData> = members
         .iter()
-        .map(|m| MemberLoadData {
-            id: m.user_id.to_hex(),
-            username: m.username.clone(),
-            name: m.name.clone(),
-            is_admin: m.is_admin,
-            assigned: orders
+        .map(|m| {
+            let mine: Vec<&WorkOrder> = orders
                 .iter()
                 .filter(|o| o.assignee_user_id == Some(m.user_id))
-                .map(|o| folio(o.concept.work_order_number))
-                .collect(),
+                .collect();
+            MemberLoadData {
+                id: m.user_id.to_hex(),
+                username: m.username.clone(),
+                name: m.name.clone(),
+                is_admin: m.is_admin,
+                assigned: mine.iter().map(|o| folio(o.concept.work_order_number)).collect(),
+                orders: mine.iter().map(|o| work_order_data(o, &names)).collect(),
+            }
         })
         .collect();
     Json(items).into_response()
@@ -557,4 +564,262 @@ pub async fn api_work_order_complete(
         Ok(None) => json_error(StatusCode::NOT_FOUND, "order not found"),
         Err(err) => json_error(StatusCode::BAD_REQUEST, &err.to_string()),
     }
+}
+
+#[derive(Serialize)]
+pub struct PersonPiecesData {
+    /// null = pieces of parts nobody programmed yet.
+    pub id: Option<String>,
+    pub name: String,
+    pub pieces: f64,
+    pub previous_week: f64,
+}
+
+#[derive(Serialize)]
+pub struct PartPiecesData {
+    pub id: String,
+    pub folio: String,
+    pub part: String,
+    pub pieces: f64,
+}
+
+#[derive(Serialize)]
+pub struct WeeklyPiecesData {
+    pub week_start: String,
+    pub week_end: String,
+    pub team: f64,
+    pub team_previous_week: f64,
+    /// Everyone's pieces (Daniel, 2026-11-02: programmers see the pieces of all). Pieces
+    /// only: money per person stays in the admin report.
+    pub people: Vec<PersonPiecesData>,
+    /// The caller's pieces this week, per part.
+    pub mine_by_part: Vec<PartPiecesData>,
+}
+
+/// Finished pieces this shop week (Monday–Sunday, Hermosillo) and the week before, per
+/// person who programmed each part and for the whole team. Never returns money.
+pub async fn api_production_weekly_pieces(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+) -> Response {
+    if !can_view(&session_user) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let company_id = require_active_company(&session_user);
+    let ((start, end), (prev_start, prev_end)) = crate::state::this_and_last_week(DateTime::now());
+    let loaded = tokio::try_join!(
+        crate::state::pieces_by_part(&state, &company_id, start, end),
+        crate::state::pieces_by_part(&state, &company_id, prev_start, prev_end),
+        list_board_members(&state, &company_id),
+    );
+    let Ok((this_week, last_week, members)) = loaded else {
+        return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load pieces");
+    };
+    let names = member_names(&members);
+
+    // Who programmed each part (cached per part).
+    let mut programmer: HashMap<ObjectId, Option<ObjectId>> = HashMap::new();
+    for concept in this_week.keys().chain(last_week.keys()) {
+        if programmer.contains_key(concept) {
+            continue;
+        }
+        let who = crate::state::programmer_of(&state, &company_id, concept)
+            .await
+            .ok()
+            .flatten();
+        programmer.insert(*concept, who);
+    }
+
+    let mut per_person: HashMap<Option<ObjectId>, (f64, f64)> = HashMap::new();
+    for m in &members {
+        per_person.insert(Some(m.user_id), (0.0, 0.0));
+    }
+    for (concept, pieces) in &this_week {
+        per_person.entry(programmer[concept]).or_default().0 += pieces;
+    }
+    for (concept, pieces) in &last_week {
+        per_person.entry(programmer[concept]).or_default().1 += pieces;
+    }
+    let mut people: Vec<PersonPiecesData> = per_person
+        .into_iter()
+        .filter(|(id, (now, prev))| id.is_some() || *now != 0.0 || *prev != 0.0)
+        .map(|(id, (now, prev))| PersonPiecesData {
+            id: id.map(|i| i.to_hex()),
+            name: match id {
+                Some(i) => person(i, &names).name,
+                None => "Sin programador".to_string(),
+            },
+            pieces: now,
+            previous_week: prev,
+        })
+        .collect();
+    people.sort_by(|a, b| a.name.cmp(&b.name));
+
+    let me = *session_user.user_id();
+    let mut mine_by_part = Vec::new();
+    for (concept, pieces) in &this_week {
+        if programmer[concept] != Some(me) || *pieces == 0.0 {
+            continue;
+        }
+        if let Ok(Some(c)) = get_project_concept_by_id_for_company(&state, concept, &company_id).await {
+            mine_by_part.push(PartPiecesData {
+                id: concept.to_hex(),
+                folio: folio(c.work_order_number),
+                part: c.name,
+                pieces: *pieces,
+            });
+        }
+    }
+    mine_by_part.sort_by(|a, b| a.folio.cmp(&b.folio));
+
+    Json(WeeklyPiecesData {
+        week_start: iso(start),
+        week_end: iso(end),
+        team: this_week.values().sum(),
+        team_previous_week: last_week.values().sum(),
+        people,
+        mine_by_part,
+    })
+    .into_response()
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SearchQuery {
+    pub q: String,
+}
+
+#[derive(Serialize)]
+pub struct WorkOrderSearchHit {
+    pub id: String,
+    pub folio: String,
+    pub part: String,
+    pub project_id: String,
+    pub project: String,
+    pub client: Option<String>,
+    /// Holder of the current step, or of the last step anyone held.
+    pub assignee: Option<PersonData>,
+    /// "programa", "setup", … while on the board; "terminada", "sin_pasos" or
+    /// "proyecto_cerrado" when it left it.
+    pub status: String,
+    /// Human label: the current step name ("Programa") or "Terminada", …
+    pub status_label: String,
+    pub queue: Option<&'static str>,
+    /// 1-based place in its queue's production sequence.
+    pub position: Option<usize>,
+    pub quantity: f64,
+    pub completed_quantity: f64,
+}
+
+/// "¿Dónde va esta parte?": part numbers of the company matching `q` (part name or folio,
+/// partial, any case), on the board or not. No money.
+pub async fn api_production_search(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<SearchQuery>,
+) -> Response {
+    if !can_view(&session_user) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let needle = query.q.trim().to_lowercase();
+    if needle.is_empty() {
+        return Json(Vec::<WorkOrderSearchHit>::new()).into_response();
+    }
+    let company_id = require_active_company(&session_user);
+    let (orders, members) = match load(&state, &company_id).await {
+        Ok(v) => v,
+        Err(resp) => return resp,
+    };
+    let names = member_names(&members);
+
+    let mut cursor = match state
+        .project_concepts
+        .find(mongodb::bson::doc! { "company_id": company_id })
+        .await
+    {
+        Ok(c) => c,
+        Err(_) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not search"),
+    };
+    let digits: String = needle.chars().filter(|c| c.is_ascii_digit()).collect();
+    let mut matches = Vec::new();
+    while let Ok(Some(c)) = futures::TryStreamExt::try_next(&mut cursor).await {
+        let folio_text = folio(c.work_order_number).to_lowercase();
+        let by_name = c.name.to_lowercase().contains(&needle);
+        let by_folio = folio_text.contains(&needle)
+            || (!digits.is_empty()
+                && needle.starts_with("ot")
+                && c.work_order_number.map(|n| n.to_string()) == Some(digits.trim_start_matches('0').to_string()));
+        if by_name || by_folio {
+            matches.push(c);
+        }
+        if matches.len() >= 30 {
+            break;
+        }
+    }
+
+    let mut hits = Vec::new();
+    for c in matches {
+        let Some(id) = c.id else { continue };
+        let project = state
+            .projects
+            .find_one(mongodb::bson::doc! { "_id": c.project_id, "company_id": company_id })
+            .await
+            .ok()
+            .flatten();
+        let on_board = orders.iter().find(|o| o.concept_id() == id);
+        let (status, status_label, queue, position, assignee_id, client) = match on_board {
+            Some(o) => {
+                let pos = orders
+                    .iter()
+                    .filter(|x| x.queue == o.queue)
+                    .position(|x| x.concept_id() == id)
+                    .map(|p| p + 1);
+                (
+                    o.queue.as_str().to_string(),
+                    o.operation.name.clone(),
+                    Some(o.queue.as_str()),
+                    pos,
+                    o.assignee_user_id,
+                    o.client.clone(),
+                )
+            }
+            None => {
+                let closed = project.as_ref().is_some_and(|p| {
+                    matches!(
+                        p.status,
+                        crate::models::ProjectStatus::Entregado | crate::models::ProjectStatus::Cancelado
+                    )
+                });
+                let (s, l) = if c.completed_quantity >= c.quantity {
+                    ("terminada", "Terminada")
+                } else if closed {
+                    ("proyecto_cerrado", "Proyecto cerrado")
+                } else {
+                    ("sin_pasos", "Sin pasos pendientes")
+                };
+                let last_holder = c
+                    .process_steps
+                    .iter()
+                    .rev()
+                    .find_map(|s| s.assignee_user_id);
+                (s.to_string(), l.to_string(), None, None, last_holder, None)
+            }
+        };
+        hits.push(WorkOrderSearchHit {
+            id: id.to_hex(),
+            folio: folio(c.work_order_number),
+            part: c.name.clone(),
+            project_id: c.project_id.to_hex(),
+            project: project.as_ref().map(|p| p.title.clone()).unwrap_or_default(),
+            client,
+            assignee: assignee_id.map(|u| person(u, &names)),
+            status,
+            status_label,
+            queue,
+            position,
+            quantity: c.quantity,
+            completed_quantity: c.completed_quantity,
+        });
+    }
+    hits.sort_by(|a, b| a.folio.cmp(&b.folio));
+    Json(hits).into_response()
 }

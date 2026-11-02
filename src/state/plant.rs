@@ -180,9 +180,69 @@ pub async fn programmer_of(
         .and_then(|s| s.assignee_user_id))
 }
 
+/// Hermosillo is UTC-7 all year (no daylight saving).
+const SHOP_UTC_OFFSET_MS: i64 = -7 * 3_600_000;
+const WEEK_MS: i64 = 7 * 86_400_000;
+
+/// Monday 00:00 shop time of the week containing `at`, as a UTC instant.
+pub fn shop_week_start(at: DateTime) -> DateTime {
+    let local = at.timestamp_millis() + SHOP_UTC_OFFSET_MS;
+    let day = local.div_euclid(86_400_000);
+    // 1970-01-01 was a Thursday: days since the last Monday.
+    let since_monday = (day + 3).rem_euclid(7);
+    DateTime::from_millis((day - since_monday) * 86_400_000 - SHOP_UTC_OFFSET_MS)
+}
+
+/// Finished pieces per part in [from, to), from the PiecesRecorded log (net of
+/// corrections).
+pub async fn pieces_by_part(
+    state: &AppState,
+    company_id: &ObjectId,
+    from: DateTime,
+    to: DateTime,
+) -> Result<HashMap<ObjectId, f64>> {
+    let mut cursor = state
+        .work_order_events
+        .find(doc! {
+            "company_id": company_id,
+            "kind": "pieces_recorded",
+            "at": { "$gte": from, "$lt": to },
+        })
+        .await?;
+    let mut out: HashMap<ObjectId, f64> = HashMap::new();
+    while let Some(e) = cursor.try_next().await? {
+        *out.entry(e.concept_id).or_default() += e.pieces_delta.unwrap_or(0.0);
+    }
+    Ok(out)
+}
+
+/// The shop week that contains `now` and the one before it.
+pub fn this_and_last_week(now: DateTime) -> ((DateTime, DateTime), (DateTime, DateTime)) {
+    let start = shop_week_start(now);
+    let end = DateTime::from_millis(start.timestamp_millis() + WEEK_MS);
+    let prev = DateTime::from_millis(start.timestamp_millis() - WEEK_MS);
+    ((start, end), (prev, start))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shop_week_starts_monday_midnight_hermosillo() {
+        // Sunday 2026-11-01 23:30 Hermosillo = Monday 06:30 UTC → week of Oct 26.
+        let sunday_late = DateTime::parse_rfc3339_str("2026-11-02T06:30:00Z").unwrap();
+        assert_eq!(
+            shop_week_start(sunday_late),
+            DateTime::parse_rfc3339_str("2026-10-26T07:00:00Z").unwrap()
+        );
+        // Monday 2026-11-02 00:10 Hermosillo → week of Nov 2.
+        let monday = DateTime::parse_rfc3339_str("2026-11-02T07:10:00Z").unwrap();
+        assert_eq!(
+            shop_week_start(monday),
+            DateTime::parse_rfc3339_str("2026-11-02T07:00:00Z").unwrap()
+        );
+    }
 
     fn run(ended_ms: i64) -> MachineRun {
         MachineRun {

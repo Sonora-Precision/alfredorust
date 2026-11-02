@@ -689,6 +689,11 @@ async fn main() {
         )
         .route("/api/production/board", get(routes::api_production_board))
         .route("/api/production/members", get(routes::api_production_members))
+        .route("/api/production/search", get(routes::api_production_search))
+        .route(
+            "/api/production/weekly_pieces",
+            get(routes::api_production_weekly_pieces),
+        )
         .route("/api/production/plant", get(routes::api_production_plant))
         .route(
             "/api/production/plant_layout",

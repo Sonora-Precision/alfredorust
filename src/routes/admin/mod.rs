@@ -36,7 +36,9 @@ pub use part_progress::{
 };
 pub use plant::{api_machine_state_set, api_plant_layout_save, api_production_plant};
 pub use production::{
-    api_production_board, api_production_members, api_work_order_assign,
+    api_production_board, api_production_members, api_production_search,
+    api_production_weekly_pieces,
+    api_work_order_assign,
     api_work_order_complete, api_work_order_release, api_work_order_sequence,
     api_work_order_take,
 };
