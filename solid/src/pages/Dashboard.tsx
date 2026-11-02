@@ -7,7 +7,7 @@
 // `tx_charts` in frontend/src/pages/transactions.rs, ported to a Dashboard
 // landing view. See docs/solid-migration/pages-part1.md "Dashboard" +
 // "TransactionsPage".
-import { A } from '@solidjs/router'
+import { A, Navigate } from '@solidjs/router'
 import { createQuery } from '@tanstack/solid-query'
 import { ArrowRight, Landmark, Rocket, Scale, TrendingDown, TrendingUp, Wallet } from 'lucide-solid'
 import { Motion } from 'solid-motionone'
@@ -68,6 +68,36 @@ function KpiCard(props: KpiCardProps): JSX.Element {
 }
 
 export default function Dashboard(): JSX.Element {
+  const auth = useAuth()
+  // The finance landing (ingresos/egresos) is admin-only data; staff land on
+  // the first module they can actually use.
+  return (
+    <Show when={auth.isAdmin()} fallback={<StaffHome />}>
+      <AdminDashboard />
+    </Show>
+  )
+}
+
+function StaffHome(): JSX.Element {
+  const auth = useAuth()
+  return (
+    <Show
+      when={!auth.hasPermission('view_projects')}
+      fallback={<Navigate href="/projects" />}
+    >
+      <div class="space-y-6">
+        <PageHeader title="Inicio" subtitle={`Hola, ${auth.user()} — ${auth.company()}`} />
+        <Card glass>
+          <CardContent class="p-5 text-sm text-muted-foreground">
+            Todavía no tienes módulos asignados. Pide acceso a tu administrador.
+          </CardContent>
+        </Card>
+      </div>
+    </Show>
+  )
+}
+
+function AdminDashboard(): JSX.Element {
   const auth = useAuth()
 
   const accountsQuery = createQuery(() => ({
