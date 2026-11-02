@@ -254,8 +254,8 @@ el 2026-11-02; la "ZZD" importada de Notion se borró porque no existe):
 | Centros de maquinado | VF-3, VF-6, Shizuoka | automático |
 
 El área se guarda en el recurso (`Resource.area: Option<String>`, texto libre
-por empresa) para agrupar las tarjetas. Falta confirmar con Daniel el área de
-la Shizuoka.
+por empresa) para agrupar las tarjetas. La Shizuoka es un centro de maquinado
+vertical, igual que las VF-3 y VF-6 (Daniel, 2026-11-02).
 
 **Semáforo por máquina:**
 

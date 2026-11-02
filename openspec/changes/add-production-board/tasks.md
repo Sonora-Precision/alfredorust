@@ -46,7 +46,7 @@ dejan para después; el modelo y la API se construyen genéricos desde A.
 ## 3b. Vista de planta
 
 - [x] (ops) Alta de Sierra cinta, SL-30, Mori SL-15 y Shizuoka en `sp`; borrar la "ZZD" (2026-11-02).
-- [ ] `Resource.area` y agrupación por área (Corte, Tornos CNC, Centros de maquinado); confirmar el área de la Shizuoka.
+- [ ] `Resource.area` y agrupación por área (Corte, Tornos CNC, Centros de maquinado: VF-3, VF-6, Shizuoka).
 - [ ] Semáforo: verde por corrida activa (`machine_runs`), ámbar por paso de Setup en curso, rojo con motivo y desde cuándo; leyenda visible.
 - [ ] Estado manual de máquina (`POST /api/production/machines/{id}/state`) para las máquinas sin DNC (Mori SL-15, Sierra cinta).
 - [ ] Ruta `/produccion/planta`: tarjetas de máquina, área de programación, fila de órdenes pendientes y metas del equipo.
