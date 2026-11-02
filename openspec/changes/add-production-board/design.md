@@ -278,6 +278,26 @@ vertical, igual que las VF-3 y VF-6 (Daniel, 2026-11-02).
 barra de piezas terminadas/pedidas, OT en fila para esa máquina y tiempo de
 hoy. Al hacer clic se abre la Cola de Máquina filtrada por ese recurso.
 
+**Máquina → proyecto → persona** (Daniel, 2026-11-02): cada máquina muestra
+el proyecto/cliente que corre y una etiqueta con las iniciales de **quien hizo
+ese programa**; cada programador muestra "corre en VF-3, Shizuoka".
+
+- La OT que corre sale de la corrida DNC activa (`machine_runs`: número de
+  parte de la cabecera → `ProjectConcept`, ver `add-dnc-machine-time`). Para
+  las máquinas sin DNC (Mori SL-15, Sierra cinta), del estado manual, que
+  incluye la OT.
+- El programador es el `credited_user_id` del paso "Programa" de esa OT (§4).
+- Si la máquina está parada esperando el programa de su siguiente OT, la
+  etiqueta va punteada con las iniciales del responsable de ese paso ("Debe:
+  SL-15") y se resalta si hay otro programador libre.
+- El **operador** en la máquina queda fuera hasta que existan usuarios de
+  setupista/operador (entrega B); entonces se agrega con la misma etiqueta.
+- **Layout real:** el plano se dibuja con la planta de `sp` (polígono de
+  paredes y posición/rotación de cada máquina, guardados como datos de la
+  empresa, `plant_layout`), girado para que la fila SL-15 · SL-30 · VF-3 quede
+  horizontal. Lo edita el admin; primera versión tomada del modelo de
+  SolidWorks que compartió Daniel.
+
 **Órdenes pendientes y asignación:**
 
 - La fila muestra las OT de la Cola de Programación **sin responsable**, en el
