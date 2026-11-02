@@ -110,6 +110,17 @@ esas piezas es para la persona de cada paso, no para quien palomea (§5). La
 respuesta no trae dinero. Configurar el catálogo de pasos sigue siendo del
 admin.
 
+- **Sólo sus partes** (Daniel, 2026-11-02): el programador palomea únicamente
+  los números de parte donde tiene algún paso asignado; quien gestiona el
+  tablero, cualquiera.
+- **Pieza terminada = pasó por todo** (Daniel, 2026-11-02): las piezas
+  terminadas sólo pueden subir cuando todos los pasos activos de la parte
+  están ✔ o N/A (contando el que se marque en la misma petición); bajar para
+  corregir siempre se puede. Así sólo cuentan en la semana piezas que pasaron
+  por todo el proceso.
+- **Captura de piezas**: se escribe el total ("10,000") o un cambio ("+250",
+  "−5") en vez de dar clics; se limita entre 0 y lo pedido.
+
 **Quién aparece como responsable posible** de una cola: los admins de la
 empresa y el staff con el permiso de esa cola. En `sp` la Cola de
 Programación tiene hoy a Daniel Rivera (admin), Jesús Sigala, José Márquez y

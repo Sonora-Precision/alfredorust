@@ -312,6 +312,22 @@ pub async fn api_project_concept_progress(
         .await
         .ok()
         .flatten();
+    // Programmers tick only their own parts: those where they hold a step (Daniel,
+    // 2026-11-02). Whoever manages the board can tick any part.
+    if !session_user.has_permission(UserPermission::ManageProductionBoard) {
+        let me = *session_user.user_id();
+        let holds_a_step = before.as_ref().is_some_and(|c| {
+            c.process_steps
+                .iter()
+                .any(|s| s.assignee_user_id == Some(me))
+        });
+        if before.is_some() && !holds_a_step {
+            return json_error(
+                StatusCode::FORBIDDEN,
+                "solo puedes palomear los números de parte que tienes asignados",
+            );
+        }
+    }
     match update_part_progress(&state, &id, &company_id, update, &username).await {
         Ok(Some(concept)) => {
             if let Some(before) = &before {

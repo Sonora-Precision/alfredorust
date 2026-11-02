@@ -147,6 +147,8 @@ pub struct PartStepData {
     pub state: &'static str,
     pub updated_by: Option<String>,
     pub updated_at: Option<String>,
+    /// Who holds this step on the production board.
+    pub assignee_user_id: Option<String>,
 }
 
 pub(crate) fn project_concept_data(c: ProjectConcept) -> Option<ProjectConceptData> {
@@ -174,6 +176,7 @@ pub(crate) fn project_concept_data(c: ProjectConcept) -> Option<ProjectConceptDa
                 state: s.state.as_str(),
                 updated_by: s.updated_by,
                 updated_at: s.updated_at.map(iso),
+                assignee_user_id: s.assignee_user_id.map(|id| id.to_hex()),
             })
             .collect(),
         created_at: c.created_at.map(iso),

@@ -327,6 +327,11 @@ export default function ProjectDetail(): JSX.Element {
                         concepts={conceptsQuery.data ?? []}
                         statuses={statusesQuery.data ?? []}
                         canEdit={isAdmin() || auth.hasPermission('take_work_orders')}
+                        canTick={
+                          isAdmin() || auth.hasPermission('manage_production_board')
+                            ? undefined
+                            : (c) => c.process_steps.some((s) => s.assignee_user_id === auth.userId())
+                        }
                         canConfigure={isAdmin()}
                       />
                     ),

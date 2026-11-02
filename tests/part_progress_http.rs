@@ -147,6 +147,7 @@ async fn part_progress_tracks_finished_pieces_and_process_steps() {
         assert_eq!(status, StatusCode::BAD_REQUEST, "{bad}: {body}");
     }
 
+    // A piece only counts once every step is done or N/A.
     let (status, body) = post_json_with_cookie(
         build_app(shared.clone()),
         host,
@@ -155,8 +156,8 @@ async fn part_progress_tracks_finished_pieces_and_process_steps() {
         serde_json::json!({ "completed_quantity": 15 }),
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "body: {body}");
-    assert_eq!(json(&body)["completed_quantity"], 15.0);
+    assert_eq!(status, StatusCode::BAD_REQUEST, "body: {body}");
+    assert!(body.contains("Programa"), "names the pending steps: {body}");
 
     // Steps: done and not applicable are stored with who and when.
     for (op, st) in [(&material, "done"), (&setup1, "not_applicable")] {
@@ -170,6 +171,47 @@ async fn part_progress_tracks_finished_pieces_and_process_steps() {
         .await;
         assert_eq!(status, StatusCode::OK, "body: {body}");
     }
+
+    // The last pending step can be closed in the same request that records pieces.
+    let (status, body) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        &progress,
+        &admin_token,
+        serde_json::json!({ "completed_quantity": 15, "operation_id": programa, "state": "done" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    assert_eq!(json(&body)["completed_quantity"], 15.0);
+
+    // Reopening a step does not block corrections downwards.
+    let (status, _) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        &progress,
+        &admin_token,
+        serde_json::json!({ "operation_id": programa, "state": "pending" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, body) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        &progress,
+        &admin_token,
+        serde_json::json!({ "completed_quantity": 16 }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "more pieces with a pending step: {body}");
+    let (status, _) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        &progress,
+        &admin_token,
+        serde_json::json!({ "operation_id": programa, "state": "done" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
     let (status, body) = post_json_with_cookie(
         build_app(shared.clone()),
         host,
@@ -243,14 +285,14 @@ async fn part_progress_tracks_finished_pieces_and_process_steps() {
     let concept = &json(&body)[0];
     assert_eq!(concept["completed_quantity"], 15.0);
     let steps = concept["process_steps"].as_array().unwrap();
-    assert_eq!(steps.len(), 2, "programa was never marked: {steps:?}");
+    assert_eq!(steps.len(), 3, "{steps:?}");
     let material_step = steps.iter().find(|s| s["operation_id"] == material.as_str()).unwrap();
     assert_eq!(material_step["name"], "Material");
     assert_eq!(material_step["state"], "done");
     assert_eq!(material_step["updated_by"], admin.username.as_str());
     assert!(material_step["updated_at"].is_string());
     assert!(steps.iter().any(|s| s["operation_id"] == setup1.as_str() && s["state"] == "not_applicable"));
-    assert!(!steps.iter().any(|s| s["operation_id"] == programa.as_str()));
+    assert!(steps.iter().any(|s| s["operation_id"] == programa.as_str() && s["state"] == "done"));
 
     // The full edit cannot drop the quantity below finished pieces and keeps progress.
     let (status, body) = post_json_with_cookie(
@@ -281,7 +323,7 @@ async fn part_progress_tracks_finished_pieces_and_process_steps() {
     let concept = &json(&body)[0];
     assert_eq!(concept["quantity"], 40.0);
     assert_eq!(concept["completed_quantity"], 15.0);
-    assert_eq!(concept["process_steps"].as_array().unwrap().len(), 2);
+    assert_eq!(concept["process_steps"].as_array().unwrap().len(), 3);
 
     // Deleting an operation only removes the column; the recorded step stays.
     let (status, _) = post_json_with_cookie(
@@ -309,7 +351,7 @@ async fn part_progress_tracks_finished_pieces_and_process_steps() {
         &admin_token,
     )
     .await;
-    assert_eq!(json(&body)[0]["process_steps"].as_array().unwrap().len(), 2);
+    assert_eq!(json(&body)[0]["process_steps"].as_array().unwrap().len(), 3);
 
     common::teardown(Some(ctx)).await;
 }
@@ -482,6 +524,28 @@ async fn programmer_ticks_steps_and_pieces_without_seeing_money() {
     let setup1 = json(&body)["id"].as_str().unwrap().to_string();
 
     let progress = format!("/api/admin/project_concepts/{}/progress", concept_id.to_hex());
+
+    // Not his part yet: he cannot tick it.
+    let (status, body) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        &progress,
+        &jose_token,
+        serde_json::json!({ "completed_quantity": 1 }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "body: {body}");
+
+    // He takes it on the board; now it is his.
+    let (status, body) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        &format!("/api/production/work_orders/{}/take", concept_id.to_hex()),
+        &jose_token,
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "take: {body}");
     let (status, body) = post_json_with_cookie(
         build_app(shared.clone()),
         host,

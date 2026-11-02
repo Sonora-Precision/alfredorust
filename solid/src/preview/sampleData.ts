@@ -5,6 +5,7 @@
 import type { Account, AccountDetail, MeResponse, Transaction } from '../lib/api/types'
 
 export const SAMPLE_ME: MeResponse = {
+  user_id: 'sample-user-1',
   username: 'alfredo',
   company: 'Sonora Precision',
   company_slug: 'sonora',

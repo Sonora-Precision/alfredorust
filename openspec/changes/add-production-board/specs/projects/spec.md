@@ -98,10 +98,26 @@ logging who took it.
 
 ### Requirement: Programmers tick steps and finished pieces
 
-The system SHALL let users with `take_work_orders` mark any process step and
-record finished pieces of a part, SHALL keep who and when for every step mark
-and every change in finished pieces, and SHALL answer without money for users
-who cannot see it.
+The system SHALL let users with `take_work_orders` mark process steps and
+record finished pieces only on parts where they hold a step (whoever manages
+the board can tick any part), SHALL accept more finished pieces only when
+every active step of the part is done or not applicable (counting a step
+marked in the same request; lowering is always allowed), SHALL keep who and
+when for every step mark and every change in finished pieces, and SHALL answer
+without money for users who cannot see it.
+
+#### Scenario: Programmer cannot tick someone else's part
+
+- GIVEN a part where José Márquez holds no step
+- WHEN he records finished pieces on it
+- THEN the request is rejected
+
+#### Scenario: Pieces need every step closed
+
+- GIVEN a part whose "Programa" step is still pending
+- WHEN anyone records more finished pieces
+- THEN the request is rejected naming "Programa"
+- AND recording them together with "Programa" done in the same request succeeds
 
 #### Scenario: Programmer records pieces
 

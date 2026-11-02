@@ -20,6 +20,7 @@ pub struct CompanySummary {
 /// the companies the user belongs to. Never includes the TOTP secret.
 #[derive(Serialize, utoipa::ToSchema)]
 pub struct MeResponse {
+    pub user_id: String,
     pub username: String,
     pub company: String,
     pub company_slug: String,
@@ -144,6 +145,7 @@ pub async fn me(
         .collect::<Vec<_>>();
 
     Ok(Json(MeResponse {
+        user_id: current.id.to_hex(),
         username: current.username.clone(),
         company: current.company_name.clone(),
         company_slug: current.company_slug.clone(),
