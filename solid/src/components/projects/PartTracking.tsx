@@ -314,8 +314,7 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
                     </span>
                   </TableHeadCell>
                 )}</For>
-                <TableHeadCell class="text-center">Terminadas</TableHeadCell>
-                <TableHeadCell class="min-w-[7rem]">Avance</TableHeadCell>
+                <TableHeadCell class="text-center">Terminadas / avance</TableHeadCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -396,9 +395,7 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
                         pending={pendingSteps(c)}
                         onCommit={(v) => setFinished(c, v)}
                       />
-                    </TableCell>
-                    <TableCell>
-                      <div class="flex items-center gap-2">
+                      <div class="mt-1 flex items-center gap-2">
                         <Bar ratio={ratio()} />
                         <span class="tnum w-10 text-right text-xs text-muted-foreground">{pct(ratio())}</span>
                       </div>
@@ -495,7 +492,7 @@ function PiecesCell(props: {
           −
         </button>
         <Input
-          class="h-7 w-24 px-1 py-0 text-center"
+          class="h-7 w-20 px-1 py-0 text-center"
           inputmode="decimal"
           title='Escribe el total (ej. 10,000) o suma/resta (ej. +250, -5) y presiona Enter'
           value={draft() ?? num(props.concept.completed_quantity)}
@@ -524,8 +521,8 @@ function PiecesCell(props: {
       </Show>
       <span class="text-muted-foreground">/ {num(props.concept.quantity)}</span>
       <Show when={props.canEdit && blocked()}>
-        <span class="ml-1 text-[11px] text-amber-600" title={props.pending.join(', ')}>
-          Faltan pasos
+        <span class="text-[11px] text-amber-600" title={`Faltan: ${props.pending.join(', ')}`}>
+          ⚠
         </span>
       </Show>
     </div>
