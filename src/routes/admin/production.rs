@@ -74,6 +74,34 @@ fn folio(number: Option<i64>) -> String {
     number.map(|n| format!("OT-{n:04}")).unwrap_or_else(|| "OT-?".to_string())
 }
 
+/// Partial match on the item name or the folio, any case. A folio may be typed short:
+/// "OT-58", "ot58", "#58" or "58" all find OT-0058. Mirrors `matchesWorkOrder` in the SPA.
+pub fn matches_work_order(number: Option<i64>, name: &str, query: &str) -> bool {
+    let q = query.trim().to_lowercase();
+    if q.is_empty() || name.to_lowercase().contains(&q) || folio(number).to_lowercase().contains(&q) {
+        return true;
+    }
+    let bare = q.trim_start_matches("ot").trim_start_matches(['-', ' ', '#']);
+    !bare.is_empty()
+        && bare.chars().all(|c| c.is_ascii_digit())
+        && bare.parse::<i64>().ok() == number
+}
+
+#[cfg(test)]
+mod tests {
+    use super::matches_work_order;
+
+    #[test]
+    fn short_folios_and_item_names_match() {
+        for q in ["OT-0058", "OT-58", "ot58", "#58", "58", " ot 58 "] {
+            assert!(matches_work_order(Some(58), "TYE3022-TP", q), "{q}");
+        }
+        assert!(matches_work_order(Some(58), "TYE3022-7.2L-TP", "7.2l-tp"));
+        assert!(!matches_work_order(Some(58), "TYE3022-TP", "OT-5"));
+        assert!(!matches_work_order(Some(7), "PALLET", "58"));
+    }
+}
+
 fn work_order_data(o: &WorkOrder, names: &HashMap<ObjectId, (String, String)>) -> WorkOrderData {
     let priority = o.priority();
     WorkOrderData {
@@ -739,16 +767,9 @@ pub async fn api_production_search(
         Ok(c) => c,
         Err(_) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not search"),
     };
-    let digits: String = needle.chars().filter(|c| c.is_ascii_digit()).collect();
     let mut matches = Vec::new();
     while let Ok(Some(c)) = futures::TryStreamExt::try_next(&mut cursor).await {
-        let folio_text = folio(c.work_order_number).to_lowercase();
-        let by_name = c.name.to_lowercase().contains(&needle);
-        let by_folio = folio_text.contains(&needle)
-            || (!digits.is_empty()
-                && needle.starts_with("ot")
-                && c.work_order_number.map(|n| n.to_string()) == Some(digits.trim_start_matches('0').to_string()));
-        if by_name || by_folio {
+        if matches_work_order(c.work_order_number, &c.name, &needle) {
             matches.push(c);
         }
         if matches.len() >= 30 {

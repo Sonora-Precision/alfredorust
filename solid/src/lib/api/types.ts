@@ -455,6 +455,8 @@ export interface ProjectConcept {
   id: string
   status_id: string
   name: string
+  /** OT folio number (shown as OT-0001). */
+  work_order_number?: number | null
   quantity: number
   unit?: string | null
   description?: string | null

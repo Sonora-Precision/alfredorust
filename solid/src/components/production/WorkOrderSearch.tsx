@@ -16,10 +16,20 @@ const QUEUE_LABEL: Record<string, string> = {
   finishing: 'Acabado',
 }
 
-/** Same rule as the server: partial match on folio or part, any case. */
+/** OT-0058 for 58. */
+export function folioOf(n: number | null | undefined): string {
+  return n == null ? 'OT-?' : `OT-${String(n).padStart(4, '0')}`
+}
+
+/**
+ * Same rule as the server: partial match on folio or item name, any case. A folio may be
+ * typed short: "OT-58", "ot58", "#58" or "58" all find OT-0058.
+ */
 export function matchesWorkOrder(o: { folio: string; part: string }, query: string): boolean {
   const q = query.trim().toLowerCase()
-  return q === '' || o.folio.toLowerCase().includes(q) || o.part.toLowerCase().includes(q)
+  if (q === '' || o.folio.toLowerCase().includes(q) || o.part.toLowerCase().includes(q)) return true
+  const bare = q.replace(/^ot/, '').replace(/^[-\s#]+/, '')
+  return /^\d+$/.test(bare) && o.folio.toLowerCase() === folioOf(Number(bare)).toLowerCase()
 }
 
 export function WorkOrderSearch(props: {
@@ -50,7 +60,7 @@ export function WorkOrderSearch(props: {
         <input
           type="search"
           class="h-9 w-full rounded-lg border border-border bg-background pl-8 pr-8 text-sm text-foreground"
-          placeholder={props.placeholder ?? 'Buscar número de parte o folio (ej. 4471, OT-0012)'}
+          placeholder={props.placeholder ?? 'Buscar por OT o nombre del item (ej. OT-12, 4471)'}
           aria-label="Buscar número de parte"
           value={text()}
           onInput={(e) => setText(e.currentTarget.value)}
