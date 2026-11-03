@@ -37,6 +37,7 @@ const Orders = lazyWithReload(() => import('./pages/Orders'))
 const Projects = lazyWithReload(() => import('./pages/Projects'))
 const Production = lazyWithReload(() => import('./pages/Production'))
 const Plant = lazyWithReload(() => import('./pages/Plant'))
+const ShopReports = lazyWithReload(() => import('./pages/ShopReports'))
 const ProjectDetail = lazyWithReload(() => import('./pages/ProjectDetail'))
 const ConceptStatuses = lazyWithReload(() => import('./pages/ConceptStatuses'))
 const Resources = lazyWithReload(() => import('./pages/Resources'))
@@ -76,6 +77,7 @@ export default function App(): JSX.Element {
         <Route path="/orders" component={Orders} />
         <Route path="/produccion" component={Production} />
         <Route path="/produccion/planta" component={Plant} />
+        <Route path="/produccion/reportes" component={ShopReports} />
         <Route path="/projects" component={Projects} />
         <Route path="/projects/:id" component={ProjectDetail} />
         <Route path="/concept-statuses" component={ConceptStatuses} />

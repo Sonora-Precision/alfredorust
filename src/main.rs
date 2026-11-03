@@ -748,6 +748,18 @@ async fn main() {
             get(routes::api_resource_usages_index).post(routes::api_resource_usages_create),
         )
         .route(
+            "/api/admin/shop_reports",
+            get(routes::api_shop_reports_index),
+        )
+        .route(
+            "/api/admin/shop_reports/ingest",
+            post(routes::api_shop_reports_ingest),
+        )
+        .route(
+            "/api/admin/shop_reports/{day}",
+            get(routes::api_shop_report_detail),
+        )
+        .route(
             "/api/admin/machine_runs",
             get(routes::api_machine_runs_index),
         )

@@ -318,3 +318,184 @@ async fn machine_runs_ingest_upsert_and_project_time() {
 
     common::teardown(Some(ctx)).await;
 }
+
+#[tokio::test]
+async fn shop_reports_are_for_admins_of_the_company() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+    let a = create_company(&state, "Shop A", "shop-a", "MXN", true, None)
+        .await
+        .unwrap();
+    let b = create_company(&state, "Shop B", "shop-b", "MXN", true, None)
+        .await
+        .unwrap();
+    let mk = |name: &'static str, co, role| {
+        let state = state.clone();
+        async move {
+            let id = create_user(&state, name, "SECRET", &[(co, role)])
+                .await
+                .unwrap();
+            let u = get_user_by_id(&state, &id).await.unwrap().unwrap();
+            create_session(&state, &u.username).await.unwrap()
+        }
+    };
+    let admin = mk("shop-admin@example.com", a.clone(), UserRole::Admin).await;
+    let staff = mk("shop-staff@example.com", a.clone(), UserRole::Staff).await;
+    let other = mk("shop-other@example.com", b.clone(), UserRole::Admin).await;
+    let (host, other_host) = ("shop-a.miapp.local", "shop-b.miapp.local");
+    let body = |minutes: i64| {
+        serde_json::json!({ "source": "taller-vision", "day": "2026-11-03", "summary": "Jornada",
+            "kpis": { "gente_min": minutes }, "report": { "zonas": [], "corridas": [{ "minutes": minutes }] } })
+    };
+    let path = "/api/admin/shop_reports/ingest";
+
+    let (s, _) =
+        post_json_with_cookie(build_app(shared.clone()), host, path, &staff, body(1)).await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+    let mut bad = body(1);
+    bad["day"] = serde_json::json!("03/11/2026");
+    let (s, _) = post_json_with_cookie(build_app(shared.clone()), host, path, &admin, bad).await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+
+    // re-sending a day replaces it
+    for m in [10, 25] {
+        let (s, b) =
+            post_json_with_cookie(build_app(shared.clone()), host, path, &admin, body(m)).await;
+        assert_eq!(s, StatusCode::OK, "{b}");
+    }
+    let (s, b) = get_with_cookie(
+        build_app(shared.clone()),
+        host,
+        "/api/admin/shop_reports",
+        &admin,
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let list: serde_json::Value = serde_json::from_str(&b).unwrap();
+    assert_eq!(list.as_array().unwrap().len(), 1);
+    assert_eq!(list[0]["kpis"]["gente_min"], 25);
+    assert!(list[0].get("report").is_none());
+    let (s, b) = get_with_cookie(
+        build_app(shared.clone()),
+        host,
+        "/api/admin/shop_reports/2026-11-03",
+        &admin,
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let day: serde_json::Value = serde_json::from_str(&b).unwrap();
+    assert_eq!(day["report"]["corridas"][0]["minutes"], 25);
+
+    // not for staff, and another company sees nothing
+    let (s, _) = get_with_cookie(
+        build_app(shared.clone()),
+        host,
+        "/api/admin/shop_reports/2026-11-03",
+        &staff,
+    )
+    .await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+    let (s, b) = get_with_cookie(
+        build_app(shared.clone()),
+        other_host,
+        "/api/admin/shop_reports",
+        &other,
+    )
+    .await;
+    assert_eq!((s, b.as_str()), (StatusCode::OK, "[]"));
+    let (s, _) = get_with_cookie(
+        build_app(shared),
+        other_host,
+        "/api/admin/shop_reports/2026-11-03",
+        &other,
+    )
+    .await;
+    assert_eq!(s, StatusCode::NOT_FOUND);
+    common::teardown(Some(ctx)).await;
+}
+
+#[tokio::test]
+async fn inferred_runs_count_apart_on_the_part() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+    let co = create_company(&state, "Inferred", "inferred", "MXN", true, None)
+        .await
+        .unwrap();
+    let id = create_user(
+        &state,
+        "inferred@example.com",
+        "SECRET",
+        &[(co.clone(), UserRole::Admin)],
+    )
+    .await
+    .unwrap();
+    let u = get_user_by_id(&state, &id).await.unwrap().unwrap();
+    let token = create_session(&state, &u.username).await.unwrap();
+    let host = "inferred.miapp.local";
+    let st = create_concept_status(&state, &co, "En proceso", 1, None, true, false, false, true)
+        .await
+        .unwrap();
+    let p = create_project(
+        &state,
+        &co,
+        "CG Proyecto",
+        None,
+        None,
+        None,
+        ProjectPriority::Medium,
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    create_project_concept(
+        &state,
+        &co,
+        &p,
+        Some(st),
+        "CG-15675",
+        2.0,
+        None,
+        None,
+        None,
+        None,
+        None,
+        1,
+    )
+    .await
+    .unwrap();
+    let mut est = run("1:est:1", Some("CG-15675"), 90.0, 0);
+    est["cutting_minutes"] = serde_json::json!(0.0);
+    est["inferred"] = serde_json::json!(true);
+    est["program_loaded_at"] = serde_json::json!("2026-10-15T08:00:00Z");
+    let payload = serde_json::json!({ "source": "taller-vision", "runs": [run("1:2", Some("CG-15675"), 30.0, 1), est] });
+    let (s, b) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        "/api/admin/machine_runs/ingest",
+        &token,
+        payload,
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{b}");
+    let (_, b) = get_with_cookie(
+        build_app(shared),
+        host,
+        &format!("/api/admin/projects/{}/machine_time", p.to_hex()),
+        &token,
+    )
+    .await;
+    let t: serde_json::Value = serde_json::from_str(&b).unwrap();
+    assert_eq!(t["concepts"][0]["minutes"], 120.0);
+    assert_eq!(t["concepts"][0]["inferred_minutes"], 90.0);
+    common::teardown(Some(ctx)).await;
+}

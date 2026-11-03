@@ -184,7 +184,7 @@ pub async fn api_production_plant(
 
         // The order: from the live run's part number, else the one set by hand.
         let concept_id = match (resolved.source, run) {
-            ("dnc", Some(run)) if active => match index.match_run(run.part_key.as_deref(), run.started_at) {
+            ("dnc" | "movimiento", Some(run)) if active => match index.match_run(run.part_key.as_deref(), run.started_at) {
                 RunMatch::Matched { shares } => shares
                     .first()
                     .and_then(|s| ObjectId::parse_str(&s.concept_id).ok()),

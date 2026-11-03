@@ -14,6 +14,8 @@ import type {
   ProjectConcept,
   ProjectConceptPayload,
   ProjectMachineTime,
+  ShopReportDetail,
+  ShopReportItem,
   ProjectDetail,
   ProjectPayload,
   ProjectRow,
@@ -56,6 +58,8 @@ export const advanceProject = (id: string) => apiPost<void>(`/api/admin/projects
 
 export const listProjectConcepts = (projectId: string) =>
   apiGet<ProjectConcept[]>(`/api/admin/projects/${projectId}/concepts`)
+export const listShopReports = () => apiGet<ShopReportItem[]>('/api/admin/shop_reports')
+export const getShopReport = (day: string) => apiGet<ShopReportDetail>(`/api/admin/shop_reports/${day}`)
 export const getProjectMachineTime = (projectId: string) =>
   apiGet<ProjectMachineTime>(`/api/admin/projects/${projectId}/machine_time`)
 export const createProjectConcept = (projectId: string, payload: ProjectConceptPayload) =>

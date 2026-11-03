@@ -4,6 +4,7 @@
 // which reproduces the admin/staff split the old Sidebar hard-coded.
 import {
   Boxes,
+  ClipboardList,
   Clock,
   Factory,
   Home,
@@ -80,6 +81,8 @@ export const NAV: NavEntry[] = [
     href: '/produccion/planta',
     can: adminOr('view_production_board'),
   },
+  // They say who was at which machine and when: admins only.
+  { id: 'reportes-taller', label: 'Reportes del taller', icon: ClipboardList, href: '/produccion/reportes', can: admin },
   { id: 'tiempo', label: 'Tiempo', icon: Clock, href: '/tiempo', can: adminOr('view_timeline') },
   {
     id: 'finanzas',

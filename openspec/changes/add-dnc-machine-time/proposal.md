@@ -59,3 +59,13 @@ prellenar la rejilla o comparar capturado vs medido. Costo (dinero) queda fuera:
 
 - Ningún cambio a colecciones existentes. Un índice único nuevo.
 - El token del monitor debe ser de un admin de `sp` (el endpoint escribe).
+
+## Agregado 2026-11-03
+
+- **Corridas estimadas** (`inferred`, regla de Luis Alfredo): el DNC no ve un programa que corre desde la memoria del
+  control. Con la caja DNC encendida, actividad en la máquina (movimiento en su zona sin contar personas, o una persona
+  en la zona) y el DNC sin mandar nada → se asume el **último programa subido**, aunque sea de días pasados. Es una
+  estimación: `cutting_minutes` 0, `inferred_minutes` aparte, "≈" en la UI, "estimado por movimiento" en la Vista de planta.
+- **Reporte diario** (`shop_daily_reports`, uno por empresa y día, se reemplaza al reenviar): JSON completo del monitor,
+  sólo números, nunca imágenes. `POST /api/admin/shop_reports/ingest`, `GET /api/admin/shop_reports[/{day}]`, sólo admin
+  porque dice quién estuvo en qué máquina y cuándo. Página "Reportes del taller".

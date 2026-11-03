@@ -632,7 +632,7 @@ export interface PlantMachine {
   resource_id: string
   name: string
   status: MachineStatus | null
-  source: 'dnc' | 'manual' | 'none'
+  source: 'dnc' | 'movimiento' | 'manual' | 'none'
   since: string | null
   note: string | null
   program: string | null
@@ -684,11 +684,67 @@ export interface ConceptMachineTime {
   cycles: number
   /** minutes that came from runs split with other projects by pieces ordered (estimate) */
   shared_minutes: number
+  /** minutes estimated from activity at the machine with the DNC idle, on the last program loaded */
+  inferred_minutes: number
   runs: number
   machines: string[]
   programs: string[]
   first_at?: string | null
   last_at?: string | null
+}
+
+// --- daily shop-floor report pushed by taller-vision (only what the page reads) ------
+
+export interface ShopKpis {
+  inicio_min?: number | null
+  fin_min?: number | null
+  gente_min?: number | null
+  trabajo_maquinas_min?: number | null
+  cortando_min?: number | null
+  medido_min?: number | null
+  estimado_min?: number | null
+  corridas?: number
+  alarmas?: number
+}
+
+export interface ShopRun {
+  external_id: string
+  machine: string
+  program: string
+  part_number?: string | null
+  nombre_cabecera?: string | null
+  started_at: string
+  ended_at: string
+  minutes: number
+  cutting_minutes: number
+  cycles: number
+  inferred: boolean
+  program_loaded_at?: string | null
+}
+
+export interface ShopZone {
+  ref: string
+  name: string
+  maquina?: string | number | null
+  trabajo_min?: number
+  sesiones?: { n: number }
+  dnc?: { nombre: string; cortando_min: number; ciclos: number } | null
+}
+
+export interface ShopReportItem {
+  day: string
+  summary?: string | null
+  kpis?: ShopKpis | null
+  updated_at?: string | null
+}
+
+export interface ShopReportDetail extends ShopReportItem {
+  report: {
+    zonas?: ShopZone[]
+    maquinas?: { ref: string | number; name: string }[]
+    corridas?: ShopRun[]
+    alarmas?: { inicio: string; cam?: string; maquina?: string; name?: string }[]
+  }
 }
 
 export interface ProjectMachineTime {

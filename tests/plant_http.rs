@@ -205,6 +205,9 @@ async fn plant_view_layout_machine_status_and_programmer() {
         minutes: 20.0,
         cutting_minutes: 18.0,
         cycles: 2,
+        inferred: false,
+        program_loaded_at: None,
+        header_name: None,
         created_at: None,
         updated_at: None,
     };

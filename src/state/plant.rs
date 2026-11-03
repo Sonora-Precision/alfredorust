@@ -109,7 +109,7 @@ pub fn resolve_status(
         if now.timestamp_millis() - run.ended_at.timestamp_millis() <= RUNNING_WINDOW_MS {
             return ResolvedStatus {
                 status: Some(MachineStatus::Working),
-                source: "dnc",
+                source: if run.inferred { "movimiento" } else { "dnc" },
                 since: Some(run.started_at),
             };
         }
@@ -259,6 +259,9 @@ mod tests {
             minutes: 10.0,
             cutting_minutes: 9.0,
             cycles: 1,
+            inferred: false,
+            program_loaded_at: None,
+            header_name: None,
             created_at: None,
             updated_at: None,
         }

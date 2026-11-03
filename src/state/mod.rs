@@ -9,7 +9,7 @@ use crate::models::{
     Account, ApiToken, Category, Company, ConceptStatus, Contact, Forecast, MachineRun,
     PlannedEntry, ProcessOperation, Project, ProjectConcept, RecurringPlan, Resource, ResourceLog,
     ResourceUsage, ResourceUsageAllocation, SatConfig, ServiceOrder, Session, Transaction, User,
-    UserCompany, WorkOrderEvent, MachineState, PartFile, PlantLayout,
+    UserCompany, WorkOrderEvent, MachineState, PartFile, PlantLayout, ShopDailyReport,
 };
 use bson::Document;
 
@@ -48,6 +48,7 @@ mod cfdi_jobs;
 mod companies;
 mod finance;
 mod machine_runs;
+mod shop_reports;
 mod orders;
 mod plant;
 mod part_files;
@@ -68,6 +69,7 @@ pub use cfdi_jobs::*;
 pub use companies::*;
 pub use finance::*;
 pub use machine_runs::*;
+pub use shop_reports::*;
 pub use orders::*;
 pub use plant::*;
 pub use part_files::*;
@@ -119,6 +121,7 @@ pub struct AppState {
     pub work_order_events: Collection<WorkOrderEvent>,
     pub plant_layouts: Collection<PlantLayout>,
     pub machine_states: Collection<MachineState>,
+    pub shop_daily_reports: Collection<ShopDailyReport>,
     pub part_files: Collection<PartFile>,
 }
 
@@ -215,6 +218,21 @@ pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppStat
         )
         .await
         .context("creating the personal access token owner index")?;
+
+    db.collection::<ShopDailyReport>("shop_daily_reports")
+        .create_index(
+            IndexModel::builder()
+                .keys(mongodb::bson::doc! { "company_id": 1, "day": 1 })
+                .options(
+                    IndexOptions::builder()
+                        .name("unique_shop_daily_report".to_string())
+                        .unique(true)
+                        .build(),
+                )
+                .build(),
+        )
+        .await
+        .context("creating the unique shop daily report index")?;
 
     // Shop-floor monitor runs are re-sent on every sync; the unique key makes that an upsert.
     db.collection::<MachineRun>("machine_runs")
@@ -329,6 +347,7 @@ pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppStat
         work_order_events: db.collection::<WorkOrderEvent>("work_order_events"),
         plant_layouts: db.collection::<PlantLayout>("plant_layouts"),
         machine_states: db.collection::<MachineState>("machine_states"),
+        shop_daily_reports: db.collection::<ShopDailyReport>("shop_daily_reports"),
         part_files: db.collection::<PartFile>("part_files"),
     };
 

@@ -417,7 +417,7 @@ function MachineDetail(props: {
         <span class="text-xs text-muted-foreground">
           {m().status ? `${STATUS_LABEL[m().status!]} hace ${sinceLabel(m().since)}` : 'Sin datos'}
           {' · '}
-          {m().source === 'dnc' ? 'monitor DNC' : m().source === 'manual' ? 'marcado a mano' : 'sin fuente'}
+          {m().source === 'dnc' ? 'monitor DNC' : m().source === 'movimiento' ? 'estimado por movimiento' : m().source === 'manual' ? 'marcado a mano' : 'sin fuente'}
         </span>
       </div>
       <Show when={m().order}>

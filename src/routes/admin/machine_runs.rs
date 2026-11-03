@@ -46,6 +46,14 @@ pub struct MachineRunPayload {
     pub cutting_minutes: f64,
     #[serde(default)]
     pub cycles: i32,
+    /// Estimated from activity at the machine with the DNC idle, on the last program loaded.
+    #[serde(default)]
+    pub inferred: bool,
+    /// RFC 3339; for inferred runs, when that program was loaded.
+    pub program_loaded_at: Option<String>,
+    /// Header text when it is not a part number.
+    #[serde(alias = "nombre_cabecera")]
+    pub header_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
@@ -109,6 +117,10 @@ fn validate(run: MachineRunPayload) -> Result<NewMachineRun, Response> {
     if !(0..=10_000).contains(&run.cycles) {
         return Err(json_error(StatusCode::BAD_REQUEST, "cycles out of range"));
     }
+    let program_loaded_at = match run.program_loaded_at.as_deref().filter(|v| !v.is_empty()) {
+        Some(v) => Some(parse_time(v, "program_loaded_at")?),
+        None => None,
+    };
     Ok(NewMachineRun {
         external_id: text(&run.external_id, "external_id", 120)?,
         machine: text(&run.machine, "machine", 80)?,
@@ -120,6 +132,9 @@ fn validate(run: MachineRunPayload) -> Result<NewMachineRun, Response> {
         minutes: run.minutes,
         cutting_minutes: run.cutting_minutes,
         cycles: run.cycles,
+        inferred: run.inferred,
+        program_loaded_at,
+        header_name: optional_text(run.header_name, "header_name", 120)?,
     })
 }
 
@@ -186,6 +201,8 @@ pub struct ConceptMachineTime {
     pub cycles: f64,
     /// Part of `minutes` that came from runs split with other projects (estimate by pieces).
     pub shared_minutes: f64,
+    /// Part of `minutes` estimated from activity at the machine, not measured by the DNC.
+    pub inferred_minutes: f64,
     pub runs: usize,
     pub machines: Vec<String>,
     pub programs: Vec<String>,
@@ -285,6 +302,9 @@ pub async fn api_project_machine_time(
             r.minutes += run.minutes * share.ratio;
             r.cutting_minutes += run.cutting_minutes * share.ratio;
             r.cycles += f64::from(run.cycles) * share.ratio;
+            if run.inferred {
+                r.inferred_minutes += run.minutes * share.ratio;
+            }
             if split {
                 r.shared_minutes += run.minutes * share.ratio;
             }
@@ -300,6 +320,7 @@ pub async fn api_project_machine_time(
         r.cutting_minutes = round1(r.cutting_minutes);
         r.cycles = round1(r.cycles);
         r.shared_minutes = round1(r.shared_minutes);
+        r.inferred_minutes = round1(r.inferred_minutes);
         r.machines = machines.into_iter().collect();
         r.programs = programs.into_iter().collect();
     }
@@ -337,6 +358,9 @@ pub struct MachineRunData {
     pub minutes: f64,
     pub cutting_minutes: f64,
     pub cycles: i32,
+    pub inferred: bool,
+    pub program_loaded_at: Option<String>,
+    pub header_name: Option<String>,
     #[serde(rename = "match")]
     pub matched: RunMatch,
 }
@@ -355,6 +379,9 @@ fn run_data(run: MachineRun, matched: RunMatch) -> Option<MachineRunData> {
         minutes: run.minutes,
         cutting_minutes: run.cutting_minutes,
         cycles: run.cycles,
+        inferred: run.inferred,
+        program_loaded_at: run.program_loaded_at.map(iso),
+        header_name: run.header_name,
         matched,
     })
 }

@@ -229,8 +229,8 @@ export default function ProjectDetail(): JSX.Element {
               <TableCell class="tnum">{c.estimated_hours != null ? c.estimated_hours.toFixed(1) : ''}</TableCell>
               <TableCell class="tnum">
                 <Show when={machineOf(c.id)?.runs} fallback={<span class="text-muted-foreground">—</span>}>
-                  <span title={`${machineOf(c.id)!.machines.join(', ')} · ${machineOf(c.id)!.programs.join(', ')}\nCortando ${horas(machineOf(c.id)!.cutting_minutes)}${machineOf(c.id)!.shared_minutes > 0 ? `\n${horas(machineOf(c.id)!.shared_minutes)} repartidas con otros proyectos que piden la misma pieza (por número de piezas)` : ''}`}>
-                    {machineOf(c.id)!.shared_minutes > 0 ? '≈ ' : ''}{horas(machineOf(c.id)!.minutes)}
+                  <span title={`${machineOf(c.id)!.machines.join(', ')} · ${machineOf(c.id)!.programs.join(', ')}\nCortando ${horas(machineOf(c.id)!.cutting_minutes)}${machineOf(c.id)!.shared_minutes > 0 ? `\n${horas(machineOf(c.id)!.shared_minutes)} repartidas con otros proyectos que piden la misma pieza (por número de piezas)` : ''}${machineOf(c.id)!.inferred_minutes > 0 ? `\n${horas(machineOf(c.id)!.inferred_minutes)} estimadas: actividad en la máquina sin DNC, con el último programa subido` : ''}`}>
+                    {machineOf(c.id)!.shared_minutes > 0 || machineOf(c.id)!.inferred_minutes > 0 ? '≈ ' : ''}{horas(machineOf(c.id)!.minutes)}
                   </span>
                   <span class="ml-1 text-xs text-muted-foreground">{machineOf(c.id)!.machines.join(', ')}</span>
                 </Show>

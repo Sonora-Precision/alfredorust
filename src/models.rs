@@ -1483,8 +1483,47 @@ pub struct MachineRun {
     #[serde(default)]
     pub cycles: i32,
 
+    /// Estimated, not measured: activity seen at the machine with the DNC box idle, so it is
+    /// assumed to keep running the last program loaded (the box cannot see memory runs).
+    #[serde(default)]
+    pub inferred: bool,
+
+    /// For an inferred run, when that last program was loaded (can be days earlier).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub program_loaded_at: Option<DateTime>,
+
+    /// What the program header says when it is not a part number ("ALTURA 2.115").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub header_name: Option<String>,
+
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created_at: Option<DateTime>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<DateTime>,
+}
+
+/// The shop-floor monitor's complete report of one day, for admins. Opaque JSON: its shape
+/// belongs to the monitor and grows there. Numbers only, never images.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShopDailyReport {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+
+    pub company_id: ObjectId,
+    /// YYYY-MM-DD, shop time.
+    pub day: String,
+    pub source: String,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+
+    #[serde(default)]
+    pub kpis_json: String,
+
+    /// Left out of listings.
+    #[serde(default)]
+    pub report_json: String,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<DateTime>,

@@ -415,10 +415,16 @@ pub fn build_app(state: Arc<AppState>) -> Router {
             post(routes::api_process_operations_delete),
         )
         .route("/api/production/board", get(routes::api_production_board))
-        .route("/api/production/members", get(routes::api_production_members))
+        .route(
+            "/api/production/members",
+            get(routes::api_production_members),
+        )
         .route("/api/production/search", get(routes::api_production_search))
         .route("/api/production/quality", get(routes::api_quality_queue))
-        .route("/api/production/part_drawings", get(routes::api_company_part_drawings))
+        .route(
+            "/api/production/part_drawings",
+            get(routes::api_company_part_drawings),
+        )
         .route(
             "/api/admin/projects/{project_id}/part_files",
             get(routes::api_project_part_files),
@@ -428,7 +434,10 @@ pub fn build_app(state: Arc<AppState>) -> Router {
             axum::routing::post(routes::api_part_drawing_upload)
                 .layer(axum::extract::DefaultBodyLimit::max(45 * 1024 * 1024)),
         )
-        .route("/api/admin/part_files/{id}", get(routes::api_part_file_download))
+        .route(
+            "/api/admin/part_files/{id}",
+            get(routes::api_part_file_download),
+        )
         .route(
             "/api/admin/part_files/{id}/delete",
             axum::routing::post(routes::api_part_file_delete),
@@ -553,6 +562,18 @@ pub fn build_app(state: Arc<AppState>) -> Router {
         .route(
             "/api/admin/resource_usages",
             get(routes::api_resource_usages_index).post(routes::api_resource_usages_create),
+        )
+        .route(
+            "/api/admin/shop_reports",
+            get(routes::api_shop_reports_index),
+        )
+        .route(
+            "/api/admin/shop_reports/ingest",
+            post(routes::api_shop_reports_ingest),
+        )
+        .route(
+            "/api/admin/shop_reports/{day}",
+            get(routes::api_shop_report_detail),
         )
         .route(
             "/api/admin/machine_runs",

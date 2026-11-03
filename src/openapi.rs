@@ -137,6 +137,9 @@ impl Modify for SecurityAddon {
         crate::routes::admin::part_progress::api_process_operations_delete,
 
         // resources — usage grid + usages (project_backend)
+        crate::routes::admin::shop_reports::api_shop_reports_ingest,
+        crate::routes::admin::shop_reports::api_shop_reports_index,
+        crate::routes::admin::shop_reports::api_shop_report_detail,
         crate::routes::admin::machine_runs::api_machine_runs_ingest,
         crate::routes::admin::machine_runs::api_machine_runs_index,
         crate::routes::admin::machine_runs::api_project_machine_time,

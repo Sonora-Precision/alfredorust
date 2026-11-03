@@ -28,6 +28,9 @@ pub struct NewMachineRun {
     pub minutes: f64,
     pub cutting_minutes: f64,
     pub cycles: i32,
+    pub inferred: bool,
+    pub program_loaded_at: Option<DateTime>,
+    pub header_name: Option<String>,
 }
 
 /// Uppercase, without whitespace: "zbl149-cst-y261007-1 " == "ZBL149-CST-Y261007-1".
@@ -72,6 +75,9 @@ pub async fn upsert_machine_runs(
                         "minutes": run.minutes,
                         "cutting_minutes": run.cutting_minutes,
                         "cycles": run.cycles,
+                        "inferred": run.inferred,
+                        "program_loaded_at": run.program_loaded_at,
+                        "header_name": run.header_name,
                     },
                     "$setOnInsert": { "created_at": now, "updated_at": now },
                 },
