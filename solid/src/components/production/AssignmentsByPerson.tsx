@@ -6,6 +6,7 @@ import { ChevronDown, ChevronRight } from 'lucide-solid'
 import { Card, CardContent } from '../ui/Card'
 import type { BoardMemberLoad } from '../../lib/api/types'
 import { matchesWorkOrder } from './WorkOrderSearch'
+import { PartName } from './PartName'
 
 const QUEUE_LABEL: Record<string, string> = {
   programming: 'Programación',
@@ -53,7 +54,7 @@ export function AssignmentsByPerson(props: { members: BoardMemberLoad[]; query: 
                       <li class="flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-sm">
                         <span class="min-w-0 truncate">
                           <span class="font-semibold tabular-nums text-foreground">{o.folio}</span>{' '}
-                          <span class="text-foreground">{o.part}</span>
+                          <PartName conceptId={o.id} part={o.part} class="text-foreground" />
                           <span class="text-xs text-muted-foreground">
                             {' · '}
                             {o.project}

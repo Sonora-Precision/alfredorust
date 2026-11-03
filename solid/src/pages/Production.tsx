@@ -34,6 +34,7 @@ import { humanizeError } from '../lib/api/client'
 import * as productionApi from '../lib/api/production'
 import type { BoardMemberLoad, SequenceMovePayload, WorkOrder } from '../lib/api/types'
 import { useAuth } from '../lib/auth/AuthContext'
+import { PartName } from '../components/production/PartName'
 
 const REFRESH_MS = 30_000
 /** At or above this many assigned programs a person shows as saturated. */
@@ -221,7 +222,7 @@ function OrderSummary(props: { order: WorkOrder }): JSX.Element {
           <Pin class="h-3.5 w-3.5 text-primary" aria-label="Fijada" />
         </Show>
         <span class="font-semibold tabular-nums text-foreground">{props.order.folio}</span>
-        <span class="truncate text-foreground">{props.order.part}</span>
+        <PartName conceptId={props.order.id} part={props.order.part} class="truncate text-foreground" />
         <PriorityBadge order={props.order} />
       </div>
       <p class="mt-0.5 truncate text-xs text-muted-foreground">

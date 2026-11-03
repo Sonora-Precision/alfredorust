@@ -2,16 +2,15 @@
 // the admin, upload / replace / remove (Daniel, 2026-11-03).
 import { createMutation, useQueryClient } from '@tanstack/solid-query'
 import { FileText, Trash2, Upload } from 'lucide-solid'
-import { type JSX, Show, createSignal, onCleanup } from 'solid-js'
-import { Portal } from 'solid-js/web'
+import { type JSX, Show } from 'solid-js'
 
+import { DrawingHover } from './DrawingHover'
+import { PART_DRAWINGS_KEY } from '../production/PartName'
 import { toast } from '../ui/Toast'
 import { humanizeError } from '../../lib/api/client'
 import { type PartFile, deletePartFile, uploadPartDrawing } from '../../lib/api/partFiles'
 
 const MAX_BYTES = 40 * 1024 * 1024
-const PREVIEW_W = 560
-const PREVIEW_H = 420
 
 export function PartDrawing(props: {
   projectId: string
@@ -23,7 +22,10 @@ export function PartDrawing(props: {
 }): JSX.Element {
   const qc = useQueryClient()
   let input: HTMLInputElement | undefined
-  const refresh = () => void qc.invalidateQueries({ queryKey: ['part-files', props.projectId] })
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: ['part-files', props.projectId] })
+    void qc.invalidateQueries({ queryKey: PART_DRAWINGS_KEY })
+  }
 
   const upload = createMutation(() => ({
     mutationFn: (file: File) => uploadPartDrawing(props.conceptId, file),
@@ -52,64 +54,25 @@ export function PartDrawing(props: {
     upload.mutate(file)
   }
 
-  // Hover preview: after a short pause the PDF opens in a floating panel beside the link,
-  // so moving the mouse across the table does not load every drawing.
-  const [preview, setPreview] = createSignal<{ top: number; left: number } | null>(null)
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const showPreview = (el: HTMLElement) => {
-    clearTimeout(timer)
-    timer = setTimeout(() => {
-      const r = el.getBoundingClientRect()
-      const room = window.innerWidth - r.right
-      const left = room > PREVIEW_W + 16 ? r.right + 8 : Math.max(8, r.left - PREVIEW_W - 8)
-      const top = Math.min(Math.max(8, r.top - PREVIEW_H / 2), window.innerHeight - PREVIEW_H - 8)
-      setPreview({ top, left })
-    }, 300)
-  }
-  const hidePreview = () => {
-    clearTimeout(timer)
-    setPreview(null)
-  }
-  onCleanup(() => clearTimeout(timer))
-
   return (
     <div class="mt-0.5 flex items-center gap-2 text-xs">
-      <Show when={preview() && props.file}>
-        <Portal>
-          <div
-            class="pointer-events-none fixed z-50 overflow-hidden rounded-lg border border-border bg-white shadow-2xl"
-            style={{
-              top: `${preview()!.top}px`,
-              left: `${preview()!.left}px`,
-              width: `${PREVIEW_W}px`,
-              height: `${PREVIEW_H}px`,
-            }}
-          >
-            <iframe
-              src={`${props.file!.url}#toolbar=0&navpanes=0&view=Fit`}
-              title={`Vista previa de ${props.partName}`}
-              class="h-full w-full"
-            />
-          </div>
-        </Portal>
-      </Show>
       <Show
         when={props.file}
         fallback={<Show when={!props.canUpload}><span class="text-muted-foreground">Sin plano</span></Show>}
       >
         {(f) => (
-          <a
-            href={f().url}
-            target="_blank"
-            rel="noopener"
-            class="inline-flex items-center gap-1 font-medium text-sky-600 hover:underline"
-            title={f().filename}
-            onMouseEnter={(e) => showPreview(e.currentTarget)}
-            onMouseLeave={hidePreview}
-          >
-            <FileText class="h-3.5 w-3.5" />
-            Plano
-          </a>
+          <DrawingHover url={f().url} label={props.partName}>
+            <a
+              href={f().url}
+              target="_blank"
+              rel="noopener"
+              class="inline-flex items-center gap-1 font-medium text-sky-600 hover:underline"
+              title={f().filename}
+            >
+              <FileText class="h-3.5 w-3.5" />
+              Plano
+            </a>
+          </DrawingHover>
         )}
       </Show>
       <Show when={props.canUpload}>

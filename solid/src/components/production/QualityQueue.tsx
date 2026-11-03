@@ -13,6 +13,7 @@ import { humanizeError } from '../../lib/api/client'
 import * as productionApi from '../../lib/api/production'
 import type { QualityItem, QualityPayload } from '../../lib/api/types'
 import { matchesWorkOrder } from './WorkOrderSearch'
+import { PartName } from './PartName'
 
 const n = (v: number) => v.toLocaleString('es-MX', { maximumFractionDigits: 2 })
 const parse = (s: string) => {
@@ -112,7 +113,7 @@ function QualityRow(props: {
             <div class="min-w-0">
               <p class="truncate">
                 <span class="tnum font-semibold text-foreground">{it().folio}</span>{' '}
-                <span class="text-foreground">{it().part}</span>
+                <PartName conceptId={it().id} part={it().part} class="text-foreground" />
               </p>
               <p class="truncate text-xs text-muted-foreground">
                 {it().project}

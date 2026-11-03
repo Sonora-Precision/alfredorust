@@ -6,6 +6,7 @@ import { type JSX, For, Show } from 'solid-js'
 
 import { Card, CardContent } from '../ui/Card'
 import * as productionApi from '../../lib/api/production'
+import { PartName } from './PartName'
 
 const n = (v: number) => v.toLocaleString('es-MX', { maximumFractionDigits: 0 })
 
@@ -58,7 +59,7 @@ export function WeeklyPiecesCard(props: {
                         <For each={w().mine_by_part}>
                           {(p) => (
                             <li>
-                              {p.folio} {p.part}: <span class="tabular-nums text-foreground">{n(p.pieces)}</span>
+                              {p.folio} <PartName conceptId={p.id} part={p.part} />: <span class="tabular-nums text-foreground">{n(p.pieces)}</span>
                             </li>
                           )}
                         </For>

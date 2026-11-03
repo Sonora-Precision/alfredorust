@@ -15,6 +15,9 @@ export interface PartFile {
 export const listProjectPartFiles = (projectId: string) =>
   apiGet<PartFile[]>(`/api/admin/projects/${projectId}/part_files`)
 
+/** Newest drawing of every part of the company (board, plant view, quality). */
+export const listCompanyPartDrawings = () => apiGet<PartFile[]>('/api/production/part_drawings')
+
 export const uploadPartDrawing = (conceptId: string, file: File) => {
   const form = new FormData()
   form.append('file', file)

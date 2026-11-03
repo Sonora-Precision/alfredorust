@@ -95,6 +95,24 @@ pub async fn list_part_files(
     Ok(out)
 }
 
+/// The newest drawing of every part of the company (the board and plant view show them
+/// wherever a part number appears).
+pub async fn list_company_part_drawings(state: &AppState, company_id: &ObjectId) -> Result<Vec<PartFile>> {
+    let mut cursor = state
+        .part_files
+        .find(doc! { "company_id": company_id, "kind": "drawing", "deleted_at": { "$exists": false } })
+        .sort(doc! { "uploaded_at": -1 })
+        .await?;
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    while let Some(f) = cursor.try_next().await? {
+        if seen.insert(f.concept_id) {
+            out.push(f);
+        }
+    }
+    Ok(out)
+}
+
 pub async fn get_part_file(state: &AppState, company_id: &ObjectId, id: &ObjectId) -> Result<Option<PartFile>> {
     Ok(state
         .part_files

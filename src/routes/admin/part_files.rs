@@ -19,7 +19,7 @@ use crate::{
     session::{EMBEDDABLE_CSP, SessionUser},
     state::{
         AppState, delete_part_file, get_part_file, get_project_concept_by_id_for_company,
-        list_part_files, read_part_file, save_part_drawing,
+        list_company_part_drawings, list_part_files, read_part_file, save_part_drawing,
     },
 };
 
@@ -48,8 +48,29 @@ fn part_file_data(f: PartFile) -> Option<PartFileData> {
     })
 }
 
+/// Anyone who sees parts — in projects, on the board or in the quality queue — sees their
+/// drawings (a drawing carries no prices).
 fn can_view(user: &SessionUser) -> bool {
-    user.has_permission(UserPermission::ViewProjects)
+    [
+        UserPermission::ViewProjects,
+        UserPermission::ViewProductionBoard,
+        UserPermission::TakeWorkOrders,
+        UserPermission::ReleaseParts,
+    ]
+    .into_iter()
+    .any(|p| user.has_permission(p))
+}
+
+/// The newest drawing of every part of the company, for the board and plant view.
+pub async fn api_company_part_drawings(session_user: SessionUser, State(state): State<Arc<AppState>>) -> Response {
+    if !can_view(&session_user) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let company_id = require_active_company(&session_user);
+    match list_company_part_drawings(&state, &company_id).await {
+        Ok(files) => Json(files.into_iter().filter_map(part_file_data).collect::<Vec<_>>()).into_response(),
+        Err(_) => json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load drawings"),
+    }
 }
 
 /// Drawings of every part of a project, newest first.
