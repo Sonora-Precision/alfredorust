@@ -381,6 +381,129 @@ programmers only take an order for themselves.
 - WHEN they try to assign an order to another programmer
 - THEN the request is rejected and the order stays unassigned
 
+### Requirement: Any machine can be set to a running work order by hand
+
+The system SHALL let users with `take_work_orders` or
+`manage_production_board` set, on any machine, the work order and setup it
+is running, recording who and when, SHALL allow the same work order to run
+on several machines at once, and SHALL show both parts with a mismatch
+warning when an active DNC run reports a different part.
+
+#### Scenario: Programmer sets what VF-3 is running
+
+- GIVEN VF-3 has no active DNC run
+- WHEN José Márquez, with `take_work_orders`, sets OT-0037 as running on VF-3
+- THEN the VF-3 card shows OT-0037 in production
+- AND a machine state event records José Márquez and the time
+
+#### Scenario: Same work order running on VF-3 and VF-6
+
+- GIVEN OT-0037 is running on VF-3 with label "Setup 1"
+- WHEN the admin also sets OT-0037 "Setup 1" as running on VF-6
+- THEN OT-0037 is running on both machines
+- AND the card and the search say "corriendo en VF-3 (Setup 1) y VF-6 (Setup 1)"
+
+#### Scenario: Pieces recorded per machine
+
+- GIVEN OT-0037 runs on VF-3 and VF-6 and has 0 produced pieces
+- WHEN José records 6 produced pieces from VF-3 and 4 from VF-6
+- THEN OT-0037 shows 10 produced pieces and 6 from VF-3, 4 from VF-6
+- AND quality releases them against the total of 10
+
+#### Scenario: DNC reads another part
+
+- GIVEN OT-0037 (CG-16587) is set by hand as running on VF-3
+- AND the active DNC run on VF-3 reports part CG-15253-A
+- WHEN a user opens the plant view
+- THEN the VF-3 card shows both parts and a mismatch warning
+
+#### Scenario: Quality cannot set the running order
+
+- GIVEN Berenice with only `release_parts`
+- WHEN she tries to set the work order running on VF-3
+- THEN the request is rejected and VF-3 is unchanged
+
+### Requirement: Each machine has an ordered queue of next work orders
+
+The system SHALL keep an ordered queue per machine of work order entries
+with a setup or operation label, allowing several entries of one work order
+on the same or other machines, editable with `take_work_orders` or
+`manage_production_board` and logged, SHALL show the next one and how many
+wait, and SHALL offer, never do automatically, moving it to production.
+
+#### Scenario: Next order shown on the card
+
+- GIVEN the VF-3 queue holds OT-0040 then OT-0041
+- WHEN a user opens the plant view
+- THEN the VF-3 card shows "Sigue en VF-3: OT-0040" with its step and one more waiting
+
+#### Scenario: Three setups of one order on VF-3
+
+- GIVEN the VF-3 queue is empty
+- WHEN the admin adds OT-0042 three times to VF-3 with labels "Setup 1", "Setup 2" and "Setup 3"
+- THEN the VF-3 queue holds the three entries of OT-0042 in that order
+- AND the search says "En fila de VF-3: Setup 2, pos. 2" for the second one
+
+#### Scenario: Queued on another machine keeps the first
+
+- GIVEN the machining entry of OT-0041 is in the VF-3 queue
+- WHEN the admin adds the same step of OT-0041 to the VF-6 queue
+- THEN OT-0041 is in both the VF-3 and the VF-6 queues
+
+#### Scenario: Previous step not done only warns
+
+- GIVEN OT-0042 has its cutting step pending
+- WHEN a user moves its VF-3 entry to production
+- THEN a soft notice says the cutting is not done
+- AND OT-0042 runs on VF-3
+
+#### Scenario: Running order ends
+
+- GIVEN OT-0037 is running on VF-3 and OT-0040 is first in its queue
+- WHEN OT-0037 reaches its ordered pieces
+- THEN the card offers to move OT-0040 to production
+- AND OT-0040 stays queued until the admin confirms
+
+#### Scenario: Search shows the machine
+
+- GIVEN OT-0041 is second in the VF-6 queue
+- WHEN a user searches "OT-41"
+- THEN the hit says it is in the VF-6 queue at position 2
+
+### Requirement: Urgent work orders jump the machine queue
+
+The system SHALL let users with `manage_production_board` mark a queued work
+order urgent with a mandatory reason, placing it first in that machine
+queue, marked urgent everywhere it appears, without stopping the running
+order unless the admin chooses to interrupt it, in which case the
+interrupted order returns to the queue right after the urgent one.
+
+#### Scenario: Urgent order jumps the queue
+
+- GIVEN the VF-3 queue holds OT-0040 then OT-0041
+- WHEN the admin marks OT-0045 urgent on VF-3 with reason "cliente parado"
+- THEN the VF-3 queue reads OT-0045, OT-0040, OT-0041
+- AND OT-0045 is shown as urgent on the card, the board and the search
+- AND an event records the admin and the reason
+
+#### Scenario: Programmer cannot mark urgent
+
+- GIVEN José Márquez with `take_work_orders` and without `manage_production_board`
+- WHEN he marks OT-0045 urgent on VF-3
+- THEN the request is rejected and the queue is unchanged
+
+#### Scenario: Urgent without a reason
+
+- WHEN the admin marks OT-0045 urgent with an empty reason
+- THEN the request fails and the queue is unchanged
+
+#### Scenario: Stop and run the urgent order
+
+- GIVEN OT-0037 is running on VF-3 and its queue holds OT-0040
+- WHEN the admin marks OT-0045 urgent on VF-3 choosing to interrupt
+- THEN OT-0045 is running on VF-3
+- AND the VF-3 queue reads OT-0037, OT-0040
+
 ### Requirement: Board and workload never expose money
 
 The system SHALL return board, work order and workload data without unit

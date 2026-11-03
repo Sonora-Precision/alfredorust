@@ -35,6 +35,7 @@ import * as productionApi from '../lib/api/production'
 import type { BoardMemberLoad, SequenceMovePayload, WorkOrder } from '../lib/api/types'
 import { useAuth } from '../lib/auth/AuthContext'
 import { PartName } from '../components/production/PartName'
+import { ProgrammerDrawer } from '../components/production/ProgrammerPanel'
 
 const REFRESH_MS = 30_000
 /** At or above this many assigned programs a person shows as saturated. */
@@ -336,23 +337,27 @@ function OrderCard(props: OrderCardProps): JSX.Element {
 }
 
 function MembersStrip(props: { members: BoardMemberLoad[] }): JSX.Element {
+  const [panelFor, setPanelFor] = createSignal<string | null>(null)
   return (
     <section class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
       <For each={props.members}>
         {(m) => (
-          <Card glass glow={false}>
-            <CardContent class="flex items-center justify-between gap-2 p-3">
-              <div class="min-w-0">
-                <p class="truncate text-sm font-medium text-foreground">{m.name}</p>
-                <p class="truncate text-xs text-muted-foreground">
-                  {m.assigned[0] ? `Haciendo ${m.assigned[0]}` : 'Sin programa'}
-                </p>
-              </div>
-              <Badge tone={loadTone(m.assigned.length)}>{loadLabel(m.assigned.length)}</Badge>
-            </CardContent>
-          </Card>
+          <button type="button" class="text-left" title="Ver sus partes y planos" onClick={() => setPanelFor(m.id)}>
+            <Card glass glow={false}>
+              <CardContent class="flex items-center justify-between gap-2 p-3">
+                <div class="min-w-0">
+                  <p class="truncate text-sm font-medium text-foreground">{m.name}</p>
+                  <p class="truncate text-xs text-muted-foreground">
+                    {m.assigned[0] ? `Haciendo ${m.assigned[0]}` : 'Sin programa'}
+                  </p>
+                </div>
+                <Badge tone={loadTone(m.assigned.length)}>{loadLabel(m.assigned.length)}</Badge>
+              </CardContent>
+            </Card>
+          </button>
         )}
       </For>
+      <ProgrammerDrawer memberId={panelFor()} onClose={() => setPanelFor(null)} />
     </section>
   )
 }

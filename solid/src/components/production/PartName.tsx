@@ -10,7 +10,7 @@ import { type PartFile, listCompanyPartDrawings } from '../../lib/api/partFiles'
 export const PART_DRAWINGS_KEY = ['part-drawings'] as const
 
 /** Newest drawing per part of the company, shared by every PartName on the page. */
-function useDrawings() {
+export function usePartDrawings() {
   const q = createQuery(() => ({
     queryKey: PART_DRAWINGS_KEY,
     queryFn: listCompanyPartDrawings,
@@ -20,7 +20,7 @@ function useDrawings() {
 }
 
 export function PartName(props: { conceptId: string; part: string; class?: string }): JSX.Element {
-  const drawings = useDrawings()
+  const drawings = usePartDrawings()
   const file = () => drawings().get(props.conceptId)
   return (
     <Show when={file()} fallback={<span class={props.class}>{props.part}</span>}>

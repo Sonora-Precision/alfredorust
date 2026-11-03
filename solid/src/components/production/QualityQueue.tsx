@@ -14,6 +14,7 @@ import * as productionApi from '../../lib/api/production'
 import type { QualityItem, QualityPayload } from '../../lib/api/types'
 import { matchesWorkOrder } from './WorkOrderSearch'
 import { PartName } from './PartName'
+import { ProgrammerName } from './ProgrammerPanel'
 
 const n = (v: number) => v.toLocaleString('es-MX', { maximumFractionDigits: 2 })
 const parse = (s: string) => {
@@ -118,7 +119,7 @@ function QualityRow(props: {
               <p class="truncate text-xs text-muted-foreground">
                 {it().project}
                 <Show when={it().client}> · {it().client}</Show>
-                <Show when={it().programmer}> · programó {it().programmer!.name}</Show>
+                <Show when={it().programmer}>{(p) => <> · programó <ProgrammerName id={p().id} name={p().name} /></>}</Show>
               </p>
             </div>
             <div class="tnum text-right text-xs text-muted-foreground">
