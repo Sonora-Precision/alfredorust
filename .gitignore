@@ -14,3 +14,4 @@
 # spcli smoke test reports
 smoke-report.json
 smoke-report.html
+/data/part_files/

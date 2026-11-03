@@ -20,6 +20,8 @@ import {
 } from '../../lib/api/operations'
 import { assignWorkOrder, listBoardMembers } from '../../lib/api/production'
 import { folioOf, matchesWorkOrder } from '../production/WorkOrderSearch'
+import { type PartFile, listProjectPartFiles } from '../../lib/api/partFiles'
+import { PartDrawing } from './PartDrawing'
 import type { ConceptStatusFull, PartProgressPayload, ProcessOperation, ProjectConcept, StepState } from '../../lib/api/types'
 import { cn } from '../../lib/cn'
 
@@ -116,6 +118,8 @@ interface PartTrackingProps {
   canSeeAssignees: boolean
   /** Assign or change who holds each part (whoever manages the board). */
   canAssign: boolean
+  /** Upload, replace or remove part drawings (admins only). */
+  canUploadFiles: boolean
 }
 
 export function PartTracking(props: PartTrackingProps): JSX.Element {
@@ -236,6 +240,19 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
   }
 
   const [configOpen, setConfigOpen] = createSignal(false)
+  // Newest PDF drawing per part.
+  const filesQuery = createQuery(() => ({
+    queryKey: ['part-files', props.projectId],
+    queryFn: () => listProjectPartFiles(props.projectId),
+  }))
+  const drawingOf = createMemo(() => {
+    const map = new Map<string, PartFile>()
+    for (const f of filesQuery.data ?? []) {
+      if (f.kind === 'drawing' && !map.has(f.concept_id)) map.set(f.concept_id, f)
+    }
+    return map
+  })
+
   const [filter, setFilter] = createSignal('')
   const visibleConcepts = createMemo(() =>
     props.concepts.filter((c) => matchesWorkOrder({ folio: folioOf(c.work_order_number), part: c.name }, filter())),
@@ -343,6 +360,13 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
                       <Show when={c.work_order_number != null}>
                         <p class="tnum text-xs text-muted-foreground">{folioOf(c.work_order_number)}</p>
                       </Show>
+                      <PartDrawing
+                        projectId={props.projectId}
+                        conceptId={c.id}
+                        partName={c.name}
+                        file={drawingOf().get(c.id)}
+                        canUpload={props.canUploadFiles}
+                      />
                       <Show when={c.description}>
                         <p class="max-w-[16rem] truncate text-xs text-muted-foreground" title={c.description ?? ''}>
                           {c.description}
