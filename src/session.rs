@@ -125,12 +125,18 @@ font-src 'self' https://fonts.gstatic.com; \
 style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; \
 script-src 'self'; connect-src 'self'";
 
+/// CSP for files the app embeds in its own pages (the part-drawing PDF preview):
+/// only same-origin framing is allowed.
+pub const EMBEDDABLE_CSP: &str = "default-src 'self'; frame-ancestors 'self'";
+
 /// Baseline security headers on every response (SPA HTML, assets, API). Applied
 /// as an outer layer in main.rs. HSTS is handled at the Cloudflare edge (covers
 /// all hosts incl. the WordPress apex), so it's intentionally not set here.
+/// A handler that already set its own CSP (an embeddable file) keeps it.
 pub async fn security_headers(request: Request, next: Next) -> Response {
     let mut response = next.run(request).await;
     let h = response.headers_mut();
+    let own_csp = h.contains_key("content-security-policy");
     h.insert(
         "x-content-type-options",
         HeaderValue::from_static("nosniff"),
@@ -144,7 +150,9 @@ pub async fn security_headers(request: Request, next: Next) -> Response {
         "permissions-policy",
         HeaderValue::from_static("camera=(), microphone=(), geolocation=(), browsing-topics=()"),
     );
-    h.insert("content-security-policy", HeaderValue::from_static(CSP));
+    if !own_csp {
+        h.insert("content-security-policy", HeaderValue::from_static(CSP));
+    }
     response
 }
 
