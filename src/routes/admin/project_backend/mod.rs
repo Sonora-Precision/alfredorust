@@ -124,6 +124,8 @@ pub struct ProjectConceptData {
     pub project_id: String,
     pub status_id: String,
     pub name: String,
+    /// OT folio number (shown as OT-0001).
+    pub work_order_number: Option<i64>,
     pub quantity: f64,
     pub unit: Option<String>,
     pub description: Option<String>,
@@ -158,6 +160,7 @@ pub(crate) fn project_concept_data(c: ProjectConcept) -> Option<ProjectConceptDa
         project_id: c.project_id.to_hex(),
         status_id: c.status_id.to_hex(),
         name: c.name,
+        work_order_number: c.work_order_number,
         quantity: c.quantity,
         unit: c.unit,
         description: c.description,

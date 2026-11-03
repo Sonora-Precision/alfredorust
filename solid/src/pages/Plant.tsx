@@ -257,7 +257,7 @@ export default function Plant(): JSX.Element {
                   <h2 class="text-sm font-semibold text-foreground">Órdenes pendientes</h2>
                   <span class="text-xs text-muted-foreground">{pending().length}</span>
                 </div>
-                <WorkOrderSearch onQuery={setQuery} placeholder="Buscar número de parte o folio" />
+                <WorkOrderSearch onQuery={setQuery} placeholder="Buscar por OT o nombre del item" />
                 <Show when={canManage() && pending().length > 0}>
                   <p class="text-xs text-muted-foreground">
                     Arrastra una OT sobre un programador, o tócala y luego toca a la persona.

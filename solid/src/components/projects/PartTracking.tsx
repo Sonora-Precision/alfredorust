@@ -19,6 +19,7 @@ import {
   updateProcessOperation,
 } from '../../lib/api/operations'
 import { assignWorkOrder, listBoardMembers } from '../../lib/api/production'
+import { folioOf, matchesWorkOrder } from '../production/WorkOrderSearch'
 import type { ConceptStatusFull, PartProgressPayload, ProcessOperation, ProjectConcept, StepState } from '../../lib/api/types'
 import { cn } from '../../lib/cn'
 
@@ -223,6 +224,10 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
   }
 
   const [configOpen, setConfigOpen] = createSignal(false)
+  const [filter, setFilter] = createSignal('')
+  const visibleConcepts = createMemo(() =>
+    props.concepts.filter((c) => matchesWorkOrder({ folio: folioOf(c.work_order_number), part: c.name }, filter())),
+  )
 
   return (
     <div class="space-y-4">
@@ -283,6 +288,15 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
             </Button>
           </Show>
         </div>
+        <div class="px-4 pt-2">
+          <Input
+            type="search"
+            value={filter()}
+            onInput={setFilter}
+            placeholder="Filtrar por OT o nombre del item (ej. OT-12, 4471)"
+            aria-label="Filtrar números de parte"
+          />
+        </div>
         <div class="overflow-x-auto">
           <Table>
             <TableHead>
@@ -303,13 +317,21 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
               </TableRow>
             </TableHead>
             <TableBody>
-              <For each={props.concepts}>{(c) => {
+              <Show when={filter() && visibleConcepts().length === 0}>
+                <TableRow>
+                  <TableCell class="text-sm text-muted-foreground">Ningún número de parte coincide.</TableCell>
+                </TableRow>
+              </Show>
+              <For each={visibleConcepts()}>{(c) => {
                 const cancelled = () => cancelledIds().has(c.status_id)
                 const ratio = () => (c.quantity > 0 ? c.completed_quantity / c.quantity : 0)
                 return (
                   <TableRow class={cn(cancelled() && 'opacity-50')}>
                     <TableCell class="sticky left-0 z-10 bg-card">
                       <p class="font-medium text-foreground">{c.name}</p>
+                      <Show when={c.work_order_number != null}>
+                        <p class="tnum text-xs text-muted-foreground">{folioOf(c.work_order_number)}</p>
+                      </Show>
                       <Show when={c.description}>
                         <p class="max-w-[16rem] truncate text-xs text-muted-foreground" title={c.description ?? ''}>
                           {c.description}
