@@ -486,6 +486,16 @@ urgencia, eso significaría brincar la cola de producción."
   manual de máquina (`POST /api/production/machines/{id}/state` con
   `concept_id` y la etiqueta de setup u operación) como evento con quién y
   cuándo.
+- **El programador elige su máquina y cierra ahí** (Daniel, 2026-11-03: "cada
+  programador deberá elegir la máquina en la que va a trabajar y dar por
+  concluido su trabajo en la misma"): desde la tarjeta de la máquina pone a
+  correr su OT ("Correr ahora" o "Pasar a producción" de la fila) y al acabar
+  da **"Terminar trabajo"** (`POST …/machines/{id}/finish`): la máquina queda
+  parada con la nota "Terminó OT-xxxx parte (Setup 1)" y quién lo hizo, lista
+  para la siguiente de la fila. La tarjeta muestra quién la puso a correr.
+- **Lo que importa es qué corre y qué sigue** (Daniel): el último programa del
+  DNC ayuda y se muestra como pista, "pero no lo es todo"; lo que corre se
+  marca a mano y lo que sigue es la fila.
 - **DNC contra manual:** si la corrida DNC activa trae otra parte que la
   manual, la tarjeta muestra las dos y un aviso "El DNC lee CG-xxxx"; ninguna
   pisa a la otra en silencio. Si coinciden, se muestra una sola.

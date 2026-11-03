@@ -275,6 +275,7 @@ mod tests {
             status,
             concept_id: None,
             note: None,
+            label: None,
             set_by: ObjectId::new(),
             at: DateTime::from_millis(at_ms),
         }

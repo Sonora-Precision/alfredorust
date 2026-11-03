@@ -84,10 +84,11 @@ Una máquina sin corridas ni estado manual se ve gris, "Sin datos".
 
 **En producción y fila por máquina (§9c, entrega B, Daniel 2026-11-03).**
 
-- [ ] "En producción" manual en todas las máquinas con buscador por número de parte y etiqueta de setup; la misma OT puede correr en varias máquinas a la vez.
+- [x] "En producción" manual en todas las máquinas con buscador por número de parte y etiqueta de setup; la misma OT puede correr en varias máquinas a la vez (corte 1).
+- [x] El programador elige su máquina ("Correr ahora" / "Pasar a producción") y cierra con "Terminar trabajo" (`…/finish`, nota de qué terminó y quién) (corte 1).
 - [ ] Aviso de desfase cuando la corrida DNC trae otra parte que la manual (se muestran las dos).
-- [ ] `machine_queue_entries` (`operation_id?`, `label`) + API de fila (`GET/POST …/machines/{id}/queue`, `…/{entry_id}/remove`, `…/{entry_id}/urgent`, `…/advance`); sin unicidad: varias entradas de una OT en la misma máquina (Setup 1/2/3) y en varias máquinas.
-- [ ] Tarjeta: "Sigue en VF-3: OT-xxxx (Setup 2)" y "+N en fila"; al terminar la que corre, ofrecer "Pasar a producción" (nunca automático).
+- [x] (corte 1, sin `operation_id` ni `…/urgent` todavía) `machine_queue_entries` (`operation_id?`, `label`) + API de fila (`GET/POST …/machines/{id}/queue`, `…/{entry_id}/remove`, `…/{entry_id}/urgent`, `…/advance`); sin unicidad: varias entradas de una OT en la misma máquina (Setup 1/2/3) y en varias máquinas.
+- [x] (corte 1: panel de máquina con lo que corre, la fila y sus planos; "+N en fila" en el plano) Tarjeta: "Sigue en VF-3: OT-xxxx (Setup 2)" y "+N en fila"; al terminar la que corre, ofrecer "Pasar a producción" (nunca automático).
 - [ ] Sugerencia suave (nunca bloquea) si el paso anterior no está ✔/N/A.
 - [ ] Piezas por máquina/setup opcionales al registrar producidas (`pieces_recorded` con `resource_id`, `label`); el total, la liberación y el crédito no cambian.
 - [ ] Urgente con motivo obligatorio, primero en la fila, evento `MachineQueueUrgent`, rojo en tarjeta/tablero/buscador; "Detener y correr urgente" regresa la actual a la fila.

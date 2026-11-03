@@ -19,6 +19,36 @@ export function usePartDrawings() {
   return createMemo(() => new Map<string, PartFile>((q.data ?? []).map((f) => [f.concept_id, f])))
 }
 
+/** The drawing of a part as a small preview; click opens the full PDF. */
+export function PartDrawingThumb(props: { conceptId: string; part: string; class?: string }): JSX.Element {
+  const drawings = usePartDrawings()
+  const file = () => drawings().get(props.conceptId)
+  return (
+    <Show
+      when={file()}
+      fallback={<p class="px-3 py-6 text-center text-xs text-muted-foreground">Sin plano</p>}
+    >
+      {(f) => (
+        <a
+          href={f().url}
+          target="_blank"
+          rel="noopener"
+          class={`relative block bg-white ${props.class ?? 'h-56'}`}
+          title={`Abrir plano de ${props.part}`}
+        >
+          {/* The iframe ignores the mouse so a click lands on the link and opens the full PDF. */}
+          <iframe
+            src={`${f().url}#toolbar=0&navpanes=0&view=Fit`}
+            title={`Plano de ${props.part}`}
+            loading="lazy"
+            class="pointer-events-none h-full w-full"
+          />
+        </a>
+      )}
+    </Show>
+  )
+}
+
 export function PartName(props: { conceptId: string; part: string; class?: string }): JSX.Element {
   const drawings = usePartDrawings()
   const file = () => drawings().get(props.conceptId)

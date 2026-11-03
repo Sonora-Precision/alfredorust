@@ -5,7 +5,7 @@ import { createQuery } from '@tanstack/solid-query'
 import { type JSX, For, Show, createSignal } from 'solid-js'
 
 import { Drawer } from '../ui/Drawer'
-import { PartName, usePartDrawings } from './PartName'
+import { PartDrawingThumb, PartName } from './PartName'
 import * as productionApi from '../../lib/api/production'
 
 const QUEUE_LABEL: Record<string, string> = {
@@ -25,7 +25,6 @@ export function ProgrammerDrawer(props: {
     queryFn: productionApi.listBoardMembers,
     enabled: props.memberId !== null,
   }))
-  const drawings = usePartDrawings()
   const member = () => members.data?.find((m) => m.id === props.memberId)
   const orders = () => member()?.orders ?? []
 
@@ -48,7 +47,6 @@ export function ProgrammerDrawer(props: {
         </Show>
         <For each={orders()}>
           {(o) => {
-            const file = () => drawings().get(o.id)
             return (
               <div class="overflow-hidden rounded-xl border border-border bg-card">
                 <div class="px-3 py-2">
@@ -61,28 +59,9 @@ export function ProgrammerDrawer(props: {
                     {o.completed_quantity}/{o.quantity} pzas
                   </p>
                 </div>
-                <Show
-                  when={file()}
-                  fallback={<p class="border-t border-border px-3 py-6 text-center text-xs text-muted-foreground">Sin plano</p>}
-                >
-                  {(f) => (
-                    <a
-                      href={f().url}
-                      target="_blank"
-                      rel="noopener"
-                      class="relative block h-56 border-t border-border bg-white"
-                      title={`Abrir plano de ${o.part}`}
-                    >
-                      {/* The iframe ignores the mouse so a click lands on the link and opens the full PDF. */}
-                      <iframe
-                        src={`${f().url}#toolbar=0&navpanes=0&view=Fit`}
-                        title={`Plano de ${o.part}`}
-                        loading="lazy"
-                        class="pointer-events-none h-full w-full"
-                      />
-                    </a>
-                  )}
-                </Show>
+                <div class="border-t border-border">
+                  <PartDrawingThumb conceptId={o.id} part={o.part} />
+                </div>
               </div>
             )
           }}

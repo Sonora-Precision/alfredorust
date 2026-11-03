@@ -1266,8 +1266,29 @@ pub struct MachineState {
     pub concept_id: Option<ObjectId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// Setup or operation it is running ("Setup 1", "Op 20").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
     pub set_by: ObjectId,
     pub at: DateTime,
+}
+
+/// A work order waiting to run on a machine, in order (Daniel, 2026-11-03, design §9c). One
+/// order can have several entries on the same machine (Setup 1, 2, 3) and be queued on
+/// several machines at once.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MachineQueueEntry {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub company_id: ObjectId,
+    pub resource_id: ObjectId,
+    pub concept_id: ObjectId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    /// Lower runs first.
+    pub rank: i64,
+    pub added_by: ObjectId,
+    pub added_at: DateTime,
 }
 
 /// ---------- RESOURCES ----------

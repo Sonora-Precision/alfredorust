@@ -13,7 +13,6 @@ import { WeeklyPiecesCard } from '../components/production/WeeklyPiecesCard'
 import { WorkOrderSearch, matchesWorkOrder } from '../components/production/WorkOrderSearch'
 
 import { Badge, type BadgeTone } from '../components/ui/Badge'
-import { Button } from '../components/ui/Button'
 import { Card, CardContent } from '../components/ui/Card'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Spinner } from '../components/ui/Spinner'
@@ -29,7 +28,8 @@ import type {
 } from '../lib/api/types'
 import { useAuth } from '../lib/auth/AuthContext'
 import { PartName } from '../components/production/PartName'
-import { ProgrammerDrawer, ProgrammerName } from '../components/production/ProgrammerPanel'
+import { ProgrammerDrawer } from '../components/production/ProgrammerPanel'
+import { MachinePanel } from '../components/production/MachinePanel'
 
 const REFRESH_MS = 30_000
 const LOAD_LIMIT = 5
@@ -74,6 +74,8 @@ export default function Plant(): JSX.Element {
   const auth = useAuth()
   const qc = useQueryClient()
   const canManage = () => auth.isAdmin() || auth.hasPermission('manage_production_board')
+  // Programmers pick the machine they work on and say what runs there (Daniel, 2026-11-03).
+  const canEditMachines = () => canManage() || auth.hasPermission('take_work_orders')
 
   const plantQuery = createQuery(() => ({
     queryKey: ['production', 'plant'],
@@ -125,9 +127,6 @@ export default function Plant(): JSX.Element {
     run.mutate(() => productionApi.assignWorkOrder(orderId, member.id))
     if (order) toast.success(`${order.folio} → ${member.name}`)
   }
-
-  const setState = (resourceId: string, status: MachineStatus) =>
-    run.mutate(() => productionApi.setMachineState(resourceId, { status }))
 
   return (
     <div class="space-y-4">
@@ -219,16 +218,14 @@ export default function Plant(): JSX.Element {
                   )}
                 </Show>
                 <Legend />
-                <Show when={machines().get(selectedMachine() ?? '')}>
-                  {(m) => (
-                    <MachineDetail
-                      machine={m()}
-                      canManage={canManage()}
-                      busy={run.isPending}
-                      onSetState={(s) => setState(m().resource_id, s)}
-                    />
-                  )}
-                </Show>
+                <p class="mt-1 px-1 text-xs text-muted-foreground">
+                  Toca una máquina para ver qué corre, lo que sigue y sus planos.
+                </p>
+                <MachinePanel
+                  machine={machines().get(selectedMachine() ?? '')}
+                  canEdit={canEditMachines()}
+                  onClose={() => setSelectedMachine(null)}
+                />
               </CardContent>
             </Card>
 
@@ -308,9 +305,10 @@ function MachineShape(props: {
   const sub = () => {
     const m = props.machine
     if (!m) return 'Sin datos'
-    if (m.order) return m.order.client ?? m.order.project
-    if (m.status) return `${STATUS_LABEL[m.status]} · ${sinceLabel(m.since)}`
-    return 'Sin datos'
+    const next = m.queue.length > 0 ? ` · +${m.queue.length} en fila` : ''
+    if (m.order) return `${m.order.part}${next}`
+    if (m.status) return `${STATUS_LABEL[m.status]} · ${sinceLabel(m.since)}${next}`
+    return `Sin datos${next}`
   }
   const who = () => props.machine?.programmer?.name
   return (
@@ -399,59 +397,6 @@ function Legend(): JSX.Element {
         <span class="rounded-full bg-primary/20 px-1.5 text-[10px] font-semibold text-primary">JM</span>
         Programó
       </span>
-    </div>
-  )
-}
-
-function MachineDetail(props: {
-  machine: PlantMachine
-  canManage: boolean
-  busy: boolean
-  onSetState: (s: MachineStatus) => void
-}): JSX.Element {
-  const m = () => props.machine
-  return (
-    <div class="mt-3 space-y-2 rounded-lg border border-border p-3 text-sm">
-      <div class="flex flex-wrap items-center justify-between gap-2">
-        <p class="font-semibold text-foreground">{m().name}</p>
-        <span class="text-xs text-muted-foreground">
-          {m().status ? `${STATUS_LABEL[m().status!]} hace ${sinceLabel(m().since)}` : 'Sin datos'}
-          {' · '}
-          {m().source === 'dnc' ? 'monitor DNC' : m().source === 'movimiento' ? 'estimado por movimiento' : m().source === 'manual' ? 'marcado a mano' : 'sin fuente'}
-        </span>
-      </div>
-      <Show when={m().order}>
-        {(o) => (
-          <p class="text-muted-foreground">
-            <span class="font-medium text-foreground">{o().folio}</span> <PartName conceptId={o().id} part={o().part} /> · {o().project}
-            <Show when={m().programmer}>{(p) => <> · programó <ProgrammerName id={p().id} name={p().name} /></>}</Show>
-          </p>
-        )}
-      </Show>
-      <Show when={!m().order && m().program}>
-        <p class="text-xs text-muted-foreground">
-          Último programa {m().program}
-          <Show when={m().part_number}> · {m().part_number}</Show>
-        </p>
-      </Show>
-      <Show when={m().note}>
-        <p class="text-xs text-muted-foreground">Nota: {m().note}</p>
-      </Show>
-      <Show when={props.canManage}>
-        <div class="flex flex-wrap gap-2 pt-1">
-          <For each={Object.entries(STATUS_LABEL) as [MachineStatus, string][]}>
-            {([status, label]) => (
-              <Button
-                variant={m().status === status ? 'primary' : 'outline'}
-                disabled={props.busy}
-                onClick={() => props.onSetState(status)}
-              >
-                {label}
-              </Button>
-            )}
-          </For>
-        </div>
-      </Show>
     </div>
   )
 }

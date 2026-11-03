@@ -647,6 +647,18 @@ export interface PlantMachine {
     completed_quantity: number
   } | null
   programmer: WorkOrderPerson | null
+  /** Setup or operation set by hand ("Setup 1"). */
+  label: string | null
+  /** Who put it to run here. */
+  running_by: WorkOrderPerson | null
+  /** What runs next here, first to run first. */
+  queue: MachineQueueEntry[]
+}
+
+export interface MachineQueueEntry {
+  id: string
+  label: string | null
+  order: NonNullable<PlantMachine['order']>
 }
 
 export interface PlantView {
@@ -658,6 +670,7 @@ export interface MachineStatePayload {
   status: MachineStatus
   concept_id?: string | null
   note?: string | null
+  label?: string | null
 }
 
 export interface TakeWorkOrderPayload {

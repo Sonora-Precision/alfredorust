@@ -38,3 +38,11 @@ export const recordQuality = (id: string, payload: QualityPayload) =>
   apiPost<QualityItem>(`/api/production/work_orders/${id}/quality`, payload)
 export const setMachineState = (resourceId: string, payload: MachineStatePayload) =>
   apiPost<void>(`/api/production/machines/${resourceId}/state`, payload)
+export const finishMachineJob = (resourceId: string) =>
+  apiPost<void>(`/api/production/machines/${resourceId}/finish`, {})
+export const queueOnMachine = (resourceId: string, conceptId: string, label: string | null) =>
+  apiPost<void>(`/api/production/machines/${resourceId}/queue`, { concept_id: conceptId, label })
+export const removeQueueEntry = (id: string) => apiPost<void>(`/api/production/machine_queue/${id}/remove`, {})
+export const moveQueueEntry = (id: string, up: boolean) =>
+  apiPost<void>(`/api/production/machine_queue/${id}/move`, { up })
+export const startQueueEntry = (id: string) => apiPost<void>(`/api/production/machine_queue/${id}/start`, {})

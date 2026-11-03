@@ -459,6 +459,10 @@ pub fn build_app(state: Arc<AppState>) -> Router {
             "/api/production/machines/{id}/state",
             post(routes::api_machine_state_set),
         )
+        .route("/api/production/machines/{id}/finish", post(routes::api_machine_finish))        .route("/api/production/machines/{id}/queue", post(routes::api_machine_queue_add))
+        .route("/api/production/machine_queue/{id}/remove", post(routes::api_machine_queue_remove))
+        .route("/api/production/machine_queue/{id}/move", post(routes::api_machine_queue_move))
+        .route("/api/production/machine_queue/{id}/start", post(routes::api_machine_queue_start))
         .route(
             "/api/production/work_orders/{id}/assign",
             post(routes::api_work_order_assign),
