@@ -419,6 +419,20 @@ pub fn build_app(state: Arc<AppState>) -> Router {
         .route("/api/production/search", get(routes::api_production_search))
         .route("/api/production/quality", get(routes::api_quality_queue))
         .route(
+            "/api/admin/projects/{project_id}/part_files",
+            get(routes::api_project_part_files),
+        )
+        .route(
+            "/api/admin/project_concepts/{id}/drawing",
+            axum::routing::post(routes::api_part_drawing_upload)
+                .layer(axum::extract::DefaultBodyLimit::max(45 * 1024 * 1024)),
+        )
+        .route("/api/admin/part_files/{id}", get(routes::api_part_file_download))
+        .route(
+            "/api/admin/part_files/{id}/delete",
+            axum::routing::post(routes::api_part_file_delete),
+        )
+        .route(
             "/api/production/work_orders/{id}/quality",
             axum::routing::post(routes::api_quality_record),
         )

@@ -9,7 +9,7 @@ use crate::models::{
     Account, ApiToken, Category, Company, ConceptStatus, Contact, Forecast, MachineRun,
     PlannedEntry, ProcessOperation, Project, ProjectConcept, RecurringPlan, Resource, ResourceLog,
     ResourceUsage, ResourceUsageAllocation, SatConfig, ServiceOrder, Session, Transaction, User,
-    UserCompany, WorkOrderEvent, MachineState, PlantLayout,
+    UserCompany, WorkOrderEvent, MachineState, PartFile, PlantLayout,
 };
 use bson::Document;
 
@@ -50,6 +50,7 @@ mod finance;
 mod machine_runs;
 mod orders;
 mod plant;
+mod part_files;
 mod process_operations;
 mod production;
 mod project_concepts;
@@ -69,6 +70,7 @@ pub use finance::*;
 pub use machine_runs::*;
 pub use orders::*;
 pub use plant::*;
+pub use part_files::*;
 pub use process_operations::*;
 pub use production::*;
 pub use project_concepts::*;
@@ -117,6 +119,7 @@ pub struct AppState {
     pub work_order_events: Collection<WorkOrderEvent>,
     pub plant_layouts: Collection<PlantLayout>,
     pub machine_states: Collection<MachineState>,
+    pub part_files: Collection<PartFile>,
 }
 
 pub async fn init_state() -> Result<AppState> {
@@ -284,6 +287,14 @@ pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppStat
         )
         .await
         .context("creating the machine state index")?;
+    db.collection::<PartFile>("part_files")
+        .create_index(
+            IndexModel::builder()
+                .keys(mongodb::bson::doc! { "company_id": 1, "concept_id": 1, "uploaded_at": -1 })
+                .build(),
+        )
+        .await
+        .context("creating the part files index")?;
 
     let state = AppState {
         cfdi_archive_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
@@ -318,6 +329,7 @@ pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppStat
         work_order_events: db.collection::<WorkOrderEvent>("work_order_events"),
         plant_layouts: db.collection::<PlantLayout>("plant_layouts"),
         machine_states: db.collection::<MachineState>("machine_states"),
+        part_files: db.collection::<PartFile>("part_files"),
     };
 
     let interrupted = fail_interrupted_cfdi_jobs(&state).await?;

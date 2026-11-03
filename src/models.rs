@@ -1151,6 +1151,34 @@ pub struct WorkOrderEvent {
     pub at: DateTime,
 }
 
+/// ---------- PART FILES ----------
+
+/// A file attached to a part number. Today only the PDF drawing (Daniel, 2026-11-03); the
+/// kind leaves room for CAD, CNC programs and tool lists. Every upload is kept; the newest
+/// one not deleted is the current drawing.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PartFile {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+
+    pub company_id: ObjectId,
+    pub project_id: ObjectId,
+    pub concept_id: ObjectId,
+    /// "drawing".
+    pub kind: String,
+    pub original_filename: String,
+    pub content_type: String,
+    pub size_bytes: i64,
+    pub sha256: String,
+    /// Path under the file store root: `{company}/{concept}/{file}.pdf`.
+    pub storage_key: String,
+    pub uploaded_by: ObjectId,
+    pub uploaded_at: DateTime,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deleted_at: Option<DateTime>,
+}
+
 /// ---------- PLANT VIEW ----------
 
 /// Where a machine sits on the plant drawing (layout units; `rotation` in degrees).

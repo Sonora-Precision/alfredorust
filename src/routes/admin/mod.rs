@@ -7,6 +7,7 @@ pub mod machine_runs;
 pub mod onboarding;
 pub mod part_progress;
 pub mod plant;
+pub mod part_files;
 pub mod production;
 pub mod quality;
 pub mod project_backend;
@@ -37,6 +38,9 @@ pub use part_progress::{
 };
 pub use plant::{api_machine_state_set, api_plant_layout_save, api_production_plant};
 pub use quality::{api_quality_queue, api_quality_record};
+pub use part_files::{
+    api_part_drawing_upload, api_part_file_delete, api_part_file_download, api_project_part_files,
+};
 pub use production::{
     api_production_board, api_production_members, api_production_search,
     api_production_weekly_pieces,

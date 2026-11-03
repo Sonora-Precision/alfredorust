@@ -335,6 +335,7 @@ export default function ProjectDetail(): JSX.Element {
                         canConfigure={isAdmin()}
                         canSeeAssignees={isAdmin() || auth.hasPermission('view_production_board')}
                         canAssign={isAdmin() || auth.hasPermission('manage_production_board')}
+                        canUploadFiles={isAdmin()}
                       />
                     ),
                   },
