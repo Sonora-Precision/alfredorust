@@ -691,6 +691,7 @@ async fn main() {
         .route("/api/production/members", get(routes::api_production_members))
         .route("/api/production/search", get(routes::api_production_search))
         .route("/api/production/quality", get(routes::api_quality_queue))
+        .route("/api/production/part_drawings", get(routes::api_company_part_drawings))
         .route(
             "/api/admin/projects/{project_id}/part_files",
             get(routes::api_project_part_files),

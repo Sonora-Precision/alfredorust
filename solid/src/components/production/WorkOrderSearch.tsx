@@ -7,6 +7,7 @@ import { Search, X } from 'lucide-solid'
 import { type JSX, For, Show, createEffect, createSignal, onCleanup } from 'solid-js'
 
 import * as productionApi from '../../lib/api/production'
+import { PartName } from './PartName'
 import type { WorkOrderSearchHit } from '../../lib/api/types'
 
 const QUEUE_LABEL: Record<string, string> = {
@@ -103,7 +104,7 @@ function SearchHitRow(props: { hit: WorkOrderSearchHit }): JSX.Element {
       <div class="min-w-0">
         <p class="truncate">
           <span class="font-semibold tabular-nums text-foreground">{h().folio}</span>{' '}
-          <span class="text-foreground">{h().part}</span>
+          <PartName conceptId={h().id} part={h().part} class="text-foreground" />
         </p>
         <p class="truncate text-xs text-muted-foreground">
           {h().project}

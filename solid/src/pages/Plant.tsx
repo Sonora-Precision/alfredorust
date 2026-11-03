@@ -28,6 +28,7 @@ import type {
   WorkOrder,
 } from '../lib/api/types'
 import { useAuth } from '../lib/auth/AuthContext'
+import { PartName } from '../components/production/PartName'
 
 const REFRESH_MS = 30_000
 const LOAD_LIMIT = 5
@@ -417,7 +418,7 @@ function MachineDetail(props: {
       <Show when={m().order}>
         {(o) => (
           <p class="text-muted-foreground">
-            <span class="font-medium text-foreground">{o().folio}</span> {o().part} · {o().project}
+            <span class="font-medium text-foreground">{o().folio}</span> <PartName conceptId={o().id} part={o().part} /> · {o().project}
             <Show when={m().programmer}> · programó {m().programmer!.name}</Show>
           </p>
         )}
@@ -521,7 +522,7 @@ function PendingOrder(props: {
         </span>
       </div>
       <p class="truncate text-xs text-muted-foreground">
-        {props.order.part} · {props.order.client ?? props.order.project}
+        <PartName conceptId={props.order.id} part={props.order.part} /> · {props.order.client ?? props.order.project}
       </p>
     </div>
   )

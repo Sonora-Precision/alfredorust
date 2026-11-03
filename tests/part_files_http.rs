@@ -110,6 +110,29 @@ async fn part_drawings_upload_open_and_delete() {
     let csp = res.headers()["content-security-policy"].to_str().unwrap().to_string();
     assert!(csp.contains("frame-ancestors 'self'"), "{csp}");
 
+    // Quality (no view_projects) sees every drawing of the company and opens it.
+    let bere_id = create_user_with_permissions(
+        &state,
+        "files-bere@example.com",
+        "SECRET",
+        &[(company.clone(), UserRole::Staff, vec![UserPermission::ReleaseParts])],
+    )
+    .await
+    .unwrap();
+    let bere = token(bere_id).await;
+    let (status, body) =
+        get_with_cookie(build_app(shared.clone()), host, "/api/production/part_drawings", &bere).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let all = json(&body);
+    assert_eq!(all.as_array().unwrap().len(), 1, "{body}");
+    assert_eq!(all[0]["concept_id"], concept.to_hex());
+    let (status, _) = get_with_cookie(build_app(shared.clone()), host, &url, &bere).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, body) =
+        get_with_cookie(build_app(shared.clone()), "files-b.miapp.local", "/api/production/part_drawings", &outsider)
+            .await;
+    assert_eq!(json(&body).as_array().unwrap().len(), 0, "{body}");
+
     // Another company cannot open it.
     let (status, _) = get_with_cookie(build_app(shared.clone()), "files-b.miapp.local", &url, &outsider).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
