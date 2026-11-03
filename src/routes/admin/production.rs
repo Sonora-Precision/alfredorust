@@ -70,7 +70,7 @@ pub struct WorkOrderData {
     pub assignee: Option<PersonData>,
 }
 
-fn folio(number: Option<i64>) -> String {
+pub(crate) fn folio(number: Option<i64>) -> String {
     number.map(|n| format!("OT-{n:04}")).unwrap_or_else(|| "OT-?".to_string())
 }
 
@@ -735,7 +735,13 @@ pub struct WorkOrderSearchHit {
     /// 1-based place in its queue's production sequence.
     pub position: Option<usize>,
     pub quantity: f64,
+    /// Pieces produced.
     pub completed_quantity: f64,
+    /// Pieces quality released (these count as finished) and rejected.
+    pub released_quantity: f64,
+    pub rejected_quantity: f64,
+    /// Produced pieces waiting for quality ("En liberación").
+    pub awaiting_release: f64,
 }
 
 /// "¿Dónde va esta parte?": part numbers of the company matching `q` (part name or folio,
@@ -810,8 +816,10 @@ pub async fn api_production_search(
                         crate::models::ProjectStatus::Entregado | crate::models::ProjectStatus::Cancelado
                     )
                 });
-                let (s, l) = if c.completed_quantity >= c.quantity {
+                let (s, l) = if c.released_quantity >= c.quantity {
                     ("terminada", "Terminada")
+                } else if crate::state::awaiting_release(&c) > 0.0 {
+                    ("en_liberacion", "En liberación")
                 } else if closed {
                     ("proyecto_cerrado", "Proyecto cerrado")
                 } else {
@@ -839,6 +847,9 @@ pub async fn api_production_search(
             position,
             quantity: c.quantity,
             completed_quantity: c.completed_quantity,
+            released_quantity: c.released_quantity,
+            rejected_quantity: c.rejected_quantity,
+            awaiting_release: crate::state::awaiting_release(&c),
         });
     }
     hits.sort_by(|a, b| a.folio.cmp(&b.folio));

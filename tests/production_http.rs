@@ -354,20 +354,72 @@ async fn production_board_queues_sequence_and_assignment() {
     .await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
 
+    // Produced pieces count only once quality releases them (Daniel, 2026-11-03).
     let weekly = "/api/production/weekly_pieces";
+    let (_, body) = get_with_cookie(build_app(shared.clone()), host, weekly, &jose).await;
+    assert_eq!(json(&body)["team"], 0.0, "produced but not released: {body}");
+
+    let berenice_id = create_user_with_permissions(
+        &state,
+        "board-berenice@example.com",
+        "SECRET",
+        &[(
+            company.clone(),
+            UserRole::Staff,
+            vec![UserPermission::ViewProjects, UserPermission::ViewProductionBoard, UserPermission::ReleaseParts],
+        )],
+    )
+    .await
+    .unwrap();
+    let berenice = token(berenice_id).await;
+    let (status, body) =
+        get_with_cookie(build_app(shared.clone()), host, "/api/production/quality", &berenice).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let queue = json(&body);
+    assert_eq!(queue[0]["folio"], "OT-0002", "{body}");
+    assert_eq!(queue[0]["awaiting"], 7.0);
+    assert_eq!(queue[0]["programmer"]["id"], carlos_id.to_hex());
+    for leak in ["4500", "9000", "585", "unit_price"] {
+        assert!(!body.contains(leak), "{leak} leaked: {body}");
+    }
+    // Programmers cannot release; rejecting needs a reason; never more than produced.
+    let (status, _) = act(&shared, &ot2, "quality", &carlos, serde_json::json!({ "released": 5 })).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _) = act(&shared, &ot2, "quality", &berenice, serde_json::json!({ "rejected": 1 })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = act(&shared, &ot2, "quality", &berenice, serde_json::json!({ "released": 8 })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = act(&shared, &ot2, "quality", &berenice, serde_json::json!({ "released": -1 })).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "corrections are the admin's");
+    let (status, body) = act(
+        &shared,
+        &ot2,
+        "quality",
+        &berenice,
+        serde_json::json!({ "released": 5, "rejected": 1, "reason": "rebaba" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let q = json(&body);
+    assert_eq!((q["released"].as_f64(), q["rejected"].as_f64(), q["awaiting"].as_f64()), (Some(5.0), Some(1.0), Some(1.0)));
+    let (status, _) = act(&shared, &ot2, "quality", &berenice, serde_json::json!({ "released": 2 })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "only 1 produced piece left to look at");
+    let (status, body) = act(&shared, &ot2, "quality", &berenice, serde_json::json!({ "released": 1 })).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+
     let (status, body) = get_with_cookie(build_app(shared.clone()), host, weekly, &viewer).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
     let (status, body_jose) = get_with_cookie(build_app(shared.clone()), host, weekly, &jose).await;
     assert_eq!(status, StatusCode::OK, "body: {body_jose} {body}");
     let w = json(&body_jose);
-    assert_eq!(w["team"], 7.0);
+    assert_eq!(w["team"], 6.0, "6 released of 7 produced");
     let carlos_row = w["people"]
         .as_array()
         .unwrap()
         .iter()
         .find(|p| p["id"] == carlos_id.to_hex())
         .unwrap();
-    assert_eq!(carlos_row["pieces"], 7.0);
+    assert_eq!(carlos_row["pieces"], 6.0);
     assert!(w["mine_by_part"].as_array().unwrap().is_empty(), "José programmed none");
     for leak in ["4500", "9000", "585", "unit_price", "value"] {
         assert!(!body_jose.contains(leak), "{leak} leaked: {body_jose}");
@@ -375,7 +427,7 @@ async fn production_board_queues_sequence_and_assignment() {
     let (_, body) = get_with_cookie(build_app(shared.clone()), host, weekly, &carlos).await;
     let mine = &json(&body)["mine_by_part"][0];
     assert_eq!(mine["folio"], "OT-0002");
-    assert_eq!(mine["pieces"], 7.0);
+    assert_eq!(mine["pieces"], 6.0);
 
     // Search: partial, any case, by folio or part; finds orders off the board too.
     let search = |q: &str| format!("/api/production/search?q={q}");
@@ -393,6 +445,8 @@ async fn production_board_queues_sequence_and_assignment() {
     assert_eq!(hit["status"], "sin_pasos", "OT-0002 left the board: {body}");
     assert_eq!(hit["assignee"]["id"], carlos_id.to_hex());
     assert_eq!(hit["completed_quantity"], 7.0);
+    assert_eq!(hit["released_quantity"], 6.0);
+    assert_eq!(hit["rejected_quantity"], 1.0);
     for leak in ["4500", "9000", "585"] {
         assert!(!body.contains(leak), "{leak} leaked: {body}");
     }
@@ -412,6 +466,20 @@ async fn production_board_queues_sequence_and_assignment() {
         row["orders"].as_array().unwrap().iter().any(|o| o["folio"] == "OT-0005"),
         "{row}"
     );
+
+    // The rejected piece is made again: production may reach 10 ordered + 1 rejected, but
+    // never drop below what quality already looked at.
+    for (pieces, expected) in [(11, StatusCode::OK), (12, StatusCode::BAD_REQUEST), (6, StatusCode::BAD_REQUEST)] {
+        let (status, body) = post_json_with_cookie(
+            build_app(shared.clone()),
+            host,
+            &progress,
+            &carlos,
+            serde_json::json!({ "completed_quantity": pieces }),
+        )
+        .await;
+        assert_eq!(status, expected, "{pieces} produced: {body}");
+    }
 
     common::teardown(Some(ctx)).await;
 }

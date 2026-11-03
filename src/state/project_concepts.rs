@@ -291,6 +291,8 @@ pub async fn create_project_concept(
             sequence_rank: None,
             priority_override: None,
             completed_quantity: 0.0,
+            released_quantity: 0.0,
+            rejected_quantity: 0.0,
             process_steps: Vec::new(),
             created_at: Some(DateTime::from_system_time(SystemTime::now())),
             updated_at: None,
@@ -326,11 +328,10 @@ pub async fn update_project_concept(
         .await?
         .context("concept status not found for company")?;
     if let Some(current) = get_project_concept_by_id_for_company(state, id, company_id).await? {
-        if quantity < current.completed_quantity {
-            bail!(
-                "quantity cannot be below the {} pieces already finished",
-                current.completed_quantity
-            );
+        // Good pieces: produced minus the rejected ones (those are made again).
+        let good = current.completed_quantity - current.rejected_quantity;
+        if quantity < good {
+            bail!("quantity cannot be below the {good} pieces already produced");
         }
     }
 

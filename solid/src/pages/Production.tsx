@@ -21,6 +21,7 @@ import { type JSX, For, Show, createMemo, createSignal } from 'solid-js'
 
 import { AssignmentsByPerson } from '../components/production/AssignmentsByPerson'
 import { WeeklyPiecesCard } from '../components/production/WeeklyPiecesCard'
+import { QualityQueue } from '../components/production/QualityQueue'
 import { WorkOrderSearch, matchesWorkOrder } from '../components/production/WorkOrderSearch'
 
 import { Badge, type BadgeTone } from '../components/ui/Badge'
@@ -65,6 +66,7 @@ export default function Production(): JSX.Element {
   const qc = useQueryClient()
   const canManage = () => auth.isAdmin() || auth.hasPermission('manage_production_board')
   const canTake = () => auth.isAdmin() || auth.hasPermission('take_work_orders')
+  const canRelease = () => auth.isAdmin() || auth.hasPermission('release_parts')
 
   const boardQuery = createQuery(() => ({
     queryKey: ['production', 'board', 'programming'],
@@ -132,6 +134,8 @@ export default function Production(): JSX.Element {
       <WorkOrderSearch onQuery={setQuery} />
 
       <WeeklyPiecesCard myId={auth.userId()} />
+
+      <QualityQueue canRelease={canRelease()} query={query()} />
 
       <Show when={!boardQuery.isLoading && canTake() && (!canManage() || mine().length > 0)}>
         <NextProgram

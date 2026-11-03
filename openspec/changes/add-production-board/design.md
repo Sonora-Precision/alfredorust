@@ -441,6 +441,37 @@ WebGPU (guía de renderizado de `CLAUDE.md`). Arrastrar con eventos nativos
 (pointer events para táctil) y animación de entrada/salida con
 `solid-transition-group`. Se actualiza cada 30 s, igual que la Vista de piso.
 
+## 9b. Liberación de calidad (Daniel, 2026-11-03)
+
+"Calidad libera las piezas": Berenice es la encargada. Daniel eligió dos
+conteos y que el crédito siga siendo del programador:
+
+- **Producidas** (`completed_quantity`): las registra el programador, con la
+  regla de siempre (todos sus pasos ✔ o N/A, sólo en sus partes).
+- **Liberadas / rechazadas** (`released_quantity`, `rejected_quantity`): las
+  registra quien tiene el permiso nuevo `release_parts` ("Liberar piezas
+  (Calidad)") o el admin. Liberadas + rechazadas ≤ producidas; liberadas ≤
+  pedidas; rechazar pide motivo. Las rechazadas se vuelven a hacer: las
+  producidas pueden llegar a pedidas + rechazadas y no bajan de liberadas +
+  rechazadas. Sólo quien gestiona el tablero corrige hacia abajo.
+- **Sólo las liberadas cuentan como terminadas**: piezas semanales, crédito al
+  programador (`programmer_of`) y valor `unit_price × piezas` salen de los
+  eventos `pieces_released` (con el precio congelado). `pieces_rejected` guarda
+  el motivo. `pieces_recorded` queda como bitácora de producción.
+- **Cola "Liberación de calidad"**: no es un paso del catálogo sino derivada:
+  toda parte de proyecto abierto con producidas − liberadas − rechazadas > 0.
+  `GET /api/production/quality` y `POST
+  /api/production/work_orders/{id}/quality` `{released, rejected, reason}`. Se
+  ve en el Tablero (todos la ven; sólo calidad/admin capturan).
+- El avance del proyecto y de cada parte en Seguimiento es liberadas ÷
+  pedidas; una parte sale del tablero cuando producidas − rechazadas ≥
+  pedidas.
+- El buscador muestra "En liberación" y producidas / liberadas / rechazadas.
+- Calidad no ve dinero: los mismos DTO sin precio y descripciones depuradas.
+
+Las piezas registradas antes de este cambio quedan como producidas y no
+cuentan hasta que calidad las libere.
+
 ## 10. Preguntas abiertas
 
 1. ¿El supervisor también puede mover la secuencia o sólo Daniel? (Propuesta:

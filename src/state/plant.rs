@@ -193,8 +193,7 @@ pub fn shop_week_start(at: DateTime) -> DateTime {
     DateTime::from_millis((day - since_monday) * 86_400_000 - SHOP_UTC_OFFSET_MS)
 }
 
-/// Finished pieces per part in [from, to), from the PiecesRecorded log (net of
-/// corrections).
+/// Finished pieces per part in [from, to): pieces quality released (net of corrections).
 pub async fn pieces_by_part(
     state: &AppState,
     company_id: &ObjectId,
@@ -205,7 +204,7 @@ pub async fn pieces_by_part(
         .work_order_events
         .find(doc! {
             "company_id": company_id,
-            "kind": "pieces_recorded",
+            "kind": "pieces_released",
             "at": { "$gte": from, "$lt": to },
         })
         .await?;

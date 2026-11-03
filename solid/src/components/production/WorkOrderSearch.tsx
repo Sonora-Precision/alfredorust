@@ -119,7 +119,15 @@ function SearchHitRow(props: { hit: WorkOrderSearchHit }): JSX.Element {
             {QUEUE_LABEL[h().queue!] ?? h().queue} #{h().position}
           </Show>
           {' · '}
-          {h().completed_quantity.toLocaleString('es-MX')}/{h().quantity.toLocaleString('es-MX')} pzas
+          {h().released_quantity.toLocaleString('es-MX')}/{h().quantity.toLocaleString('es-MX')} pzas liberadas
+        </p>
+        <p class="text-muted-foreground">
+          {h().completed_quantity.toLocaleString('es-MX')} producidas
+          <Show when={h().awaiting_release > 0}>
+            {' · '}
+            <span class="text-amber-600">{h().awaiting_release.toLocaleString('es-MX')} en liberación</span>
+          </Show>
+          <Show when={h().rejected_quantity > 0}> · ✖ {h().rejected_quantity.toLocaleString('es-MX')} rechazadas</Show>
         </p>
       </div>
     </li>

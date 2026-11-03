@@ -39,6 +39,7 @@ const PERMISSIONS: { key: string; label: string }[] = [
   { key: 'view_production_board', label: 'Ver tablero de producción' },
   { key: 'take_work_orders', label: 'Tomar órdenes de trabajo' },
   { key: 'manage_production_board', label: 'Asignar y priorizar órdenes' },
+  { key: 'release_parts', label: 'Liberar piezas (Calidad)' },
 ]
 
 /** One assignable company membership row in the edit form. */

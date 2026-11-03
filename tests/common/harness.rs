@@ -417,6 +417,11 @@ pub fn build_app(state: Arc<AppState>) -> Router {
         .route("/api/production/board", get(routes::api_production_board))
         .route("/api/production/members", get(routes::api_production_members))
         .route("/api/production/search", get(routes::api_production_search))
+        .route("/api/production/quality", get(routes::api_quality_queue))
+        .route(
+            "/api/production/work_orders/{id}/quality",
+            axum::routing::post(routes::api_quality_record),
+        )
         .route(
             "/api/production/weekly_pieces",
             get(routes::api_production_weekly_pieces),
