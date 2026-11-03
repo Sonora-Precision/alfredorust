@@ -16,7 +16,7 @@ use super::finance::helpers::require_active_company;
 use super::project_backend::{iso, json_error, parse_oid};
 use crate::{
     models::{PartFile, UserPermission},
-    session::SessionUser,
+    session::{EMBEDDABLE_CSP, SessionUser},
     state::{
         AppState, delete_part_file, get_part_file, get_project_concept_by_id_for_company,
         list_part_files, read_part_file, save_part_drawing,
@@ -169,6 +169,8 @@ pub async fn api_part_file_download(
     }
     headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("private, max-age=300"));
     headers.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
+    // The board shows it in a hover preview (same-origin iframe).
+    headers.insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(EMBEDDABLE_CSP));
     resp
 }
 

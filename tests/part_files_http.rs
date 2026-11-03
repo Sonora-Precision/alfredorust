@@ -98,6 +98,18 @@ async fn part_drawings_upload_open_and_delete() {
     assert_eq!(status, StatusCode::OK);
     assert!(body.starts_with("%PDF-"), "{body}");
 
+    // The PDF keeps a CSP that lets the app's own pages frame it (hover preview).
+    let app = build_app(shared.clone()).layer(middleware::from_fn(alfredodev::session::security_headers));
+    let req = Request::builder()
+        .uri(&url)
+        .header("host", host)
+        .header("cookie", format!("{SESSION_COOKIE_NAME}={jose}"))
+        .body(Body::empty())
+        .unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    let csp = res.headers()["content-security-policy"].to_str().unwrap().to_string();
+    assert!(csp.contains("frame-ancestors 'self'"), "{csp}");
+
     // Another company cannot open it.
     let (status, _) = get_with_cookie(build_app(shared.clone()), "files-b.miapp.local", &url, &outsider).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
