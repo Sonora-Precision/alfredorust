@@ -131,7 +131,9 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
   })
   /** Id of who holds the part's current (first pending) step, else its last held step. */
   const holderIdOf = (concept: ProjectConcept): string | null => {
-    const current = activeOps().find((op) => stepState(concept, op.id) === 'pending')
+    // Same rule as the board: only steps that belong to a queue (Programa, …) are held;
+    // "Material" and the like have no holder.
+    const current = activeOps().find((op) => op.queue && stepState(concept, op.id) === 'pending')
     const step = current
       ? concept.process_steps.find((s) => s.operation_id === current.id && s.assignee_user_id)
       : [...concept.process_steps].reverse().find((s) => s.assignee_user_id)
