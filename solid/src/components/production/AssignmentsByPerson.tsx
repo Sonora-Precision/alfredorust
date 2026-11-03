@@ -1,12 +1,13 @@
 // Admin overview: everything assigned to each programmer, across every queue (Daniel,
 // 2026-11-02: "Daniel tiene que poder ver TODO lo asignado a cada programador"). No money.
 import { type JSX, For, Show, createSignal } from 'solid-js'
-import { ChevronDown, ChevronRight } from 'lucide-solid'
+import { ChevronDown, ChevronRight, FileText } from 'lucide-solid'
 
 import { Card, CardContent } from '../ui/Card'
 import type { BoardMemberLoad } from '../../lib/api/types'
 import { matchesWorkOrder } from './WorkOrderSearch'
 import { PartName } from './PartName'
+import { ProgrammerDrawer } from './ProgrammerPanel'
 
 const QUEUE_LABEL: Record<string, string> = {
   programming: 'Programación',
@@ -24,6 +25,7 @@ export function AssignmentsByPerson(props: { members: BoardMemberLoad[]; query: 
       else next.add(id)
       return next
     })
+  const [panelFor, setPanelFor] = createSignal<string | null>(null)
   const visible = (m: BoardMemberLoad) => m.orders.filter((o) => matchesWorkOrder(o, props.query))
 
   return (
@@ -33,9 +35,10 @@ export function AssignmentsByPerson(props: { members: BoardMemberLoad[]; query: 
         {(m) => (
           <Card glass glow={false}>
             <CardContent class="p-0">
+              <div class="flex items-center gap-2 pr-4">
               <button
                 type="button"
-                class="flex w-full items-center justify-between gap-2 px-4 py-3 text-left"
+                class="flex flex-1 items-center justify-between gap-2 px-4 py-3 text-left"
                 aria-expanded={open().has(m.id) || props.query !== ''}
                 onClick={() => toggle(m.id)}
               >
@@ -47,6 +50,15 @@ export function AssignmentsByPerson(props: { members: BoardMemberLoad[]; query: 
                 </span>
                 <span class="text-xs text-muted-foreground">{m.orders.length} OT</span>
               </button>
+              <button
+                type="button"
+                class="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-sky-600 hover:underline"
+                onClick={() => setPanelFor(m.id)}
+              >
+                <FileText class="h-3.5 w-3.5" />
+                Ver planos
+              </button>
+              </div>
               <Show when={(open().has(m.id) || props.query !== '') && visible(m).length > 0}>
                 <ul class="divide-y divide-border border-t border-border">
                   <For each={visible(m)}>
@@ -74,6 +86,7 @@ export function AssignmentsByPerson(props: { members: BoardMemberLoad[]; query: 
           </Card>
         )}
       </For>
+      <ProgrammerDrawer memberId={panelFor()} onClose={() => setPanelFor(null)} />
     </section>
   )
 }

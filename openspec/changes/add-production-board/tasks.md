@@ -82,6 +82,19 @@ Una máquina sin corridas ni estado manual se ve gris, "Sin datos".
 - [ ] Metas semanales del equipo capturadas por el admin; sin ranking por persona.
 - [x] Pruebas: semáforo con y sin corrida, estado manual más nuevo que la corrida, sin datos, programador no puede fijar estado ni layout.
 
+**En producción y fila por máquina (§9c, entrega B, Daniel 2026-11-03).**
+
+- [ ] "En producción" manual en todas las máquinas con buscador por número de parte y etiqueta de setup; la misma OT puede correr en varias máquinas a la vez.
+- [ ] Aviso de desfase cuando la corrida DNC trae otra parte que la manual (se muestran las dos).
+- [ ] `machine_queue_entries` (`operation_id?`, `label`) + API de fila (`GET/POST …/machines/{id}/queue`, `…/{entry_id}/remove`, `…/{entry_id}/urgent`, `…/advance`); sin unicidad: varias entradas de una OT en la misma máquina (Setup 1/2/3) y en varias máquinas.
+- [ ] Tarjeta: "Sigue en VF-3: OT-xxxx (Setup 2)" y "+N en fila"; al terminar la que corre, ofrecer "Pasar a producción" (nunca automático).
+- [ ] Sugerencia suave (nunca bloquea) si el paso anterior no está ✔/N/A.
+- [ ] Piezas por máquina/setup opcionales al registrar producidas (`pieces_recorded` con `resource_id`, `label`); el total, la liberación y el crédito no cambian.
+- [ ] Urgente con motivo obligatorio, primero en la fila, evento `MachineQueueUrgent`, rojo en tarjeta/tablero/buscador; "Detener y correr urgente" regresa la actual a la fila.
+- [ ] Tarjeta y buscador muestran todas: "corriendo en VF-3 (Setup 1) y VF-6 (Setup 1)", "En fila de VF-3: Setup 2, pos. 3".
+- [ ] Permisos: `take_work_orders` o `manage_production_board` ponen en producción, agregan, ordenan, quitan y avanzan (con evento quién/cuándo); urgente y "Detener y correr urgente" sólo `manage_production_board`; Calidad sólo ve; sin dinero.
+- [ ] Pruebas: los escenarios de las tres requirements nuevas.
+
 ## 4. Herramientas
 
 - [ ] spcli: `production board`, `production take`, `production report --week`.

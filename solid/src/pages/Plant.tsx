@@ -29,6 +29,7 @@ import type {
 } from '../lib/api/types'
 import { useAuth } from '../lib/auth/AuthContext'
 import { PartName } from '../components/production/PartName'
+import { ProgrammerDrawer, ProgrammerName } from '../components/production/ProgrammerPanel'
 
 const REFRESH_MS = 30_000
 const LOAD_LIMIT = 5
@@ -103,6 +104,8 @@ export default function Plant(): JSX.Element {
   // Assigning: drag an order onto a person, or tap the order and then the person.
   const [picked, setPicked] = createSignal<string | null>(null)
   const [dropTarget, setDropTarget] = createSignal<string | null>(null)
+  // Programmer whose parts and drawings are open in the side panel.
+  const [panelFor, setPanelFor] = createSignal<string | null>(null)
   const [selectedMachine, setSelectedMachine] = createSignal<string | null>(null)
 
   const refresh = () => void qc.invalidateQueries({ queryKey: ['production'] })
@@ -247,10 +250,12 @@ export default function Plant(): JSX.Element {
                       onTap={() => {
                         const p = picked()
                         if (p && canManage()) assign(p, m)
+                        else setPanelFor(m.id)
                       }}
                     />
                   )}
                 </For>
+                <ProgrammerDrawer memberId={panelFor()} onClose={() => setPanelFor(null)} />
               </section>
 
               <section class="space-y-2">
@@ -419,7 +424,7 @@ function MachineDetail(props: {
         {(o) => (
           <p class="text-muted-foreground">
             <span class="font-medium text-foreground">{o().folio}</span> <PartName conceptId={o().id} part={o().part} /> · {o().project}
-            <Show when={m().programmer}> · programó {m().programmer!.name}</Show>
+            <Show when={m().programmer}>{(p) => <> · programó <ProgrammerName id={p().id} name={p().name} /></>}</Show>
           </p>
         )}
       </Show>
@@ -466,7 +471,7 @@ function MemberDrop(props: {
     <div
       class={`rounded-xl border p-3 transition-colors ${
         props.active ? 'border-primary bg-primary/10' : 'border-border bg-card'
-      } ${props.canAssign ? 'cursor-pointer' : ''}`}
+      } cursor-pointer`}
       onDragOver={(e) => {
         e.preventDefault()
         props.onDragOver()

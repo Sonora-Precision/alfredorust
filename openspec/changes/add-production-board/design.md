@@ -472,6 +472,69 @@ conteos y que el crédito siga siendo del programador:
 Las piezas registradas antes de este cambio quedan como producidas y no
 cuentan hasta que calidad las libere.
 
+## 9c. En producción y fila por máquina (Daniel, 2026-11-03; entrega B)
+
+"Que a las máquinas que se muestran en la vista les podamos asignar
+manualmente si estamos corriendo algo, y si hay fila que va a correr en esa
+máquina también, para saber qué pieza va para allá después de que termine la
+que está en producción. Hay que considerar que a veces caen trabajos de
+urgencia, eso significaría brincar la cola de producción."
+
+- **En producción manual en todas las máquinas**, no sólo en las que no
+  tienen DNC: desde la tarjeta se elige la OT que corre con el buscador por
+  número de parte (§1, mismo filtro que el tablero). Se guarda en el estado
+  manual de máquina (`POST /api/production/machines/{id}/state` con
+  `concept_id` y la etiqueta de setup u operación) como evento con quién y
+  cuándo.
+- **DNC contra manual:** si la corrida DNC activa trae otra parte que la
+  manual, la tarjeta muestra las dos y un aviso "El DNC lee CG-xxxx"; ninguna
+  pisa a la otra en silencio. Si coinciden, se muestra una sola.
+- **Fila por máquina** (Cola de Máquina, §2): lista ordenada de OT por
+  recurso, guardada aparte (`machine_queue_entries`: `resource_id`,
+  `concept_id`, `operation_id?`, `label` (setup u operación: "Setup 1",
+  "Op 20"…), `rank`, `urgent`, `reason`, `added_by`, `added_at`). La tarjeta
+  muestra "Sigue en VF-3: OT-xxxx (Setup 2)" y "+N en fila".
+- **Sin límites de unicidad** (Daniel, 2026-11-03: "no necesariamente una por
+  paso, pudieran ser dos o tres setups en una sola máquina, pero sí podría
+  estar corriendo en varias máquinas la misma OT, así como el mismo paso,
+  suponiendo la producción"; confirmado "si eso funciona"):
+  - una OT puede tener varias entradas en la fila de la misma máquina
+    (Setup 1, Setup 2, Setup 3 en la VF-3);
+  - la misma OT, e incluso el mismo paso, puede estar en fila y corriendo en
+    varias máquinas a la vez para repartir la producción (Maquinado en VF-3
+    y VF-6);
+  - agregar a otra máquina no mueve nada; cada entrada se quita aparte.
+- **Orden de pasos:** sólo una sugerencia suave ("El corte en Sierra aún no
+  está ✔") al poner en producción; nunca bloquea.
+- **Piezas por máquina (opcional):** al registrar producidas se puede indicar
+  de qué máquina o setup salieron (evento `pieces_recorded` con
+  `resource_id` y `label`). El total de la OT, la liberación de calidad y el
+  crédito al programador (§9b) no cambian.
+- **Al terminar la que corre** (estado manual "Parada", fin de corrida DNC, o
+  producidas ≥ pedidas), la tarjeta ofrece **"Pasar OT-xxxx a producción"**
+  con un clic. Nunca es automático sin confirmar. Al pasarla, esa entrada sale
+  de la fila.
+- **Urgentes (brincar la cola):** botón "Urgente" en la OT; pide motivo,
+  la pone en el primer lugar de la fila de esa máquina, deja el evento
+  `MachineQueueUrgent` con el motivo y se marca en rojo en la tarjeta, en el
+  tablero y en el buscador. No interrumpe la que corre, salvo que se elija
+  **"Detener y correr urgente"**: la urgente pasa a producción y la que corría
+  regresa a la fila en el primer lugar después de la urgente.
+- **Permisos** (Daniel, 2026-11-03: "También programadores"): quien tiene
+  `take_work_orders` o `manage_production_board` pone qué OT está en
+  producción, agrega OT a la fila, las ordena, las quita y pasa la siguiente a
+  producción; cada cambio deja evento con quién y cuándo. **Urgente** y
+  **"Detener y correr urgente"** son sólo de `manage_production_board`.
+  Calidad sólo ve. Nadie de piso ve dinero (§9, mismos DTO sin precio).
+- **Tarjeta y buscador muestran todas:** "OT-xxxx corriendo en VF-3 (Setup 1)
+  y VF-6 (Setup 1)", "En fila de VF-3: Setup 2, pos. 3", además del estado de
+  siempre.
+- API: `GET /api/production/machines/{id}/queue`, `POST
+  …/machines/{id}/queue` `{concept_id, operation_id?, label, before_id?}`, `POST
+  …/machines/{id}/queue/{entry_id}/remove`, `POST
+  …/machines/{id}/queue/{entry_id}/urgent` `{reason, interrupt}` y `POST
+  …/machines/{id}/advance` (pasa la primera de la fila a producción).
+
 ## 10. Preguntas abiertas
 
 1. ¿El supervisor también puede mover la secuencia o sólo Daniel? (Propuesta:

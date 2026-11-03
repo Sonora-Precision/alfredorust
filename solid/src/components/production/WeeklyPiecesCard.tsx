@@ -7,6 +7,7 @@ import { type JSX, For, Show } from 'solid-js'
 import { Card, CardContent } from '../ui/Card'
 import * as productionApi from '../../lib/api/production'
 import { PartName } from './PartName'
+import { ProgrammerName } from './ProgrammerPanel'
 
 const n = (v: number) => v.toLocaleString('es-MX', { maximumFractionDigits: 0 })
 
@@ -72,7 +73,7 @@ export function WeeklyPiecesCard(props: {
                 <For each={w().people}>
                   {(p) => (
                     <div class="rounded-lg bg-muted/40 px-3 py-2">
-                      <p class="truncate text-xs text-muted-foreground">{p.name}</p>
+                      <ProgrammerName id={p.id} name={p.name} class="block max-w-full truncate text-left text-xs text-muted-foreground" />
                       <p class="font-semibold tabular-nums text-foreground">{n(p.pieces)} pzas</p>
                     </div>
                   )}
