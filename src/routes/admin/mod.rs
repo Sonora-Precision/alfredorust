@@ -38,7 +38,10 @@ pub use part_progress::{
     api_process_operations_create, api_process_operations_delete, api_process_operations_index,
     api_process_operations_update, api_project_concept_progress,
 };
-pub use plant::{api_machine_state_set, api_plant_layout_save, api_production_plant};
+pub use plant::{
+    api_machine_finish, api_machine_queue_add, api_machine_queue_move, api_machine_queue_remove, api_machine_queue_start,
+    api_machine_state_set, api_plant_layout_save, api_production_plant,
+};
 pub use quality::{api_quality_queue, api_quality_record};
 pub use part_files::{
     api_company_part_drawings, api_part_drawing_upload, api_part_file_delete, api_part_file_download, api_project_part_files,
