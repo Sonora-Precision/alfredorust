@@ -133,19 +133,70 @@ without money for users who cannot see it.
 - WHEN they create or rename a process step
 - THEN the request is rejected
 
+### Requirement: Quality releases produced pieces
+
+The system SHALL treat the pieces programmers record as produced pieces, SHALL
+let users with `release_parts` (and the admin) release or reject them with a
+reason for rejections, SHALL never let released plus rejected exceed produced
+nor released exceed ordered, SHALL list parts waiting for quality ("En
+liberación"), SHALL keep who and when, and SHALL never include money.
+
+#### Scenario: Berenice releases and rejects
+
+- GIVEN Carlos Dávila produced 7 pieces of OT-0002
+- WHEN Berenice releases 5 and rejects 1 for "rebaba"
+- THEN OT-0002 shows 5 released, 1 rejected and 1 waiting for release
+- AND releasing 2 more is rejected because only 1 is waiting
+
+#### Scenario: Programmers do not release
+
+- GIVEN a programmer with `take_work_orders` and without `release_parts`
+- WHEN they release pieces
+- THEN the request is rejected
+
+#### Scenario: Rejection needs a reason
+
+- GIVEN quality rejects pieces without a reason
+- THEN the request is rejected
+
+### Requirement: Rejected pieces are made again
+
+The system SHALL let produced pieces go past the pieces ordered by the rejected
+ones but never below what quality already released or rejected, and SHALL let
+only whoever manages the board correct released or rejected pieces downward.
+
+#### Scenario: Remaking a rejected piece
+
+- GIVEN a part of 10 pieces with 1 rejected
+- WHEN the programmer records 11 produced
+- THEN the request succeeds
+
+#### Scenario: Quality cannot correct downward
+
+- GIVEN Berenice without `manage_production_board`
+- WHEN she sends −1 released pieces
+- THEN the request is rejected
+
 ### Requirement: Everyone sees the week's finished pieces
 
-The system SHALL show users with `view_production_board` the finished pieces of
-the current Monday-to-Sunday week in the company time zone and of the week
-before, for the whole team, for each person credited with programming each
-part, and per part for the caller, and SHALL never include money.
+The system SHALL count as finished only the pieces quality released, SHALL show
+users with `view_production_board` the finished pieces of the current
+Monday-to-Sunday week in the company time zone and of the week before, for the
+whole team, for each person credited with programming each part, and per part
+for the caller, and SHALL never include money.
 
 #### Scenario: Pieces of all programmers
 
-- GIVEN Carlos Dávila programmed OT-0002 and 7 of its pieces were finished this week
+- GIVEN Carlos Dávila programmed OT-0002, produced 7 of its pieces this week and quality released 6
 - WHEN José Márquez reads the weekly pieces
-- THEN the team shows 7 and Carlos Dávila shows 7
+- THEN the team shows 6 and Carlos Dávila shows 6
 - AND no price or amount is present
+
+#### Scenario: Produced but not released
+
+- GIVEN pieces produced this week that quality has not released
+- WHEN anyone reads the weekly pieces
+- THEN those pieces are not counted
 
 ### Requirement: Part numbers can be searched wherever orders are assigned
 

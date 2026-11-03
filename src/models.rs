@@ -28,6 +28,8 @@ pub enum UserPermission {
     TakeWorkOrders,
     /// Assign work orders to anyone and change the production sequence.
     ManageProductionBoard,
+    /// Quality: release or reject produced pieces. Only released pieces count as finished.
+    ReleaseParts,
 }
 
 impl UserPermission {
@@ -41,6 +43,7 @@ impl UserPermission {
             UserPermission::ViewProductionBoard => "view_production_board",
             UserPermission::TakeWorkOrders => "take_work_orders",
             UserPermission::ManageProductionBoard => "manage_production_board",
+            UserPermission::ReleaseParts => "release_parts",
         }
     }
 
@@ -54,6 +57,7 @@ impl UserPermission {
             "view_production_board" => Some(UserPermission::ViewProductionBoard),
             "take_work_orders" => Some(UserPermission::TakeWorkOrders),
             "manage_production_board" => Some(UserPermission::ManageProductionBoard),
+            "release_parts" => Some(UserPermission::ReleaseParts),
             _ => None,
         }
     }
@@ -947,9 +951,18 @@ pub struct ProjectConcept {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub priority_override: Option<ProjectPriority>,
 
-    /// Pieces finished so far (0..=quantity). Project progress is Σ finished ÷ Σ ordered.
+    /// Pieces produced so far (all steps ✔ or N/A). They count as finished only once quality
+    /// releases them; rejected ones are made again, so this may reach quantity + rejected.
     #[serde(default)]
     pub completed_quantity: f64,
+
+    /// Pieces released by quality (0..=quantity). Project progress is Σ released ÷ Σ ordered.
+    #[serde(default)]
+    pub released_quantity: f64,
+
+    /// Pieces rejected by quality.
+    #[serde(default)]
+    pub rejected_quantity: f64,
 
     /// Process steps someone has marked. Catalog operations missing here are pending, so a
     /// part created before an operation was added still shows it.
@@ -1083,8 +1096,12 @@ pub enum WorkOrderEventKind {
     StepReopened,
     Pinned,
     Unpinned,
-    /// Finished pieces changed; see `pieces_delta`.
+    /// Produced pieces changed; see `pieces_delta`.
     PiecesRecorded,
+    /// Quality released pieces (`pieces_delta`); only these count as finished.
+    PiecesReleased,
+    /// Quality rejected pieces (`pieces_delta`, `reason`); they must be made again.
+    PiecesRejected,
 }
 
 /// Append-only log of what happened to a work order; the weekly report and the plant view

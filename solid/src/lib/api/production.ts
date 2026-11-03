@@ -3,6 +3,8 @@ import type {
   BoardMemberLoad,
   MachineStatePayload,
   PlantView,
+  QualityItem,
+  QualityPayload,
   SequenceMovePayload,
   TakeWorkOrderPayload,
   WeeklyPieces,
@@ -31,5 +33,8 @@ export const getPlant = () => apiGet<PlantView>('/api/production/plant')
 export const getWeeklyPieces = () => apiGet<WeeklyPieces>('/api/production/weekly_pieces')
 export const searchWorkOrders = (q: string) =>
   apiGet<WorkOrderSearchHit[]>('/api/production/search', { q })
+export const listQualityQueue = () => apiGet<QualityItem[]>('/api/production/quality')
+export const recordQuality = (id: string, payload: QualityPayload) =>
+  apiPost<QualityItem>(`/api/production/work_orders/${id}/quality`, payload)
 export const setMachineState = (resourceId: string, payload: MachineStatePayload) =>
   apiPost<void>(`/api/production/machines/${resourceId}/state`, payload)

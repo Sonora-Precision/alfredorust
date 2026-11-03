@@ -133,11 +133,12 @@ pub async fn update_part_progress(
     let part = doc! { "_id": id, "company_id": company_id };
 
     if let Some(completed) = update.completed_quantity {
-        if !completed.is_finite() || completed < 0.0 || completed > concept.quantity {
-            bail!(
-                "finished pieces must be between 0 and {}",
-                concept.quantity
-            );
+        // Rejected pieces are made again, so production may go past the pieces ordered by
+        // them; it cannot drop below what quality already released or rejected.
+        let floor = concept.released_quantity + concept.rejected_quantity;
+        let ceiling = concept.quantity + concept.rejected_quantity;
+        if !completed.is_finite() || completed < floor || completed > ceiling {
+            bail!("las piezas producidas deben estar entre {floor} y {ceiling}");
         }
         // A piece only counts as finished once it went through every step (Daniel,
         // 2026-11-02): adding pieces needs every active step done or N/A, counting the

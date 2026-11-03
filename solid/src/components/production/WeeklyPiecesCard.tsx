@@ -37,7 +37,7 @@ export function WeeklyPiecesCard(props: {
         <Card glass glow={false}>
           <CardContent class="space-y-3 p-4">
             <div class="flex flex-wrap items-baseline justify-between gap-2">
-              <p class="text-sm font-semibold text-foreground">Piezas terminadas esta semana</p>
+              <p class="text-sm font-semibold text-foreground">Piezas liberadas esta semana</p>
               <p class="text-sm">
                 <span class="text-lg font-semibold tabular-nums text-foreground">{n(w().team)}</span>{' '}
                 <span class="text-muted-foreground">equipo</span>{' '}

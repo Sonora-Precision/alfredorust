@@ -196,7 +196,7 @@ pub async fn list_work_orders(state: &AppState, company_id: &ObjectId) -> Result
     while let Some(concept) = cursor.try_next().await? {
         if concept.id.is_none()
             || closed_statuses.contains(&concept.status_id)
-            || concept.completed_quantity >= concept.quantity
+            || concept.completed_quantity - concept.rejected_quantity >= concept.quantity
         {
             continue;
         }

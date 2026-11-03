@@ -135,7 +135,11 @@ pub struct ProjectConceptData {
     pub unit_price: Option<f64>,
     pub notes: Option<String>,
     pub position: i32,
+    /// Pieces produced (all steps ✔ or N/A).
     pub completed_quantity: f64,
+    /// Pieces quality released (these count as finished) and rejected.
+    pub released_quantity: f64,
+    pub rejected_quantity: f64,
     /// Only the steps someone marked; other catalog operations are pending.
     pub process_steps: Vec<PartStepData>,
     pub created_at: Option<String>,
@@ -170,6 +174,8 @@ pub(crate) fn project_concept_data(c: ProjectConcept) -> Option<ProjectConceptDa
         notes: c.notes,
         position: c.position,
         completed_quantity: c.completed_quantity,
+        released_quantity: c.released_quantity,
+        rejected_quantity: c.rejected_quantity,
         process_steps: c
             .process_steps
             .into_iter()

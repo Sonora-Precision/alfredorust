@@ -466,7 +466,11 @@ export interface ProjectConcept {
   unit_price?: number | null
   notes?: string | null
   position: number
+  /** Pieces produced (all steps ✔ or N/A). */
   completed_quantity: number
+  /** Pieces quality released (they count as finished) and rejected (made again). */
+  released_quantity?: number
+  rejected_quantity?: number
   /** Only the steps someone marked; other catalog operations are pending. */
   process_steps: PartStep[]
 }
@@ -565,7 +569,38 @@ export interface WorkOrderSearchHit {
   queue: WorkQueue | null
   position: number | null
   quantity: number
+  /** Pieces produced. */
   completed_quantity: number
+  /** Pieces quality released (they count as finished) and rejected. */
+  released_quantity: number
+  rejected_quantity: number
+  /** Produced pieces waiting for quality ("En liberación"). */
+  awaiting_release: number
+}
+
+/** A part with produced pieces waiting for quality release. No money. */
+export interface QualityItem {
+  id: string
+  folio: string
+  part: string
+  project_id: string
+  project: string
+  client: string | null
+  quantity: number
+  unit: string | null
+  produced: number
+  released: number
+  rejected: number
+  awaiting: number
+  /** Who programmed it (gets the credit of released pieces). */
+  programmer: WorkOrderPerson | null
+}
+
+export interface QualityPayload {
+  released?: number
+  rejected?: number
+  /** Required when rejecting. */
+  reason?: string
 }
 
 export type SequenceMovePayload = { before_id: string } | { after_id: string } | { unpin: true }

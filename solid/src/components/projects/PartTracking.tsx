@@ -69,6 +69,15 @@ function applyLocally(c: ProjectConcept, p: PartProgressPayload): ProjectConcept
   return { ...c, completed_quantity: p.completed_quantity ?? c.completed_quantity, process_steps: steps }
 }
 
+/** Released by quality: only these count as finished (Daniel, 2026-11-03). */
+const releasedOf = (c: ProjectConcept) => c.released_quantity ?? 0
+const rejectedOf = (c: ProjectConcept) => c.rejected_quantity ?? 0
+/** Produced pieces may range from what quality already saw to the order plus remakes. */
+const producedBounds = (c: ProjectConcept) => ({
+  min: releasedOf(c) + rejectedOf(c),
+  max: c.quantity + rejectedOf(c),
+})
+
 /** Done ÷ applicable steps of the active catalog. */
 function routeProgress(concept: ProjectConcept, ops: ProcessOperation[]): { done: number; applicable: number } {
   let done = 0
@@ -173,8 +182,8 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
     let partsDone = 0
     for (const c of counted()) {
       ordered += c.quantity
-      finished += c.completed_quantity
-      if (c.completed_quantity >= c.quantity) partsDone++
+      finished += releasedOf(c)
+      if (releasedOf(c) >= c.quantity) partsDone++
       const r = routeProgress(c, activeOps())
       stepsDone += r.done
       stepsApplicable += r.applicable
@@ -220,7 +229,8 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
   }
 
   const setFinished = (concept: ProjectConcept, value: number) => {
-    const v = Math.min(concept.quantity, Math.max(0, value))
+    const { min, max } = producedBounds(concept)
+    const v = Math.min(max, Math.max(min, value))
     if (v === concept.completed_quantity) return
     progressMutation.mutate({ id: concept.id, payload: { completed_quantity: v } })
   }
@@ -237,14 +247,14 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
         <CardContent class="space-y-3 py-4">
           <div class="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <p class="text-xs text-muted-foreground">Avance del proyecto (piezas terminadas)</p>
+              <p class="text-xs text-muted-foreground">Avance del proyecto (piezas liberadas por calidad)</p>
               <p class="tnum text-3xl font-semibold text-foreground">
                 {totals().ordered > 0 ? pct(totals().finished / totals().ordered) : '—'}
               </p>
             </div>
             <div class="tnum text-right text-sm text-muted-foreground">
               <p>
-                <span class="font-semibold text-foreground">{num(totals().finished)}</span> de {num(totals().ordered)} piezas
+                <span class="font-semibold text-foreground">{num(totals().finished)}</span> de {num(totals().ordered)} piezas liberadas
               </p>
               <p>
                 {totals().partsDone} de {totals().parts} números de parte completos
@@ -314,7 +324,7 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
                     </span>
                   </TableHeadCell>
                 )}</For>
-                <TableHeadCell class="text-center">Terminadas / avance</TableHeadCell>
+                <TableHeadCell class="text-center">Producidas / liberadas</TableHeadCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -325,7 +335,7 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
               </Show>
               <For each={visibleConcepts()}>{(c) => {
                 const cancelled = () => cancelledIds().has(c.status_id)
-                const ratio = () => (c.quantity > 0 ? c.completed_quantity / c.quantity : 0)
+                const ratio = () => (c.quantity > 0 ? releasedOf(c) / c.quantity : 0)
                 return (
                   <TableRow class={cn(cancelled() && 'opacity-50')}>
                     <TableCell class="sticky left-0 z-10 bg-card">
@@ -399,6 +409,19 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
                         <Bar ratio={ratio()} />
                         <span class="tnum w-10 text-right text-xs text-muted-foreground">{pct(ratio())}</span>
                       </div>
+                      <p class="tnum mt-0.5 text-[11px] text-muted-foreground">
+                        ✔ {num(releasedOf(c))} liberadas
+                        <Show when={rejectedOf(c) > 0}>
+                          {' · '}
+                          <span class="text-rose-500">✖ {num(rejectedOf(c))} rechazadas</span>
+                        </Show>
+                        <Show when={c.completed_quantity - releasedOf(c) - rejectedOf(c) > 0}>
+                          {' · '}
+                          <span class="text-amber-600">
+                            {num(c.completed_quantity - releasedOf(c) - rejectedOf(c))} en liberación
+                          </span>
+                        </Show>
+                      </p>
                     </TableCell>
                   </TableRow>
                 )
@@ -466,7 +489,8 @@ function PiecesCell(props: {
     const v = Number.parseFloat(d.replace(/[\s,]/g, ''))
     if (Number.isNaN(v)) return
     const total = relative ? props.concept.completed_quantity + v : v
-    const clamped = Math.min(Math.max(total, 0), props.concept.quantity)
+    const { min, max } = producedBounds(props.concept)
+    const clamped = Math.min(Math.max(total, min), max)
     if (clamped > props.concept.completed_quantity && blocked()) {
       toast.error(
         'Aún no se pueden registrar piezas',
@@ -485,7 +509,7 @@ function PiecesCell(props: {
         <button
           type="button"
           class="h-7 w-7 rounded-md border border-input text-muted-foreground hover:bg-muted disabled:opacity-40"
-          disabled={props.concept.completed_quantity <= 0}
+          disabled={props.concept.completed_quantity <= producedBounds(props.concept).min}
           aria-label="Una pieza menos"
           onClick={() => props.onCommit(props.concept.completed_quantity - 1)}
         >
@@ -511,7 +535,7 @@ function PiecesCell(props: {
         <button
           type="button"
           class="h-7 w-7 rounded-md border border-input text-muted-foreground hover:bg-muted disabled:opacity-40"
-          disabled={blocked() || props.concept.completed_quantity >= props.concept.quantity}
+          disabled={blocked() || props.concept.completed_quantity >= producedBounds(props.concept).max}
           title={blocked() ? `Faltan pasos: ${props.pending.join(', ')}` : undefined}
           aria-label="Una pieza más"
           onClick={() => props.onCommit(props.concept.completed_quantity + 1)}
