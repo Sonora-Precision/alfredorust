@@ -23,6 +23,7 @@ import { folioOf, matchesWorkOrder } from '../production/WorkOrderSearch'
 import { type PartFile, listProjectPartFiles } from '../../lib/api/partFiles'
 import { PartDrawing } from './PartDrawing'
 import { PartMaterialCell } from './PartMaterialCell'
+import { getCutList } from '../../lib/api/material'
 import type { ConceptStatusFull, PartProgressPayload, ProcessOperation, ProjectConcept, StepState } from '../../lib/api/types'
 import { cn } from '../../lib/cn'
 
@@ -253,6 +254,9 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
     }
     return map
   })
+  // Each part's row in the saw's cut list ("Pasar a corte" / place in the queue).
+  const cutQuery = createQuery(() => ({ queryKey: ['cut-list'], queryFn: getCutList }))
+  const cutOf = createMemo(() => new Map((cutQuery.data ?? []).map((i) => [i.concept_id, i])))
 
   const [filter, setFilter] = createSignal('')
   const visibleConcepts = createMemo(() =>
@@ -375,6 +379,7 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
                         material={c.material}
                         status={c.material_status}
                         canEdit={props.canUploadFiles}
+                        cut={cutOf().get(c.id)}
                       />
                       <Show when={c.description}>
                         <p class="max-w-[16rem] truncate text-xs text-muted-foreground" title={c.description ?? ''}>

@@ -522,6 +522,11 @@ pub async fn api_machine_finish(
         }),
         None => None,
     };
+    // On the band saw, finishing the job means the part's cut is done.
+    if let Some(c) = current.as_ref().and_then(|m| m.concept_id) {
+        super::material::saw_job_finished(&state, &company_id, &resource_id, &c, &session_user.user().username)
+            .await;
+    }
     let machine_state = MachineState {
         id: None,
         company_id,

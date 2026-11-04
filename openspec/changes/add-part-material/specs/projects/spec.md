@@ -98,3 +98,30 @@ marks the "Material habilitado" step.
 
 - WHEN a programmer marks the cut of CG-15288-A done
 - THEN its "Material habilitado" step is done and its material status is "Cortado"
+
+### Requirement: Parts are sent to the saw and the material steps tick themselves
+
+The system SHALL let users with `take_work_orders` or
+`manage_production_board` send a part with a cut length to the Sierra cinta
+queue once, labelled with its cut, SHALL tick the "Material" step when a
+received bar is assigned to the part, SHALL count that step as received, and
+SHALL tick "Material habilitado" and clear the saw queue of the part when its
+cut is marked done or the saw finishes its job.
+
+#### Scenario: Send to cut
+
+- GIVEN CG-15288-A needs 30 blanks of 5 inches
+- WHEN a programmer sends it to cut from Seguimiento
+- THEN the Sierra cinta queue holds it with the label "Corte 30 pz @ 5""
+- AND sending it again fails with a conflict
+
+#### Scenario: Received bar ticks Material
+
+- WHEN the admin assigns a received bar to CG-15288-A
+- THEN its "Material" step is done and its material status is "Recibido"
+
+#### Scenario: Saw finishes the job
+
+- GIVEN CG-15289-A runs on the Sierra cinta
+- WHEN the operator finishes the job on the saw
+- THEN its "Material habilitado" step is done and it leaves the saw queue
