@@ -5,6 +5,7 @@ import { createMutation, createQuery, useQueryClient } from '@tanstack/solid-que
 import { type JSX, For, Show, createMemo, createSignal } from 'solid-js'
 
 import { PartName } from '../production/PartName'
+import { ProjectQuotes } from './ProjectQuotes'
 import { Button } from '../ui/Button'
 import { Card, CardContent } from '../ui/Card'
 import { Spinner } from '../ui/Spinner'
@@ -18,7 +19,7 @@ import { money } from '../../lib/format'
 const inch = (v: number | null) => (v == null ? '' : String(+v.toFixed(4)).replace(/^0\./, '.'))
 const kg = (v: number | null) => (v == null ? '—' : `${v.toFixed(v < 1 ? 3 : 2)} kg`)
 
-export function QuoteTab(props: { projectId: string }): JSX.Element {
+export function QuoteTab(props: { projectId: string; contactId?: string | null }): JSX.Element {
   const qc = useQueryClient()
   const quote = createQuery(() => ({
     queryKey: ['project-quote', props.projectId],
@@ -71,6 +72,7 @@ export function QuoteTab(props: { projectId: string }): JSX.Element {
 
   return (
     <div class="space-y-4">
+      <ProjectQuotes projectId={props.projectId} contactId={props.contactId} />
       <Card glass glow={false}>
         <CardContent class="space-y-2 p-4">
           <p class="text-sm font-semibold text-foreground">Precio por kg del material</p>

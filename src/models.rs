@@ -1020,6 +1020,121 @@ pub struct PartQuote {
     pub multiplier: Option<f64>,
 }
 
+/// Company data printed on quotes (add-quote-document), once per company.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct QuoteSettings {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    #[serde(default)]
+    pub company_id: ObjectId,
+    #[serde(default)]
+    pub company_name: String,
+    #[serde(default)]
+    pub address1: String,
+    #[serde(default)]
+    pub address2: String,
+    #[serde(default)]
+    pub phone: String,
+    #[serde(default)]
+    pub email: String,
+    #[serde(default)]
+    pub web: String,
+    #[serde(default = "default_iva_rate")]
+    pub iva_rate: f64,
+    #[serde(default = "default_retention_rate")]
+    pub retention_rate: f64,
+    /// Small image as a data URL ("data:image/jpeg;base64,…").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub logo_data_url: Option<String>,
+}
+
+fn default_iva_rate() -> f64 {
+    0.16
+}
+fn default_retention_rate() -> f64 {
+    0.0125
+}
+
+/// Quote values of a client (the CLIENTES sheet of the template), keyed by its contact.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ClientQuoteDefaults {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub company_id: ObjectId,
+    pub contact_id: ObjectId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub abbreviation: Option<String>,
+    /// "MXN" or "USD".
+    pub currency: String,
+    /// "es" or "en".
+    pub language: String,
+    pub iva: bool,
+    pub retention: bool,
+    pub validity_days: i32,
+    /// 50 = 50 %.
+    pub advance_pct: f64,
+    #[serde(default)]
+    pub people: Vec<ClientPerson>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ClientPerson {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initials: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
+}
+
+/// A quote sent to a client for a project; each revision is its own record.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Quote {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub company_id: ObjectId,
+    pub project_id: ObjectId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contact_id: Option<ObjectId>,
+    pub client_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attention: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attention_initials: Option<String>,
+    /// "261103-01"; the folio is base + "-" + revision as two digits.
+    pub folio_base: String,
+    pub revision: i32,
+    pub date: DateTime,
+    pub currency: String,
+    pub language: String,
+    pub iva: bool,
+    pub retention: bool,
+    pub iva_rate: f64,
+    pub retention_rate: f64,
+    pub discount: f64,
+    pub delivery_time: i32,
+    /// "dias" (business days) or "semanas".
+    pub delivery_unit: String,
+    pub validity_days: i32,
+    pub advance_pct: f64,
+    #[serde(default)]
+    pub notes: Vec<String>,
+    pub lines: Vec<QuoteItem>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sent_at: Option<DateTime>,
+    pub created_by: ObjectId,
+    pub created_at: DateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct QuoteItem {
+    pub item: i32,
+    pub quantity: f64,
+    pub description: String,
+    pub unit_price: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub concept_id: Option<ObjectId>,
+}
+
 /// Price per kg of a material for the company (MXN before tax). Admin only.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MaterialPrice {
