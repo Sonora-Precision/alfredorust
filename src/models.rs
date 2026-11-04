@@ -973,6 +973,10 @@ pub struct ProjectConcept {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub material: Option<PartMaterial>,
 
+    /// Quoting inputs (admin only): SolidWorks blank weight and price multiplier.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quote: Option<PartQuote>,
+
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created_at: Option<DateTime>,
 
@@ -1004,6 +1008,32 @@ pub struct PartMaterial {
     pub ordered: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
+}
+
+/// How a part is quoted (add-part-quoting): the blank weight from SolidWorks when Daniel
+/// has it (else computed from the blank) and the multiplier over the material cost.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct PartQuote {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weight_kg: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub multiplier: Option<f64>,
+}
+
+/// Price per kg of a material for the company (MXN before tax). Admin only.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MaterialPrice {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub company_id: ObjectId,
+    pub material: String,
+    pub price_per_kg: f64,
+    /// "manual" today; "cfdi" once learned from supplier invoices.
+    pub source: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    pub updated_by: ObjectId,
+    pub updated_at: DateTime,
 }
 
 /// A supplier delivery read from its invoice (CFDI or captured lines). Never holds prices.

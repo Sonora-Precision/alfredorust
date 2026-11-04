@@ -307,6 +307,16 @@ async fn material_receipt_matches_and_assigns_bars() {
     let entry = saw_queue().await[0].id.unwrap().to_hex();
     let (status, _) = post(format!("/api/production/machine_queue/{entry}/start"), jose.clone(), serde_json::json!({})).await;
     assert_eq!(status, StatusCode::OK);
+    // The saw's card says what to load: stock size and the cuts from each bar.
+    let (status, body) = get("/api/production/plant".into(), admin.clone()).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let plant = json(&body);
+    let on_saw = plant["machines"].as_array().unwrap().iter().find(|m| m["name"] == "Sierra cinta").unwrap()["order"].clone();
+    assert_eq!(on_saw["part"], "CG-15289-A");
+    assert_eq!((on_saw["material"]["thickness"].as_f64(), on_saw["material"]["length"].as_f64()), (Some(0.1875), Some(5.0)));
+    // No bar assigned to it in this test: no cuts, and no prices anywhere on the plant.
+    assert_eq!(on_saw["cuts"], serde_json::json!([]), "{on_saw}");
+    assert!(!body.contains("unit_price") && !body.contains("price_per_kg"), "{body}");
     let (status, _) = post(format!("/api/production/machines/{}/finish", saw.to_hex()), jose.clone(), serde_json::json!({})).await;
     assert_eq!(status, StatusCode::OK);
     let (_, body) = get("/api/production/cut_list".into(), jose.clone()).await;
