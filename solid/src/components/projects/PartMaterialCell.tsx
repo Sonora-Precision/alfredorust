@@ -39,8 +39,10 @@ export function parseInches(text: string): number | null {
 }
 
 export function blankLabel(m: PartMaterial): string {
-  const dims = [m.thickness, m.width, m.length].filter((d) => d != null).map((d) => num(d))
-  return dims.length ? `${dims.join(' × ')}"` : ''
+  const round = m.shape?.toLowerCase() === 'redondo'
+  const dims = [m.thickness, round ? null : m.width, m.length].filter((d) => d != null).map((d) => num(d))
+  if (!dims.length) return ''
+  return `${round && m.thickness != null ? 'Ø' : ''}${dims.join(' × ')}"`
 }
 
 export function PartMaterialCell(props: {
@@ -164,8 +166,11 @@ function MaterialEditor(props: {
     onError: (err) => toast.error('No se pudo guardar', humanizeError(err, 'Revisa las medidas')),
   }))
 
+  // A round bar is asked for by diameter and length; it has no width.
+  const round = () => shape() === 'redondo'
+
   const submit = () => {
-    const dims = [t(), w(), l()].map(parseInches)
+    const dims = [t(), round() ? '' : w(), l()].map(parseInches)
     if (dims.some((d) => Number.isNaN(d))) {
       toast.error('Medida inválida', 'Usa pulgadas: 1 1/4, 1/8 o .625')
       return
@@ -214,23 +219,25 @@ function MaterialEditor(props: {
             </select>
           </label>
         </div>
-        <div class="grid grid-cols-3 gap-2">
+        <div class={`grid gap-2 ${round() ? 'grid-cols-2' : 'grid-cols-3'}`}>
           <label class="space-y-1">
-            <span class="text-xs text-muted-foreground">{shape() === 'redondo' ? 'Diámetro' : 'Espesor'}</span>
-            <input class={field} placeholder='1/8' value={t()} onInput={(e) => setT(e.currentTarget.value)} />
+            <span class="text-xs text-muted-foreground">{round() ? 'Diámetro' : 'Espesor'}</span>
+            <input class={field} placeholder={round() ? '1 1/4' : '1/8'} value={t()} onInput={(e) => setT(e.currentTarget.value)} />
           </label>
-          <label class="space-y-1">
-            <span class="text-xs text-muted-foreground">Ancho</span>
-            <input class={field} placeholder='1.75' disabled={shape() === 'redondo'} value={w()} onInput={(e) => setW(e.currentTarget.value)} />
-          </label>
+          <Show when={!round()}>
+            <label class="space-y-1">
+              <span class="text-xs text-muted-foreground">Ancho</span>
+              <input class={field} placeholder="1.75" value={w()} onInput={(e) => setW(e.currentTarget.value)} />
+            </label>
+          </Show>
           <label class="space-y-1">
             <span class="text-xs text-muted-foreground">Largo de corte</span>
-            <input class={field} placeholder='5' value={l()} onInput={(e) => setL(e.currentTarget.value)} />
+            <input class={field} placeholder="5" value={l()} onInput={(e) => setL(e.currentTarget.value)} />
           </label>
         </div>
         <label class="block space-y-1">
           <span class="text-xs text-muted-foreground">Barra a pedir</span>
-          <input class={field} placeholder='0.125" x 1.75" x 175"' value={bar()} onInput={(e) => setBar(e.currentTarget.value)} />
+          <input class={field} placeholder={round() ? 'Ø1.25" x 144"' : '0.125" x 1.75" x 175"'} value={bar()} onInput={(e) => setBar(e.currentTarget.value)} />
         </label>
         <div class="flex flex-wrap gap-4">
           <label class="inline-flex items-center gap-2">

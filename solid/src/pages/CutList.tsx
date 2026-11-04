@@ -27,14 +27,19 @@ export default function CutList(): JSX.Element {
   const list = createQuery(() => ({ queryKey: ['cut-list'], queryFn: materialApi.getCutList, refetchInterval: 60_000 }))
   const [material, setMaterial] = createSignal<string | null>(null)
   const [showDone, setShowDone] = createSignal(false)
+  const [showQueued, setShowQueued] = createSignal(false)
   const [query, setQuery] = createSignal('')
 
+  // Parts already in the saw's queue are hidden: they are the saw's to cut now
+  // (Daniel, 2026-11-04). "Ver en fila de la sierra" brings them back.
+  const queued = createMemo(() => (list.data ?? []).filter((i) => !i.cut_done && i.saw_position != null).length)
   const materials = createMemo(() => [...new Set((list.data ?? []).map((i) => i.material.material ?? 'Sin material'))])
   const visible = createMemo(() => {
     const q = query().trim().toLowerCase()
     return (list.data ?? []).filter(
       (i) =>
         (showDone() || !i.cut_done) &&
+        (showQueued() || i.cut_done || i.saw_position == null) &&
         (!material() || (i.material.material ?? 'Sin material') === material()) &&
         (!q || i.part.toLowerCase().includes(q) || i.folio.toLowerCase().includes(q)),
     )
@@ -79,6 +84,10 @@ export default function CutList(): JSX.Element {
         <label class="inline-flex items-center gap-2 text-xs text-muted-foreground">
           <input type="checkbox" checked={showDone()} onChange={(e) => setShowDone(e.currentTarget.checked)} />
           Ver ya cortadas
+        </label>
+        <label class="inline-flex items-center gap-2 text-xs text-muted-foreground">
+          <input type="checkbox" checked={showQueued()} onChange={(e) => setShowQueued(e.currentTarget.checked)} />
+          Ver en fila de la sierra ({queued()})
         </label>
       </div>
 
