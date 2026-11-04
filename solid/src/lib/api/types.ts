@@ -470,6 +470,9 @@ export interface ProjectConcept {
   completed_quantity: number
   /** Pieces quality released (they count as finished) and rejected (made again). */
   released_quantity?: number
+  /** Material and blank per piece (inches); status is derived on the server. */
+  material?: PartMaterial | null
+  material_status?: MaterialStatus | null
   rejected_quantity?: number
   /** Only the steps someone marked; other catalog operations are pending. */
   process_steps: PartStep[]
@@ -1103,3 +1106,70 @@ export interface TimelineBucket {
 }
 
 export type TimelineMode = 'day' | 'week' | 'month' | 'year'
+
+// --- part material and material receipts (openspec add-part-material) ---------------
+
+export type MaterialStatus = 'surtido_por_cliente' | 'cortado' | 'recibido' | 'pedido' | 'pendiente'
+
+export interface PartMaterial {
+  material?: string | null
+  shape?: string | null
+  thickness?: number | null
+  width?: number | null
+  /** Cut length per piece. */
+  length?: number | null
+  bar_to_order?: string | null
+  customer_supplied?: boolean
+  ordered?: boolean
+  notes?: string | null
+}
+
+export interface MaterialReceiptSummary {
+  id: string
+  supplier: string
+  folio: string | null
+  cfdi_uuid: string | null
+  received_at: string
+  lines: number
+  assigned_lines: number
+}
+
+export interface ReceiptPartRef {
+  concept_id: string
+  folio: string
+  part: string
+  project_id: string
+}
+
+export interface ReceiptSuggestion extends ReceiptPartRef {
+  fit: 'exact' | 'larger'
+  note: string | null
+  /** Blanks the bar yields at a 1/16" cut. */
+  pieces: number
+  needed: number
+}
+
+export interface ReceiptLineView {
+  line: number
+  description: string
+  quantity: number
+  unit: string
+  material: string | null
+  shape: string | null
+  thickness: number | null
+  width: number | null
+  length: number | null
+  pieces: number
+  assigned: ReceiptPartRef[]
+  suggestions: ReceiptSuggestion[]
+}
+
+export interface MaterialReceiptDetail {
+  id: string
+  supplier: string
+  folio: string | null
+  cfdi_uuid: string | null
+  received_at: string
+  lines: ReceiptLineView[]
+  parts: (ReceiptPartRef & { needed: number; available: number })[]
+}

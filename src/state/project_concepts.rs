@@ -294,6 +294,7 @@ pub async fn create_project_concept(
             released_quantity: 0.0,
             rejected_quantity: 0.0,
             process_steps: Vec::new(),
+            material: None,
             created_at: Some(DateTime::from_system_time(SystemTime::now())),
             updated_at: None,
         })

@@ -969,11 +969,83 @@ pub struct ProjectConcept {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub process_steps: Vec<PartStep>,
 
+    /// Material and blank size (add-part-material §1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub material: Option<PartMaterial>,
+
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created_at: Option<DateTime>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<DateTime>,
+}
+
+/// What a part is cut from: material, shape and the blank per piece in inches (thickness ×
+/// width × cut length; a round bar keeps its diameter in `thickness`). Replaces the
+/// shop's material Excel (Daniel, 2026-11-03).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct PartMaterial {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub material: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shape: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thickness: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub length: Option<f64>,
+    /// Free text, as ordered: "1/2\" X .625\" X 80\"".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bar_to_order: Option<String>,
+    #[serde(default)]
+    pub customer_supplied: bool,
+    #[serde(default)]
+    pub ordered: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
+/// A supplier delivery read from its invoice (CFDI or captured lines). Never holds prices.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MaterialReceipt {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub company_id: ObjectId,
+    pub supplier: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folio: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cfdi_uuid: Option<String>,
+    pub received_at: DateTime,
+    pub lines: Vec<ReceiptLine>,
+    pub created_by: ObjectId,
+    pub created_at: DateTime,
+}
+
+/// One invoice line read as a bar.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ReceiptLine {
+    pub line: i32,
+    pub description: String,
+    pub quantity: f64,
+    pub unit: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub material: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shape: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thickness: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub length: Option<f64>,
+    /// Bars in the line ("( 1 pz )").
+    #[serde(default = "default_one_f64")]
+    pub pieces: f64,
+    /// Parts Daniel assigned this bar to.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub concept_ids: Vec<ObjectId>,
 }
 
 fn default_one_f64() -> f64 {

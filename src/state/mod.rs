@@ -9,7 +9,7 @@ use crate::models::{
     Account, ApiToken, Category, Company, ConceptStatus, Contact, Forecast, MachineRun,
     PlannedEntry, ProcessOperation, Project, ProjectConcept, RecurringPlan, Resource, ResourceLog,
     ResourceUsage, ResourceUsageAllocation, SatConfig, ServiceOrder, Session, Transaction, User,
-    UserCompany, WorkOrderEvent, MachineQueueEntry, MachineState, PartFile, PlantLayout,
+    UserCompany, WorkOrderEvent, MachineQueueEntry, MachineState, MaterialReceipt, PartFile, PlantLayout,
     ShopDailyReport,
 };
 use bson::Document;
@@ -49,6 +49,7 @@ mod cfdi_jobs;
 mod companies;
 mod finance;
 mod machine_queue;
+mod material;
 mod machine_runs;
 mod shop_reports;
 mod orders;
@@ -71,6 +72,7 @@ pub use cfdi_jobs::*;
 pub use companies::*;
 pub use finance::*;
 pub use machine_queue::*;
+pub use material::*;
 pub use machine_runs::*;
 pub use shop_reports::*;
 pub use orders::*;
@@ -126,6 +128,7 @@ pub struct AppState {
     pub machine_states: Collection<MachineState>,
     pub shop_daily_reports: Collection<ShopDailyReport>,
     pub machine_queue: Collection<MachineQueueEntry>,
+    pub material_receipts: Collection<MaterialReceipt>,
     pub part_files: Collection<PartFile>,
 }
 
@@ -309,6 +312,14 @@ pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppStat
         )
         .await
         .context("creating the machine state index")?;
+    db.collection::<MaterialReceipt>("material_receipts")
+        .create_index(
+            IndexModel::builder()
+                .keys(mongodb::bson::doc! { "company_id": 1, "received_at": -1 })
+                .build(),
+        )
+        .await
+        .context("creating the material receipt index")?;
     db.collection::<MachineQueueEntry>("machine_queue_entries")
         .create_index(
             IndexModel::builder()
@@ -361,6 +372,7 @@ pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppStat
         machine_states: db.collection::<MachineState>("machine_states"),
         shop_daily_reports: db.collection::<ShopDailyReport>("shop_daily_reports"),
         machine_queue: db.collection::<MachineQueueEntry>("machine_queue_entries"),
+        material_receipts: db.collection::<MaterialReceipt>("material_receipts"),
         part_files: db.collection::<PartFile>("part_files"),
     };
 

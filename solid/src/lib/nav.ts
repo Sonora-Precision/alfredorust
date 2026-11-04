@@ -81,6 +81,14 @@ export const NAV: NavEntry[] = [
     href: '/produccion/planta',
     can: adminOr('view_production_board'),
   },
+  // Invoice vs what each part needs; only managers create receipts or assign bars.
+  {
+    id: 'material',
+    label: 'Material recibido',
+    icon: Boxes,
+    href: '/produccion/material',
+    can: adminOr('view_production_board'),
+  },
   // They say who was at which machine and when: admins only.
   { id: 'reportes-taller', label: 'Reportes del taller', icon: ClipboardList, href: '/produccion/reportes', can: admin },
   { id: 'tiempo', label: 'Tiempo', icon: Clock, href: '/tiempo', can: adminOr('view_timeline') },

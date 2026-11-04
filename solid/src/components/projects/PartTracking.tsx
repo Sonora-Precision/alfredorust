@@ -22,6 +22,7 @@ import { assignWorkOrder, listBoardMembers } from '../../lib/api/production'
 import { folioOf, matchesWorkOrder } from '../production/WorkOrderSearch'
 import { type PartFile, listProjectPartFiles } from '../../lib/api/partFiles'
 import { PartDrawing } from './PartDrawing'
+import { PartMaterialCell } from './PartMaterialCell'
 import type { ConceptStatusFull, PartProgressPayload, ProcessOperation, ProjectConcept, StepState } from '../../lib/api/types'
 import { cn } from '../../lib/cn'
 
@@ -366,6 +367,14 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
                         partName={c.name}
                         file={drawingOf().get(c.id)}
                         canUpload={props.canUploadFiles}
+                      />
+                      <PartMaterialCell
+                        conceptId={c.id}
+                        partName={c.name}
+                        projectId={props.projectId}
+                        material={c.material}
+                        status={c.material_status}
+                        canEdit={props.canUploadFiles}
                       />
                       <Show when={c.description}>
                         <p class="max-w-[16rem] truncate text-xs text-muted-foreground" title={c.description ?? ''}>
