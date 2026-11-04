@@ -1185,6 +1185,8 @@ export interface CutListItem extends ReceiptPartRef {
   needed: number
   /** Blanks planned from the assigned bars. */
   planned: number
+  /** Place in the Sierra cinta queue (1 = next), when it was sent to cut. */
+  saw_position: number | null
   bars: {
     receipt_id: string
     folio: string | null

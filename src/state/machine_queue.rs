@@ -76,6 +76,20 @@ pub async fn remove_machine_queue_entry(state: &AppState, company_id: &ObjectId,
     Ok(res.deleted_count > 0)
 }
 
+/// Takes every entry of a part off one machine's queue (its cut is done).
+pub async fn remove_part_from_machine_queue(
+    state: &AppState,
+    company_id: &ObjectId,
+    resource_id: &ObjectId,
+    concept_id: &ObjectId,
+) -> Result<u64> {
+    let res = state
+        .machine_queue
+        .delete_many(doc! { "company_id": company_id, "resource_id": resource_id, "concept_id": concept_id })
+        .await?;
+    Ok(res.deleted_count)
+}
+
 /// Moves an entry one place up or down in its machine's queue. Ranks are renumbered 1..n
 /// so ties from older data never block a move. Returns false at either end.
 pub async fn move_machine_queue_entry(

@@ -706,6 +706,7 @@ async fn main() {
         .route("/api/production/material_receipts/{id}", get(routes::api_material_receipt_show))
         .route("/api/production/cut_list", get(routes::api_cut_list))
         .route("/api/production/cut_list/{id}/done", axum::routing::post(routes::api_cut_done))
+        .route("/api/production/cut_list/{id}/queue", axum::routing::post(routes::api_cut_queue))
         .route("/api/production/material_receipts/{id}/lines/{line}/assign", axum::routing::post(routes::api_material_receipt_assign))
         .route("/api/admin/part_files/{id}", get(routes::api_part_file_download))
         .route(

@@ -2,6 +2,7 @@
 mod common;
 
 use common::harness::*;
+use futures::stream::TryStreamExt;
 
 fn json(body: &str) -> serde_json::Value {
     serde_json::from_str(body).unwrap_or_else(|_| panic!("not JSON: {body}"))
@@ -176,6 +177,15 @@ async fn material_receipt_matches_and_assigns_bars() {
     let exact = s2.iter().find(|s| s["part"] == "CG-15296-A").unwrap();
     assert_eq!((exact["fit"].as_str(), exact["pieces"].as_i64()), (Some("exact"), Some(41)));
 
+    // The catalog has a "Material" step: assigning a bar ticks it.
+    let (status, body) = post(
+        "/api/admin/process_operations".into(),
+        admin.clone(),
+        serde_json::json!({ "name": "Material", "position": 1 }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "body: {body}");
+
     // Assign both 1/8 x 2 bars to CG-15288-A: 28 + 7 = 35 pieces for 30.
     for n in [1, 2] {
         let (status, body) = post(
@@ -208,6 +218,16 @@ async fn material_receipt_matches_and_assigns_bars() {
     let list = concepts(jose.clone()).await;
     let status_of = |name: &str| list.as_array().unwrap().iter().find(|c| c["name"] == name).unwrap()["material_status"].clone();
     assert_eq!(status_of("CG-15288-A"), "recibido");
+    let step = |name: &str, step: &str| {
+        list.as_array().unwrap().iter().find(|c| c["name"] == name).unwrap()["process_steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["name"] == step)
+            .map(|s| s["state"].clone())
+    };
+    assert_eq!(step("CG-15288-A", "Material"), Some(serde_json::json!("done")));
+    assert_eq!(step("CG-15296-A", "Material"), None, "no bar, no tick");
     assert_eq!(status_of("CG-15296-A"), "pedido");
 
     // Cut list: CG-15288-A cuts 28 from the 144" bar and 2 from the 36" one; CG-15296-A has
@@ -225,6 +245,41 @@ async fn material_receipt_matches_and_assigns_bars() {
     let c296 = item("CG-15296-A");
     assert_eq!((c296["planned"].as_i64(), c296["status"].as_str()), (Some(0), Some("pedido")));
 
+    // "Pasar a corte": into the Sierra cinta queue, once, with the cut as its label.
+    let queue = format!("/api/production/cut_list/{}/queue", p288.to_hex());
+    let (status, _) = post(queue.clone(), jose.clone(), serde_json::json!({})).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "no saw yet");
+    let saw = create_resource(&state, &company, "Sierra cinta", ResourceType::Machinery, true, None).await.unwrap();
+    let (status, body) = post(queue.clone(), jose.clone(), serde_json::json!({})).await;
+    assert_eq!(status, StatusCode::CREATED, "body: {body}");
+    let (status, _) = post(queue.clone(), jose.clone(), serde_json::json!({})).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    let no_material = create_project_concept(&state, &company, &project, None, "CG-99999", 5.0, None, None, None, None, None, 9)
+        .await
+        .unwrap();
+    let (status, _) =
+        post(format!("/api/production/cut_list/{}/queue", no_material.to_hex()), jose.clone(), serde_json::json!({})).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let saw_queue = || {
+        let state = state.clone();
+        async move {
+            state
+                .machine_queue
+                .find(mongodb::bson::doc! { "resource_id": saw })
+                .await
+                .unwrap()
+                .try_collect::<Vec<_>>()
+                .await
+                .unwrap()
+        }
+    };
+    let entries = saw_queue().await;
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].label.as_deref(), Some("Corte 30 pz @ 5\""));
+    let (_, body) = get("/api/production/cut_list".into(), jose.clone()).await;
+    let c288 = json(&body).as_array().unwrap().iter().find(|c| c["part"] == "CG-15288-A").unwrap().clone();
+    assert_eq!(c288["saw_position"], 1);
+
     // "Corte terminado" marks "Material habilitado"; it must exist in the catalog.
     let done = format!("/api/production/cut_list/{}/done", p288.to_hex());
     let (status, _) = post(done.clone(), jose.clone(), serde_json::json!({ "done": true })).await;
@@ -241,6 +296,23 @@ async fn material_receipt_matches_and_assigns_bars() {
     let (_, body) = get("/api/production/cut_list".into(), jose.clone()).await;
     let c288 = json(&body).as_array().unwrap().iter().find(|c| c["part"] == "CG-15288-A").unwrap().clone();
     assert_eq!((c288["cut_done"].as_bool(), c288["status"].as_str()), (Some(true), Some("cortado")));
+    assert!(c288["saw_position"].is_null(), "a finished cut leaves the saw queue");
+    assert!(saw_queue().await.is_empty());
+
+    // On the saw itself: CG-15289-A goes to cut, runs and "Terminar trabajo" ticks its
+    // "Material habilitado"; a "Material" ✔ alone already reads as received.
+    let (status, _) =
+        post(format!("/api/production/cut_list/{}/queue", p289.to_hex()), jose.clone(), serde_json::json!({})).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let entry = saw_queue().await[0].id.unwrap().to_hex();
+    let (status, _) = post(format!("/api/production/machine_queue/{entry}/start"), jose.clone(), serde_json::json!({})).await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = post(format!("/api/production/machines/{}/finish", saw.to_hex()), jose.clone(), serde_json::json!({})).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, body) = get("/api/production/cut_list".into(), jose.clone()).await;
+    let c289 = json(&body).as_array().unwrap().iter().find(|c| c["part"] == "CG-15289-A").unwrap().clone();
+    assert_eq!((c289["cut_done"].as_bool(), c289["status"].as_str()), (Some(true), Some("cortado")));
+    assert!(saw_queue().await.is_empty());
 
     // Another company does not see the receipt.
     let out_id = create_user(&state, "mat-out@example.com", "SECRET", &[(other.clone(), UserRole::Admin)]).await.unwrap();

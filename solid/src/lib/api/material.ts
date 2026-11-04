@@ -19,3 +19,5 @@ export const assignReceiptLine = (id: string, line: number, conceptIds: string[]
 export const getCutList = () => apiGet<CutListItem[]>('/api/production/cut_list')
 export const setCutDone = (conceptId: string, done: boolean) =>
   apiPost<void>(`/api/production/cut_list/${conceptId}/done`, { done })
+export const queuePartToSaw = (conceptId: string) =>
+  apiPost<{ id: string }>(`/api/production/cut_list/${conceptId}/queue`, {})

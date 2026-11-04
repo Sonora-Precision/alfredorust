@@ -21,8 +21,8 @@ use crate::{
     models::{MaterialReceipt, PartMaterial, ProjectConcept, ReceiptLine, UserPermission},
     session::SessionUser,
     state::{
-        AppState, PartProgressUpdate, assign_receipt_line, cut_plan, fit_bar, list_process_operations, material_status,
-        update_part_progress, get_material_receipt, get_project_concept_by_id_for_company,
+        AppState, assign_receipt_line, cut_plan, fit_bar, material_status, get_material_receipt,
+        get_project_concept_by_id_for_company,
         insert_material_receipt, list_material_receipts, receipt_pieces_by_part, read_line, set_part_material,
     },
 };
@@ -501,7 +501,22 @@ pub async fn api_material_receipt_assign(
         }
     }
     match assign_receipt_line(&state, &company_id, &id, line, &concept_ids).await {
-        Ok(true) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Ok(true) => {
+            // The material is in the shop: tick "Material" on each part (Daniel, 2026-11-03).
+            let username = session_user.user().username.clone();
+            for c in &concept_ids {
+                let _ = crate::state::mark_step_by_name(
+                    &state,
+                    &company_id,
+                    c,
+                    crate::state::STEP_MATERIAL,
+                    crate::models::StepState::Done,
+                    &username,
+                )
+                .await;
+            }
+            Json(serde_json::json!({ "ok": true })).into_response()
+        }
         Ok(false) => json_error(StatusCode::NOT_FOUND, "receipt line not found"),
         Err(_) => json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not assign the bar"),
     }
@@ -533,6 +548,72 @@ pub struct CutListItemData {
     /// Blanks planned from the assigned bars (may fall short of `needed`).
     pub planned: i64,
     pub bars: Vec<BarCutsData>,
+    /// Place in the Sierra cinta queue (1 = next), when it was sent to cut.
+    pub saw_position: Option<usize>,
+}
+
+/// The band saw of the company: the active machine whose name says "sierra".
+async fn find_saw(state: &AppState, company_id: &ObjectId) -> Option<ObjectId> {
+    crate::state::list_resources(state, company_id)
+        .await
+        .ok()?
+        .into_iter()
+        .filter(|r| r.is_active && r.resource_type == crate::models::ResourceType::Machinery)
+        .find(|r| crate::state::machine_key(&r.name).contains("SIERRA"))
+        .and_then(|r| r.id)
+}
+
+/// Order of each part in the saw queue (first entry wins).
+async fn saw_positions(state: &AppState, company_id: &ObjectId, saw: Option<ObjectId>) -> HashMap<ObjectId, usize> {
+    let Some(saw) = saw else { return HashMap::new() };
+    let queue = crate::state::list_machine_queues(state, company_id)
+        .await
+        .ok()
+        .and_then(|mut q| q.remove(&saw))
+        .unwrap_or_default();
+    let mut out = HashMap::new();
+    for (i, e) in queue.iter().enumerate() {
+        out.entry(e.concept_id).or_insert(i + 1);
+    }
+    out
+}
+
+/// "Pasar a corte": puts the part in the Sierra cinta queue with the label "Corte 30 pz @
+/// 5\"" (Daniel, 2026-11-03). Programmers and whoever manages the board.
+pub async fn api_cut_queue(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Response {
+    if !(session_user.has_permission(UserPermission::TakeWorkOrders) || can_manage(&session_user)) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let company_id = require_active_company(&session_user);
+    let id = match parse_oid(&id) {
+        Ok(id) => id,
+        Err(resp) => return resp,
+    };
+    let concept = match get_project_concept_by_id_for_company(&state, &id, &company_id).await {
+        Ok(Some(c)) => c,
+        _ => return json_error(StatusCode::NOT_FOUND, "part not found"),
+    };
+    let Some(length) = concept.material.as_ref().and_then(|m| m.length) else {
+        return json_error(StatusCode::BAD_REQUEST, "captura primero el material y el largo de corte de la parte");
+    };
+    let Some(saw) = find_saw(&state, &company_id).await else {
+        return json_error(StatusCode::BAD_REQUEST, "no hay una máquina \"Sierra\" dada de alta");
+    };
+    if saw_positions(&state, &company_id, Some(saw)).await.contains_key(&id) {
+        return json_error(StatusCode::CONFLICT, "ya está en la fila de la sierra");
+    }
+    let inches = format!("{length:.4}");
+    let inches = inches.trim_end_matches('0').trim_end_matches('.');
+    let label = format!("Corte {} pz @ {inches}\"", needed(&concept));
+    match crate::state::add_machine_queue_entry(&state, company_id, saw, id, Some(label), *session_user.user_id()).await {
+        Ok(e) => (StatusCode::CREATED, Json(serde_json::json!({ "id": e.id.map(|i| i.to_hex()), "rank": e.rank })))
+            .into_response(),
+        Err(_) => json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not queue the cut"),
+    }
 }
 
 /// The saw's cut list (add-part-material §3): every part of an open project with a cut
@@ -580,6 +661,7 @@ pub async fn api_cut_list(session_user: SessionUser, State(state): State<Arc<App
     // Oldest delivery first, so earlier bars are used before newer ones.
     receipts.reverse();
     let mut plan = cut_plan(&receipts, &parts, needed);
+    let saw = saw_positions(&state, &company_id, find_saw(&state, &company_id).await).await;
 
     let mut items: Vec<CutListItemData> = parts
         .values()
@@ -597,6 +679,7 @@ pub async fn api_cut_list(session_user: SessionUser, State(state): State<Arc<App
                 status: material_status(c, !bars.is_empty()),
                 cut_done,
                 needed: needed(c),
+                saw_position: saw.get(&id).copied(),
                 planned: bars.iter().map(|b| b.cuts).sum(),
                 bars: bars
                     .into_iter()
@@ -644,27 +727,47 @@ pub async fn api_cut_done(
         Ok(id) => id,
         Err(resp) => return resp,
     };
-    let operation = match list_process_operations(&state, &company_id, true).await {
-        Ok(ops) => ops
-            .into_iter()
-            .find(|op| op.name.trim().eq_ignore_ascii_case("material habilitado"))
-            .and_then(|op| op.id),
-        Err(_) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load the process"),
-    };
-    let Some(operation_id) = operation else {
-        return json_error(StatusCode::BAD_REQUEST, "falta el paso \"Material habilitado\" en el catálogo de proceso");
-    };
-    let update = PartProgressUpdate {
-        completed_quantity: None,
-        step: Some((
-            operation_id,
-            if payload.done { crate::models::StepState::Done } else { crate::models::StepState::Pending },
-        )),
-    };
+    match get_project_concept_by_id_for_company(&state, &id, &company_id).await {
+        Ok(Some(_)) => {}
+        _ => return json_error(StatusCode::NOT_FOUND, "part not found"),
+    }
+    let step_state = if payload.done { crate::models::StepState::Done } else { crate::models::StepState::Pending };
     let username = session_user.user().username.clone();
-    match update_part_progress(&state, &id, &company_id, update, &username).await {
-        Ok(Some(_)) => Json(serde_json::json!({ "ok": true })).into_response(),
-        Ok(None) => json_error(StatusCode::NOT_FOUND, "part not found"),
+    match crate::state::mark_step_by_name(&state, &company_id, &id, crate::state::STEP_CUT, step_state, &username).await {
+        Ok(true) => {
+            // A finished cut leaves the saw queue.
+            if payload.done {
+                if let Some(saw) = find_saw(&state, &company_id).await {
+                    let _ = crate::state::remove_part_from_machine_queue(&state, &company_id, &saw, &id).await;
+                }
+            }
+            Json(serde_json::json!({ "ok": true })).into_response()
+        }
+        Ok(false) => json_error(StatusCode::BAD_REQUEST, "falta el paso \"Material habilitado\" en el catálogo de proceso"),
         Err(err) => json_error(StatusCode::BAD_REQUEST, &err.to_string()),
     }
+}
+
+/// When the saw finishes a job ("Terminar trabajo" on the Sierra cinta), that part's cut is
+/// done: tick "Material habilitado" (Daniel, 2026-11-03). Other machines are untouched.
+pub async fn saw_job_finished(
+    state: &AppState,
+    company_id: &ObjectId,
+    resource_id: &ObjectId,
+    concept_id: &ObjectId,
+    username: &str,
+) {
+    if find_saw(state, company_id).await.as_ref() != Some(resource_id) {
+        return;
+    }
+    let _ = crate::state::mark_step_by_name(
+        state,
+        company_id,
+        concept_id,
+        crate::state::STEP_CUT,
+        crate::models::StepState::Done,
+        username,
+    )
+    .await;
+    let _ = crate::state::remove_part_from_machine_queue(state, company_id, resource_id, concept_id).await;
 }

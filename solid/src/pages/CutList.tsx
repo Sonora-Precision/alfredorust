@@ -7,7 +7,7 @@ import { createMutation, createQuery, useQueryClient } from '@tanstack/solid-que
 import { type JSX, For, Show, createMemo, createSignal } from 'solid-js'
 
 import { PartDrawingThumb, PartName } from '../components/production/PartName'
-import { MATERIAL_STATUS, blankLabel } from '../components/projects/PartMaterialCell'
+import { MATERIAL_STATUS, SendToSaw, blankLabel } from '../components/projects/PartMaterialCell'
 import { Button } from '../components/ui/Button'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Spinner } from '../components/ui/Spinner'
@@ -111,6 +111,9 @@ export default function CutList(): JSX.Element {
                   {[i.material.material, i.material.shape].filter(Boolean).join(' ')} · tocho {blankLabel(i.material)} ·{' '}
                   {i.needed} pz
                 </p>
+                <Show when={!i.cut_done}>
+                  <SendToSaw conceptId={i.concept_id} partName={i.part} position={i.saw_position} />
+                </Show>
               </div>
 
               <div class="px-3 py-2">

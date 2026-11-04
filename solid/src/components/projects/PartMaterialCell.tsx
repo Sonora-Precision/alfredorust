@@ -2,14 +2,16 @@
 // it stands (Pendiente → Pedido → Recibido → Cortado). The admin edits it; measures accept
 // fractions as the shop writes them ("1 1/4", "1/8", ".625"). openspec add-part-material.
 import { createMutation, useQueryClient } from '@tanstack/solid-query'
+import { Scissors } from 'lucide-solid'
 import { type JSX, Show, createSignal } from 'solid-js'
 
 import { Button } from '../ui/Button'
 import { Drawer } from '../ui/Drawer'
 import { toast } from '../ui/Toast'
 import { humanizeError } from '../../lib/api/client'
-import { setPartMaterial } from '../../lib/api/material'
-import type { MaterialStatus, PartMaterial } from '../../lib/api/types'
+import { queuePartToSaw, setPartMaterial } from '../../lib/api/material'
+import type { CutListItem, MaterialStatus, PartMaterial } from '../../lib/api/types'
+import { useAuth } from '../../lib/auth/AuthContext'
 
 export const MATERIAL_STATUS: Record<MaterialStatus, { label: string; class: string }> = {
   surtido_por_cliente: { label: 'Surtido por cliente', class: 'bg-sky-500/15 text-sky-700 dark:text-sky-300' },
@@ -48,6 +50,8 @@ export function PartMaterialCell(props: {
   status: MaterialStatus | null | undefined
   projectId: string
   canEdit: boolean
+  /** Its row in the cut list (place in the saw queue, cut done). */
+  cut?: CutListItem
 }): JSX.Element {
   const [open, setOpen] = createSignal(false)
   const m = () => props.material
@@ -81,6 +85,9 @@ export function PartMaterialCell(props: {
           </button>
         )}
       </Show>
+      <Show when={m()?.length != null && props.cut && !props.cut.cut_done}>
+        <SendToSaw conceptId={props.conceptId} partName={props.partName} position={props.cut?.saw_position ?? null} />
+      </Show>
       <Show when={open()}>
         <MaterialEditor
           conceptId={props.conceptId}
@@ -91,6 +98,41 @@ export function PartMaterialCell(props: {
         />
       </Show>
     </div>
+  )
+}
+
+/** "Pasar a corte": into the Sierra cinta queue; once there, its place in it. */
+export function SendToSaw(props: { conceptId: string; partName: string; position: number | null }): JSX.Element {
+  const auth = useAuth()
+  const qc = useQueryClient()
+  const canSend = () =>
+    auth.isAdmin() || auth.hasPermission('take_work_orders') || auth.hasPermission('manage_production_board')
+  const send = createMutation(() => ({
+    mutationFn: () => queuePartToSaw(props.conceptId),
+    onSuccess: () => {
+      toast.success('En la fila de la sierra', props.partName)
+      void qc.invalidateQueries({ queryKey: ['cut-list'] })
+      void qc.invalidateQueries({ queryKey: ['production'] })
+    },
+    onError: (err) => toast.error('No se pudo pasar a corte', humanizeError(err, 'Intenta de nuevo')),
+  }))
+  return (
+    <Show
+      when={props.position == null}
+      fallback={<p class="mt-0.5 text-xs text-sky-700 dark:text-sky-300">✂ En fila de la sierra · #{props.position}</p>}
+    >
+      <Show when={canSend()}>
+        <button
+          type="button"
+          class="mt-0.5 inline-flex items-center gap-1 text-xs font-medium text-sky-600 hover:underline disabled:opacity-50"
+          disabled={send.isPending}
+          onClick={() => send.mutate()}
+        >
+          <Scissors class="h-3.5 w-3.5" />
+          {send.isPending ? 'Enviando…' : 'Pasar a corte'}
+        </button>
+      </Show>
+    </Show>
   )
 }
 

@@ -20,7 +20,8 @@ pub struct PartMaterial {
 Medidas en pulgadas decimales para poder calcular; la barra a pedir sigue en
 texto. Estado derivado (el primero que aplique): Surtido por cliente → Cortado
 (paso "Material habilitado" ✔) → Recibido (alguna barra de una recepción
-asignada a la parte) → Pedido → Pendiente.
+asignada a la parte, o el paso "Material" ✔) → Pedido → Pendiente. Asignar una barra palomea
+"Material"; terminar el corte (o el trabajo en la sierra) palomea "Material habilitado".
 
 `POST /api/admin/project_concepts/{id}/material` (reemplaza el material; sólo
 quien gestiona el tablero o el admin). El DTO de partes devuelve `material` y

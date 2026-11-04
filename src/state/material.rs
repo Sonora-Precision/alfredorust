@@ -15,13 +15,45 @@ use super::AppState;
 pub const KERF_IN: f64 = 0.0625;
 const EPS: f64 = 0.005;
 
+/// Process steps the material flow ticks by itself (catalog names, any case).
+pub const STEP_MATERIAL: &str = "material";
+pub const STEP_CUT: &str = "material habilitado";
+
+/// Marks a catalog step of a part by its name ("Material", "Material habilitado"). Returns
+/// false when the company catalog has no such step; the part is left as it was.
+pub async fn mark_step_by_name(
+    state: &AppState,
+    company_id: &ObjectId,
+    concept_id: &ObjectId,
+    name: &str,
+    step_state: StepState,
+    username: &str,
+) -> Result<bool> {
+    let Some(operation_id) = super::list_process_operations(state, company_id, true)
+        .await?
+        .into_iter()
+        .find(|op| op.name.trim().eq_ignore_ascii_case(name))
+        .and_then(|op| op.id)
+    else {
+        return Ok(false);
+    };
+    let update = super::PartProgressUpdate { completed_quantity: None, step: Some((operation_id, step_state)) };
+    Ok(super::update_part_progress(state, concept_id, company_id, update, username).await?.is_some())
+}
+
 /// Derived status, first that applies: customer supplied, cut ("Material habilitado" ✔),
 /// received (a receipt bar assigned), ordered, pending. None when nothing is recorded.
 pub fn material_status(concept: &ProjectConcept, received: bool) -> Option<&'static str> {
     let m = concept.material.as_ref();
-    let cut = concept.process_steps.iter().any(|s| {
-        s.name.trim().eq_ignore_ascii_case("material habilitado") && s.state == StepState::Done
-    });
+    let step_done = |name: &str| {
+        concept
+            .process_steps
+            .iter()
+            .any(|s| s.name.trim().eq_ignore_ascii_case(name) && s.state == StepState::Done)
+    };
+    let cut = step_done(STEP_CUT);
+    // The "Material" step ✔ means it is in the shop, bars assigned or not (Daniel, 2026-11-03).
+    let received = received || step_done(STEP_MATERIAL);
     if m.is_none() && !received && !cut {
         return None;
     }
