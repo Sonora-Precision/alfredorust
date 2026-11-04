@@ -142,6 +142,9 @@ pub struct ProjectConceptData {
     pub rejected_quantity: f64,
     /// Only the steps someone marked; other catalog operations are pending.
     pub process_steps: Vec<PartStepData>,
+    /// Material and blank size; `material_status` is derived (see add-part-material).
+    pub material: Option<crate::models::PartMaterial>,
+    pub material_status: Option<&'static str>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
 }
@@ -158,7 +161,10 @@ pub struct PartStepData {
 }
 
 pub(crate) fn project_concept_data(c: ProjectConcept) -> Option<ProjectConceptData> {
+    let material_status = crate::state::material_status(&c, false);
     Some(ProjectConceptData {
+        material_status,
+        material: c.material.clone(),
         id: c.id?.to_hex(),
         company_id: c.company_id.to_hex(),
         project_id: c.project_id.to_hex(),
@@ -465,10 +471,22 @@ pub async fn api_project_concepts_index(
         Err(resp) => return resp,
     };
     match list_project_concepts(&state, &company_id, &project_id).await {
-        Ok(items) => Json(
+        Ok(items) => {
+            // Parts with a received bar assigned read "Recibido".
+            let ids: Vec<ObjectId> = items.iter().filter_map(|c| c.id).collect();
+            let received = crate::state::parts_with_received_material(&state, &company_id, &ids)
+                .await
+                .unwrap_or_default();
+            Json(
             items
                 .into_iter()
-                .filter_map(project_concept_data)
+                .filter_map(|c| {
+                    let status = crate::state::material_status(&c, c.id.is_some_and(|id| received.contains(&id)));
+                    project_concept_data(c).map(|mut d| {
+                        d.material_status = status;
+                        d
+                    })
+                })
                 .map(|mut data| {
                     if !can_view_money {
                         data.estimated_cost = None;
@@ -480,7 +498,8 @@ pub async fn api_project_concepts_index(
                 })
                 .collect::<Vec<_>>(),
         )
-        .into_response(),
+        .into_response()
+        }
         Err(_) => json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not list concepts"),
     }
 }

@@ -8,6 +8,7 @@ pub mod shop_reports;
 pub mod onboarding;
 pub mod part_progress;
 pub mod plant;
+pub mod material;
 pub mod part_files;
 pub mod production;
 pub mod quality;
@@ -43,6 +44,10 @@ pub use plant::{
     api_machine_state_set, api_plant_layout_save, api_production_plant,
 };
 pub use quality::{api_quality_queue, api_quality_record};
+pub use material::{
+    api_material_receipt_assign, api_material_receipt_create, api_material_receipt_show, api_material_receipts_index,
+    api_part_material_set,
+};
 pub use part_files::{
     api_company_part_drawings, api_part_drawing_upload, api_part_file_delete, api_part_file_download, api_project_part_files,
 };
