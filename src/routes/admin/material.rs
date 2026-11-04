@@ -260,6 +260,16 @@ pub struct SuggestionData {
     pub note: Option<String>,
     pub pieces: i64,
     pub needed: f64,
+    /// Other bars of this receipt that suit the same part (assigned or not), so a part that
+    /// needs two bars reads "28 + 7 = 35 de 30" instead of "28 de 30" and "7 de 30".
+    pub other_bars: Vec<OtherBarData>,
+}
+
+#[derive(Serialize)]
+pub struct OtherBarData {
+    pub line: i32,
+    pub pieces: i64,
+    pub assigned: bool,
 }
 
 #[derive(Serialize)]
@@ -369,20 +379,49 @@ pub async fn api_material_receipt_show(
     let mut ordered: Vec<&ProjectConcept> = parts.values().collect();
     ordered.sort_by_key(|c| c.work_order_number.unwrap_or(i64::MAX));
 
-    let lines = receipt
+    // Which bars suit which part, once, so each suggestion can count the others.
+    let fits: Vec<Vec<(ObjectId, crate::state::BarFit)>> = receipt
         .lines
         .iter()
         .map(|l| {
-            let mut suggestions: Vec<SuggestionData> = ordered
+            ordered
                 .iter()
-                .filter_map(|c| {
-                    let fit = fit_bar(c.material.as_ref()?, l)?;
+                .filter_map(|c| Some((c.id?, fit_bar(c.material.as_ref()?, l)?)))
+                .collect()
+        })
+        .collect();
+    let lines = receipt
+        .lines
+        .iter()
+        .enumerate()
+        .map(|(i, l)| {
+            let mut suggestions: Vec<SuggestionData> = fits[i]
+                .iter()
+                .filter_map(|(cid, fit)| {
+                    let c = parts.get(cid)?;
+                    let other_bars = receipt
+                        .lines
+                        .iter()
+                        .enumerate()
+                        .filter(|(j, _)| *j != i)
+                        .filter_map(|(j, other)| {
+                            let (_, f) = fits[j].iter().find(|(o, _)| o == cid)?;
+                            let assigned = other.concept_ids.contains(cid);
+                            // A bar already given to another part is not on offer.
+                            (assigned || other.concept_ids.is_empty()).then_some(OtherBarData {
+                                line: other.line,
+                                pieces: f.pieces,
+                                assigned,
+                            })
+                        })
+                        .collect();
                     Some(SuggestionData {
                         part: part_ref(c)?,
                         fit: fit.fit,
-                        note: fit.note,
+                        note: fit.note.clone(),
                         pieces: fit.pieces,
                         needed: needed(c),
+                        other_bars,
                     })
                 })
                 .collect();

@@ -1147,6 +1147,8 @@ export interface ReceiptSuggestion extends ReceiptPartRef {
   /** Blanks the bar yields at a 1/16" cut. */
   pieces: number
   needed: number
+  /** Other bars of the receipt that suit the same part (assigned to it or still free). */
+  other_bars: { line: number; pieces: number; assigned: boolean }[]
 }
 
 export interface ReceiptLineView {
