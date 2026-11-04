@@ -21,7 +21,8 @@ use crate::{
     models::{MaterialReceipt, PartMaterial, ProjectConcept, ReceiptLine, UserPermission},
     session::SessionUser,
     state::{
-        AppState, assign_receipt_line, fit_bar, get_material_receipt, get_project_concept_by_id_for_company,
+        AppState, PartProgressUpdate, assign_receipt_line, cut_plan, fit_bar, list_process_operations, material_status,
+        update_part_progress, get_material_receipt, get_project_concept_by_id_for_company,
         insert_material_receipt, list_material_receipts, receipt_pieces_by_part, read_line, set_part_material,
     },
 };
@@ -503,5 +504,167 @@ pub async fn api_material_receipt_assign(
         Ok(true) => Json(serde_json::json!({ "ok": true })).into_response(),
         Ok(false) => json_error(StatusCode::NOT_FOUND, "receipt line not found"),
         Err(_) => json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not assign the bar"),
+    }
+}
+
+#[derive(Serialize)]
+pub struct BarCutsData {
+    pub receipt_id: String,
+    pub folio: Option<String>,
+    pub line: i32,
+    pub thickness: Option<f64>,
+    pub width: Option<f64>,
+    pub length: f64,
+    pub cuts: i64,
+    pub leftover: f64,
+    pub note: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct CutListItemData {
+    #[serde(flatten)]
+    pub part: PartRefData,
+    pub project: String,
+    pub material: PartMaterial,
+    pub status: Option<&'static str>,
+    /// "Material habilitado" is ✔.
+    pub cut_done: bool,
+    pub needed: f64,
+    /// Blanks planned from the assigned bars (may fall short of `needed`).
+    pub planned: i64,
+    pub bars: Vec<BarCutsData>,
+}
+
+/// The saw's cut list (add-part-material §3): every part of an open project with a cut
+/// length, which assigned bars to cut and how many blanks from each, with its status. For
+/// the shop floor: no prices.
+pub async fn api_cut_list(session_user: SessionUser, State(state): State<Arc<AppState>>) -> Response {
+    if !can_view(&session_user) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let company_id = require_active_company(&session_user);
+    let projects: HashMap<ObjectId, String> = match state
+        .projects
+        .find(doc! { "company_id": company_id, "completed_at": null })
+        .await
+    {
+        Ok(c) => c
+            .try_collect::<Vec<_>>()
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|p| Some((p.id?, p.title)))
+            .collect(),
+        Err(_) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load projects"),
+    };
+    let project_ids: Vec<ObjectId> = projects.keys().copied().collect();
+    let parts: HashMap<ObjectId, ProjectConcept> = match state
+        .project_concepts
+        .find(doc! {
+            "company_id": company_id,
+            "project_id": { "$in": &project_ids },
+            "material.length": { "$exists": true },
+        })
+        .await
+    {
+        Ok(c) => c
+            .try_collect::<Vec<_>>()
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|c| Some((c.id?, c)))
+            .collect(),
+        Err(_) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load parts"),
+    };
+    let mut receipts = list_material_receipts(&state, &company_id).await.unwrap_or_default();
+    // Oldest delivery first, so earlier bars are used before newer ones.
+    receipts.reverse();
+    let mut plan = cut_plan(&receipts, &parts, needed);
+
+    let mut items: Vec<CutListItemData> = parts
+        .values()
+        .filter_map(|c| {
+            let id = c.id?;
+            let bars = plan.remove(&id).unwrap_or_default();
+            let cut_done = c.process_steps.iter().any(|s| {
+                s.name.trim().eq_ignore_ascii_case("material habilitado")
+                    && s.state == crate::models::StepState::Done
+            });
+            Some(CutListItemData {
+                part: part_ref(c)?,
+                project: projects.get(&c.project_id).cloned().unwrap_or_default(),
+                material: c.material.clone()?,
+                status: material_status(c, !bars.is_empty()),
+                cut_done,
+                needed: needed(c),
+                planned: bars.iter().map(|b| b.cuts).sum(),
+                bars: bars
+                    .into_iter()
+                    .map(|b| BarCutsData {
+                        receipt_id: b.receipt_id.to_hex(),
+                        folio: b.folio,
+                        line: b.line,
+                        thickness: b.thickness,
+                        width: b.width,
+                        length: b.length,
+                        cuts: b.cuts,
+                        leftover: b.leftover,
+                        note: b.note,
+                    })
+                    .collect(),
+            })
+        })
+        .collect();
+    // By material, so the saw cuts all the aluminum in a row, then by OT.
+    items.sort_by(|a, b| {
+        (a.material.material.as_deref().unwrap_or("~"), &a.part.folio)
+            .cmp(&(b.material.material.as_deref().unwrap_or("~"), &b.part.folio))
+    });
+    Json(items).into_response()
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CutDonePayload {
+    pub done: bool,
+}
+
+/// "Corte terminado": marks (or unmarks) the part's "Material habilitado" step. Programmers
+/// and whoever manages the board, like the machines.
+pub async fn api_cut_done(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(payload): Json<CutDonePayload>,
+) -> Response {
+    if !(session_user.has_permission(UserPermission::TakeWorkOrders) || can_manage(&session_user)) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let company_id = require_active_company(&session_user);
+    let id = match parse_oid(&id) {
+        Ok(id) => id,
+        Err(resp) => return resp,
+    };
+    let operation = match list_process_operations(&state, &company_id, true).await {
+        Ok(ops) => ops
+            .into_iter()
+            .find(|op| op.name.trim().eq_ignore_ascii_case("material habilitado"))
+            .and_then(|op| op.id),
+        Err(_) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load the process"),
+    };
+    let Some(operation_id) = operation else {
+        return json_error(StatusCode::BAD_REQUEST, "falta el paso \"Material habilitado\" en el catálogo de proceso");
+    };
+    let update = PartProgressUpdate {
+        completed_quantity: None,
+        step: Some((
+            operation_id,
+            if payload.done { crate::models::StepState::Done } else { crate::models::StepState::Pending },
+        )),
+    };
+    let username = session_user.user().username.clone();
+    match update_part_progress(&state, &id, &company_id, update, &username).await {
+        Ok(Some(_)) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Ok(None) => json_error(StatusCode::NOT_FOUND, "part not found"),
+        Err(err) => json_error(StatusCode::BAD_REQUEST, &err.to_string()),
     }
 }

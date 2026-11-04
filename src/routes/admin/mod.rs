@@ -45,7 +45,7 @@ pub use plant::{
 };
 pub use quality::{api_quality_queue, api_quality_record};
 pub use material::{
-    api_material_receipt_assign, api_material_receipt_create, api_material_receipt_show, api_material_receipts_index,
+    api_cut_done, api_cut_list, api_material_receipt_assign, api_material_receipt_create, api_material_receipt_show, api_material_receipts_index,
     api_part_material_set,
 };
 pub use part_files::{

@@ -210,6 +210,38 @@ async fn material_receipt_matches_and_assigns_bars() {
     assert_eq!(status_of("CG-15288-A"), "recibido");
     assert_eq!(status_of("CG-15296-A"), "pedido");
 
+    // Cut list: CG-15288-A cuts 28 from the 144" bar and 2 from the 36" one; CG-15296-A has
+    // no bar assigned yet.
+    let (status, body) = get("/api/production/cut_list".into(), jose.clone()).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let cuts = json(&body);
+    let item = |name: &str| cuts.as_array().unwrap().iter().find(|c| c["part"] == name).unwrap().clone();
+    let c288 = item("CG-15288-A");
+    let bars: Vec<(i64, f64)> =
+        c288["bars"].as_array().unwrap().iter().map(|b| (b["cuts"].as_i64().unwrap(), b["leftover"].as_f64().unwrap())).collect();
+    assert_eq!(bars, [(28, 2.25), (2, 25.875)], "{body}");
+    assert_eq!((c288["planned"].as_i64(), c288["status"].as_str()), (Some(30), Some("recibido")));
+    assert_eq!(c288["material"]["length"], 5.0);
+    let c296 = item("CG-15296-A");
+    assert_eq!((c296["planned"].as_i64(), c296["status"].as_str()), (Some(0), Some("pedido")));
+
+    // "Corte terminado" marks "Material habilitado"; it must exist in the catalog.
+    let done = format!("/api/production/cut_list/{}/done", p288.to_hex());
+    let (status, _) = post(done.clone(), jose.clone(), serde_json::json!({ "done": true })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "no Material habilitado step yet");
+    let (status, body) = post(
+        "/api/admin/process_operations".into(),
+        admin.clone(),
+        serde_json::json!({ "name": "Material habilitado", "position": 1 }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "body: {body}");
+    let (status, body) = post(done.clone(), jose.clone(), serde_json::json!({ "done": true })).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let (_, body) = get("/api/production/cut_list".into(), jose.clone()).await;
+    let c288 = json(&body).as_array().unwrap().iter().find(|c| c["part"] == "CG-15288-A").unwrap().clone();
+    assert_eq!((c288["cut_done"].as_bool(), c288["status"].as_str()), (Some(true), Some("cortado")));
+
     // Another company does not see the receipt.
     let out_id = create_user(&state, "mat-out@example.com", "SECRET", &[(other.clone(), UserRole::Admin)]).await.unwrap();
     let out = session(out_id).await;

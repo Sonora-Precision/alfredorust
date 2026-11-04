@@ -11,6 +11,7 @@ import {
   Landmark,
   Map as MapIcon,
   Rocket,
+  Scissors,
   ShieldCheck,
   Wallet,
   type LucideProps,
@@ -79,6 +80,14 @@ export const NAV: NavEntry[] = [
     label: 'Vista de planta',
     icon: MapIcon,
     href: '/produccion/planta',
+    can: adminOr('view_production_board'),
+  },
+  // For the saw: per part, which bar and how many cuts, with the drawing.
+  {
+    id: 'cortes',
+    label: 'Lista de cortes',
+    icon: Scissors,
+    href: '/produccion/cortes',
     can: adminOr('view_production_board'),
   },
   // Invoice vs what each part needs; only managers create receipts or assign bars.
