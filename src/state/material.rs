@@ -209,6 +209,12 @@ fn fmt(v: f64) -> String {
     s.trim_end_matches('0').trim_end_matches('.').to_string()
 }
 
+/// Most a bar may exceed a blank dimension and still be suggested: half the dimension,
+/// between 1/16" and 1/4" (3/16 → 1/4 yes, 3/16 → 3/8 no; 1.75 → 2 yes, 1 → 2 no).
+fn max_extra(dimension: f64) -> f64 {
+    (dimension * 0.5).clamp(0.0625, 0.25)
+}
+
 /// Whether a received bar can make a part's blank, and how many.
 pub fn fit_bar(material: &PartMaterial, bar: &ReceiptLine) -> Option<BarFit> {
     let alloy_known = same_material(material.material.as_deref()?, bar.material.as_deref()?)?;
@@ -222,6 +228,11 @@ pub fn fit_bar(material: &PartMaterial, bar: &ReceiptLine) -> Option<BarFit> {
     need.sort_by(|a, b| a.total_cmp(b));
     have.sort_by(|a, b| a.total_cmp(b));
     if need.iter().zip(&have).any(|(n, h)| *n > h + EPS) {
+        return None;
+    }
+    // A bar that only fits by wasting material is no suggestion: a 3/16" part never comes
+    // out of a 1" bar (Daniel, 2026-11-03).
+    if need.iter().zip(&have).any(|(n, h)| h - n > max_extra(*n) + EPS) {
         return None;
     }
     let mut notes = Vec::new();
@@ -379,6 +390,12 @@ mod tests {
 
         // Any orientation: a 1.25 x 1.5 bar makes a 1.5 x 1.25 blank.
         assert!(fit_bar(&part(1.5, 1.25, 1.75), &bar("Aluminio 6061 de 1 1/4\" x 1 1/2\" x 125\"")).is_some());
+
+        // Far bigger bars are not suggested: 3/16" from 1" or 3/8", 3/8 x 1 from 3/8 x 2.
+        assert!(fit_bar(&part(0.1875, 1.5, 5.0), &bar("Aluminio 6061 de 1\" x 1 1/2\" x 65")).is_none());
+        assert!(fit_bar(&part(0.1875, 1.5, 5.0), &bar("Aluminio 6061 de 3/8\" x 2\" x 144\"")).is_none());
+        assert!(fit_bar(&part(0.375, 1.0, 4.875), &bar("Aluminio 6061 de 3/8\" x 2\" x 144\"")).is_none());
+        assert!(fit_bar(&part(0.1875, 1.5, 5.0), &bar("Aluminio 6061 de 1/4\" x 1 1/2\" x 144\"")).is_some());
 
         // Thinner bar never fits; other materials never match.
         assert!(fit_bar(&part(0.25, 1.5, 5.0), &bar("Aluminio 6061 de 1/8\" x 2\" x 144\"")).is_none());
