@@ -41,8 +41,9 @@ shape and dimensions in inches, and SHALL never store or show its prices.
 ### Requirement: Received bars are matched against what each part needs
 
 The system SHALL suggest, for each receipt line, the parts whose material
-matches and whose blank fits the bar section in any orientation, marked exact
-or larger, with how many pieces the bar yields at a 1/16 inch cut, SHALL let
+matches and whose blank fits the bar section in any orientation without
+exceeding any dimension by more than half of it (between 1/16 and 1/4 inch),
+marked exact or larger, with the pieces it yields at a 1/16 inch cut, SHALL let
 users with `manage_production_board` assign a line to one or more parts, and
 SHALL report per assigned part the pieces needed against the pieces available.
 
@@ -64,6 +65,12 @@ SHALL report per assigned part the pieces needed against the pieces available.
 - WHEN the admin assigns the bars 0.125 x 2 x 144 and 0.125 x 2 x 36 to it
 - THEN the part shows 35 pieces available for 30 needed
 - AND its material status is "Recibido"
+
+#### Scenario: Far bigger bar is not suggested
+
+- GIVEN CG-15289-A needs blanks of 0.1875 x 1.5 x 5
+- WHEN a receipt has the bars 1 x 1.5 x 65 and 0.25 x 1.5 x 144
+- THEN only the 0.25 x 1.5 x 144 bar suggests CG-15289-A
 
 #### Scenario: Thinner bar is not suggested
 

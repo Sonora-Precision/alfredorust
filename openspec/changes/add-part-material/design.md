@@ -55,7 +55,9 @@ pub struct ReceiptLine {
 - **Cruce:** una barra sirve a una parte si es del mismo material y su
   sección cubre la del tocho en cualquier orientación (dimensiones ordenadas).
   Igual (±0.005") → ✅; mayor → 🟡 con la nota "ancho 2" en vez de 1.75"";
-  menor → no se sugiere. Piezas que salen = ⌊largo ÷ (largo de corte + 1/16")⌋
+  menor → no se sugiere. Tampoco se sugiere si alguna medida sobra más de la mitad
+  de la del tocho (mínimo 1/16", máximo 1/4"): 3/16" sale de 1/4" pero no de 3/8" ni
+  de 1" (Daniel, 2026-11-03: "la de 3/16 vas a usar la de 1"? claro que no"). Piezas que salen = ⌊largo ÷ (largo de corte + 1/16")⌋
   por barra. Por parte: piezas pedidas (cantidad − producidas) contra piezas
   que salen de sus barras asignadas.
 - **Crear:** `POST /api/production/material_receipts` con `{cfdi_uuid}`
