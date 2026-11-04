@@ -437,6 +437,8 @@ pub fn build_app(state: Arc<AppState>) -> Router {
         .route("/api/admin/project_concepts/{id}/material", axum::routing::post(routes::api_part_material_set))
         .route("/api/production/material_receipts", get(routes::api_material_receipts_index).post(routes::api_material_receipt_create))
         .route("/api/production/material_receipts/{id}", get(routes::api_material_receipt_show))
+        .route("/api/production/cut_list", get(routes::api_cut_list))
+        .route("/api/production/cut_list/{id}/done", axum::routing::post(routes::api_cut_done))
         .route("/api/production/material_receipts/{id}/lines/{line}/assign", axum::routing::post(routes::api_material_receipt_assign))
         .route(
             "/api/admin/part_files/{id}",

@@ -17,7 +17,11 @@
 - [ ] (ops) Cargar la factura F86241 de HG Aceros con confirmación de Daniel.
 - [ ] Pruebas HTTP de los escenarios.
 
-## Corte 3 y 4 (propuestos)
+## Corte 3 — Lista de cortes (Daniel, 2026-11-03: "procede")
 
-- [ ] Lista de cortes → fila de la Sierra cinta; "Material habilitado" al terminar.
+- [x] `GET /api/production/cut_list` (barras asignadas, cortes y sobrante; barra compartida por orden de asignación) y `POST …/{id}/done` ("Material habilitado").
+- [x] Página "Lista de cortes" con filtros por material, plano y "Corte terminado".
+- [ ] Mandar cada corte a la fila de la Sierra cinta.
+
+## Corte 4 (propuesto)
 - [ ] Retazos.

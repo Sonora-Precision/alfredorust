@@ -1,6 +1,6 @@
 # Material por número de parte, recepción de factura y cortes de sierra
 
-> Estado: **aprobada para cortes 1 y 2** (Daniel Rivera, 2026-11-03: "Sí,
+> Estado: **cortes 1, 2 y 3 aprobados** (Daniel Rivera, 2026-11-03: "Sí,
 > arranca"). Cortes 3 y 4 quedan propuestos. Retoma el §1.6 "Material
 > requerido" de `add-shop-floor-tracking`, que nunca se programó.
 

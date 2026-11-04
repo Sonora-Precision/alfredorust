@@ -338,6 +338,61 @@ pub fn receipt_pieces_by_part(receipt: &MaterialReceipt, parts: &HashMap<ObjectI
     out
 }
 
+/// Cuts to make on one assigned bar for one part (add-part-material §3).
+#[derive(Debug, Clone, PartialEq)]
+pub struct BarCuts {
+    pub receipt_id: ObjectId,
+    pub folio: Option<String>,
+    pub line: i32,
+    pub thickness: Option<f64>,
+    pub width: Option<f64>,
+    pub length: f64,
+    pub cuts: i64,
+    /// Inches left on the bar after these cuts (and the cuts of parts before on it).
+    pub leftover: f64,
+    pub note: Option<String>,
+}
+
+/// The cut list: for every part, which assigned bars to cut and how many blanks from each,
+/// up to the pieces it needs. Bars are used in receipt and line order; a bar shared by
+/// several parts is used up in the order they were assigned, so no inch is counted twice.
+pub fn cut_plan(
+    receipts: &[MaterialReceipt],
+    parts: &HashMap<ObjectId, ProjectConcept>,
+    needed: impl Fn(&ProjectConcept) -> f64,
+) -> HashMap<ObjectId, Vec<BarCuts>> {
+    let mut left: HashMap<ObjectId, i64> = parts.iter().map(|(id, c)| (*id, needed(c).ceil() as i64)).collect();
+    let mut out: HashMap<ObjectId, Vec<BarCuts>> = HashMap::new();
+    for r in receipts {
+        let Some(receipt_id) = r.id else { continue };
+        for line in &r.lines {
+            let Some(bar_len) = line.length else { continue };
+            let mut remaining = bar_len * line.pieces.max(1.0);
+            for c in &line.concept_ids {
+                let (Some(part), Some(want)) = (parts.get(c), left.get_mut(c)) else { continue };
+                let Some(m) = part.material.as_ref() else { continue };
+                let (Some(fit), Some(cut_len)) = (fit_bar(m, line), m.length) else { continue };
+                let step = cut_len + KERF_IN;
+                let cuts = ((remaining / step).floor() as i64).min(*want).max(0);
+                remaining -= cuts as f64 * step;
+                *want -= cuts;
+                out.entry(*c).or_default().push(BarCuts {
+                    receipt_id,
+                    folio: r.folio.clone(),
+                    line: line.line,
+                    thickness: line.thickness,
+                    width: line.width,
+                    length: bar_len,
+                    cuts,
+                    leftover: (remaining * 1000.0).round() / 1000.0,
+                    note: fit.note,
+                });
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -402,6 +457,54 @@ mod tests {
         let mut steel = part(0.5, 0.625, 1.625);
         steel.material = Some("4140".into());
         assert!(fit_bar(&steel, &bar("Aluminio 6061 de 1/2\" x 3/4\" x 80\"")).is_none());
+
+        // Cut plan: CG-15288-A takes 28 from the 144" bar and only the 2 it still needs from
+        // the 36" one (like Cortes_Sierra_F86241.xlsx).
+        let id = ObjectId::new();
+        let concept = ProjectConcept {
+            id: Some(id),
+            company_id: ObjectId::new(),
+            project_id: ObjectId::new(),
+            status_id: ObjectId::new(),
+            name: "CG-15288-A".into(),
+            quantity: 30.0,
+            unit: None,
+            description: None,
+            estimated_hours: None,
+            estimated_cost: None,
+            unit_price: None,
+            notes: None,
+            position: 1,
+            work_order_number: Some(29),
+            sequence_rank: None,
+            priority_override: None,
+            completed_quantity: 0.0,
+            released_quantity: 0.0,
+            rejected_quantity: 0.0,
+            process_steps: Vec::new(),
+            material: Some(part(0.125, 1.75, 5.0)),
+            created_at: None,
+            updated_at: None,
+        };
+        let mut long = bar("ALUMINIO SOLERA DE 1/8\" X 2\" X 144\" ( 1 pz )");
+        let mut short = bar("ALUMINIO SOLERA DE 1/8\" X 2\" X 36\" ( 1 pz )");
+        short.line = 2;
+        long.concept_ids = vec![id];
+        short.concept_ids = vec![id];
+        let receipt = MaterialReceipt {
+            id: Some(ObjectId::new()),
+            company_id: ObjectId::new(),
+            supplier: "HG".into(),
+            folio: Some("F86241".into()),
+            cfdi_uuid: None,
+            received_at: mongodb::bson::DateTime::now(),
+            lines: vec![long, short],
+            created_by: ObjectId::new(),
+            created_at: mongodb::bson::DateTime::now(),
+        };
+        let plan = cut_plan(&[receipt], &HashMap::from([(id, concept)]), |c| c.quantity);
+        let cuts: Vec<(i64, f64)> = plan[&id].iter().map(|b| (b.cuts, b.leftover)).collect();
+        assert_eq!(cuts, [(28, 2.25), (2, 25.875)]);
 
         // A bar without alloy still fits an aluminum part, with a note.
         let unknown = fit_bar(&part(0.125, 1.75, 5.0), &bar("ALUMINIO SOLERA DE 1/8\" X 2\" X 36\"")).unwrap();

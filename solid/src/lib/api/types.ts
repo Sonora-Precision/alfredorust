@@ -1175,3 +1175,26 @@ export interface MaterialReceiptDetail {
   lines: ReceiptLineView[]
   parts: (ReceiptPartRef & { needed: number; available: number })[]
 }
+
+export interface CutListItem extends ReceiptPartRef {
+  project: string
+  material: PartMaterial
+  status: MaterialStatus | null
+  /** "Material habilitado" is ✔. */
+  cut_done: boolean
+  needed: number
+  /** Blanks planned from the assigned bars. */
+  planned: number
+  bars: {
+    receipt_id: string
+    folio: string | null
+    line: number
+    thickness: number | null
+    width: number | null
+    length: number
+    cuts: number
+    /** Inches left on the bar. */
+    leftover: number
+    note: string | null
+  }[]
+}

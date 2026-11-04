@@ -77,3 +77,24 @@ SHALL report per assigned part the pieces needed against the pieces available.
 - GIVEN CG-15289-A needs blanks of 0.25 x 1.5 x 5
 - WHEN a receipt has the bar 0.125 x 2 x 144
 - THEN CG-15289-A is not suggested for that bar
+
+### Requirement: The saw has a cut list per part number
+
+The system SHALL show users who see the board, for every part of an open
+project with a cut length, the material, the assigned bars with the number
+of cuts and the inches left on each (a 1/16 inch cut, a shared bar used up in
+assignment order), its drawing and status, and SHALL let users with
+`take_work_orders` or `manage_production_board` mark the cut done, which
+marks the "Material habilitado" step.
+
+#### Scenario: Cuts per bar
+
+- GIVEN CG-15288-A needs 30 blanks of 5 inches
+- AND the bars 0.125 x 2 x 144 and 0.125 x 2 x 36 are assigned to it
+- WHEN a programmer opens the cut list
+- THEN it shows 28 cuts with 2.25 inches left and 2 cuts with 25.875 inches left
+
+#### Scenario: Cut done
+
+- WHEN a programmer marks the cut of CG-15288-A done
+- THEN its "Material habilitado" step is done and its material status is "Cortado"
