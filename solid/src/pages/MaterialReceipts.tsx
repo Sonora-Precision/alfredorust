@@ -12,7 +12,7 @@ import { Spinner } from '../components/ui/Spinner'
 import { toast } from '../components/ui/Toast'
 import { humanizeError } from '../lib/api/client'
 import * as materialApi from '../lib/api/material'
-import type { MaterialReceiptDetail, ReceiptLineView } from '../lib/api/types'
+import type { MaterialReceiptDetail, ReceiptLineView, ReceiptSuggestion } from '../lib/api/types'
 import { useAuth } from '../lib/auth/AuthContext'
 
 const inch = (v: number | null) => (v == null ? '' : String(+v.toFixed(4)).replace(/^0\./, '.'))
@@ -197,10 +197,10 @@ function ReceiptDetail(props: { id: string; canManage: boolean }): JSX.Element {
                               <span>{s.fit === 'exact' ? '✅' : '🟡'}</span>
                               <span class="tnum font-semibold text-foreground">{s.folio}</span>
                               <PartName conceptId={s.concept_id} part={s.part} class="text-foreground" />
-                              <span class="text-xs text-muted-foreground">
-                                salen {s.pieces} pz (necesita {s.needed})
-                                <Show when={s.note}> · {s.note}</Show>
-                              </span>
+                              <SuggestionPieces s={s} />
+                              <Show when={s.note}>
+                                <span class="text-xs text-muted-foreground">· {s.note}</span>
+                              </Show>
                             </li>
                           )
                         }}
@@ -214,6 +214,51 @@ function ReceiptDetail(props: { id: string; canManage: boolean }): JSX.Element {
         </div>
       )}
     </Show>
+  )
+}
+
+/**
+ * Pieces of a suggested bar counted with the part's other bars: "salen 28 + 7 (barra 3) =
+ * 35 de 30 ✅", or, before assigning, "salen 28 de 30 · con la barra 3 (7) alcanza".
+ */
+function SuggestionPieces(props: { s: ReceiptSuggestion }): JSX.Element {
+  const assigned = () => props.s.other_bars.filter((b) => b.assigned)
+  const free = () => props.s.other_bars.filter((b) => !b.assigned)
+  const total = () => props.s.pieces + assigned().reduce((n, b) => n + b.pieces, 0)
+  // Fewest free bars that complete it, biggest first.
+  const completing = () => {
+    const picked: typeof props.s.other_bars = []
+    let n = total()
+    for (const b of [...free()].sort((a, c) => c.pieces - a.pieces)) {
+      if (n >= props.s.needed) break
+      picked.push(b)
+      n += b.pieces
+    }
+    return n >= props.s.needed ? picked : null
+  }
+  const bars = (list: typeof props.s.other_bars) =>
+    list.map((b) => `${b.pieces} (barra ${b.line})`).join(' + ')
+  return (
+    <span class="text-xs text-muted-foreground">
+      salen {props.s.pieces}
+      <Show when={assigned().length > 0}>
+        {' '}+ {bars(assigned())} = {total()}
+      </Show>{' '}
+      de {props.s.needed} pz{' '}
+      <Show
+        when={total() >= props.s.needed}
+        fallback={
+          <Show
+            when={completing()?.length}
+            fallback={<span class="text-rose-600">· faltan {props.s.needed - total()}</span>}
+          >
+            · con {bars(completing()!)} alcanza
+          </Show>
+        }
+      >
+        ✅
+      </Show>
+    </span>
   )
 }
 

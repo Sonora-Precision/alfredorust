@@ -200,6 +200,10 @@ async fn material_receipt_matches_and_assigns_bars() {
     assert_eq!(cover[0]["part"], "CG-15288-A");
     assert_eq!((cover[0]["needed"].as_f64(), cover[0]["available"].as_i64()), (Some(30.0), Some(35)));
     assert_eq!(r["lines"][0]["assigned"][0]["part"], "CG-15288-A");
+    // Each bar counts the other one: 28 + 7 (bar 2) and 7 + 28 (bar 1).
+    let other_bars = &r["lines"][0]["suggestions"][0]["other_bars"];
+    assert_eq!(other_bars, &serde_json::json!([{ "line": 2, "pieces": 7, "assigned": true }]), "{body}");
+    assert_eq!(r["lines"][1]["suggestions"][0]["other_bars"][0]["pieces"], 28);
 
     let list = concepts(jose.clone()).await;
     let status_of = |name: &str| list.as_array().unwrap().iter().find(|c| c["name"] == name).unwrap()["material_status"].clone();
