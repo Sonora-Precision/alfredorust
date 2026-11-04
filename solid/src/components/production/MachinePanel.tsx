@@ -103,6 +103,7 @@ export function MachinePanel(props: {
                           {(p) => <> · programó <ProgrammerName id={p().id} name={p().name} /></>}
                         </Show>
                       </p>
+                      <StockAndCuts order={o()} />
                     </div>
                     <PartDrawingThumb conceptId={o().id} part={o().part} class="h-56 border-t border-border" />
                   </div>
@@ -173,6 +174,7 @@ export function MachinePanel(props: {
                         <p class="truncate text-xs text-muted-foreground">
                           {e.order.client ?? e.order.project} · {pieces(e.order)}
                         </p>
+                        <StockAndCuts order={e.order} />
                       </div>
                       <Show when={props.canEdit}>
                         <div class="flex shrink-0 gap-0.5">
@@ -239,6 +241,49 @@ export function MachinePanel(props: {
         )}
       </Show>
     </Drawer>
+  )
+}
+
+const inch = (v: number | null | undefined) => (v == null ? '' : String(+v.toFixed(4)).replace(/^0\./, '.'))
+
+/**
+ * What to load for a job, without switching screens (Daniel, 2026-11-04): material, stock
+ * (blank) size and, for the saw, the cuts from each assigned bar.
+ */
+function StockAndCuts(props: { order: NonNullable<PlantMachine['order']> }): JSX.Element {
+  const m = () => props.order.material
+  const blank = () => {
+    const mat = m()
+    if (!mat) return ''
+    return [mat.thickness, mat.width, mat.length].filter((v) => v != null).map(inch).join('" × ')
+  }
+  return (
+    <Show when={m()}>
+      {(mat) => (
+        <div class="mt-1 space-y-0.5 text-xs">
+          <p class="text-foreground">
+            {[mat().material, mat().shape].filter(Boolean).join(' ')}
+            <Show when={blank()}>
+              {' · '}stock <span class="font-semibold">{blank()}"</span>
+            </Show>
+          </p>
+          <For each={props.order.cuts}>
+            {(c) => (
+              <p class="text-muted-foreground">
+                Barra {[c.thickness, c.width, c.length].filter((v) => v != null).map(inch).join('" × ')}"{' → '}
+                <span class="font-semibold text-foreground">
+                  {c.cuts} {c.cuts === 1 ? 'corte' : 'cortes'} de {inch(mat().length)}"
+                </span>{' '}
+                (sobran {inch(c.leftover)}")
+              </p>
+            )}
+          </For>
+          <Show when={props.order.cuts.length === 0 && mat().bar_to_order}>
+            <p class="text-muted-foreground">Sin barra asignada · se pide {mat().bar_to_order}</p>
+          </Show>
+        </div>
+      )}
+    </Show>
   )
 }
 

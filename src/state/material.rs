@@ -515,6 +515,7 @@ mod tests {
             rejected_quantity: 0.0,
             process_steps: Vec::new(),
             material: Some(part(0.125, 1.75, 5.0)),
+            quote: None,
             created_at: None,
             updated_at: None,
         };

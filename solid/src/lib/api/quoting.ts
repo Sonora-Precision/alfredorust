@@ -1,0 +1,49 @@
+import { apiGet, apiPost } from './client'
+
+export interface MaterialPrice {
+  material: string
+  price_per_kg: number
+  source: string
+  note: string | null
+  updated_at: string
+}
+
+export interface QuoteLine {
+  concept_id: string
+  folio: string
+  part: string
+  quantity: number
+  material: string | null
+  shape: string | null
+  thickness: number | null
+  width: number | null
+  length: number | null
+  weight_kg: number | null
+  /** "solidworks" (entered) or "tocho" (computed from the blank). */
+  weight_source: 'solidworks' | 'tocho' | null
+  entered_weight_kg: number | null
+  entered_multiplier: number | null
+  price_per_kg: number | null
+  material_cost: number | null
+  multiplier: number
+  suggested_unit_price: number | null
+  /** The quoted price (Daniel's last word). */
+  unit_price: number | null
+  missing: string[]
+}
+
+export interface ProjectQuote {
+  lines: QuoteLine[]
+  material_total: number
+  suggested_total: number
+  quoted_total: number
+}
+
+export const listMaterialPrices = () => apiGet<MaterialPrice[]>('/api/admin/material_prices')
+export const setMaterialPrice = (material: string, pricePerKg: number | null, note?: string) =>
+  apiPost<void>('/api/admin/material_prices', { material, price_per_kg: pricePerKg, note })
+export const getProjectQuote = (projectId: string) => apiGet<ProjectQuote>(`/api/admin/projects/${projectId}/quote`)
+export const setPartQuote = (conceptId: string, quote: { weight_kg: number | null; multiplier: number | null }) =>
+  apiPost<void>(`/api/admin/project_concepts/${conceptId}/quote`, quote)
+export const applySuggestedPrices = (projectId: string, conceptIds: string[]) =>
+  apiPost<{ applied: number; skipped: string[] }>(`/api/admin/projects/${projectId}/quote/apply`, { concept_ids: conceptIds })

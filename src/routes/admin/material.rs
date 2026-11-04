@@ -619,48 +619,54 @@ pub async fn api_cut_queue(
 /// The saw's cut list (add-part-material §3): every part of an open project with a cut
 /// length, which assigned bars to cut and how many blanks from each, with its status. For
 /// the shop floor: no prices.
-pub async fn api_cut_list(session_user: SessionUser, State(state): State<Arc<AppState>>) -> Response {
-    if !can_view(&session_user) {
-        return StatusCode::FORBIDDEN.into_response();
-    }
-    let company_id = require_active_company(&session_user);
-    let projects: HashMap<ObjectId, String> = match state
+/// Everything the cut list is computed from: titles of open projects, their parts with a cut
+/// length and the cuts each gets from its assigned bars. Shared by the cut list and the plant
+/// view so both say the same.
+pub(crate) struct CutPlanData {
+    pub projects: HashMap<ObjectId, String>,
+    pub parts: HashMap<ObjectId, ProjectConcept>,
+    pub plan: HashMap<ObjectId, Vec<crate::state::BarCuts>>,
+}
+
+pub(crate) async fn load_cut_plan(state: &AppState, company_id: &ObjectId) -> anyhow::Result<CutPlanData> {
+    let projects: HashMap<ObjectId, String> = state
         .projects
         .find(doc! { "company_id": company_id, "completed_at": null })
-        .await
-    {
-        Ok(c) => c
-            .try_collect::<Vec<_>>()
-            .await
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|p| Some((p.id?, p.title)))
-            .collect(),
-        Err(_) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load projects"),
-    };
+        .await?
+        .try_collect::<Vec<_>>()
+        .await?
+        .into_iter()
+        .filter_map(|p| Some((p.id?, p.title)))
+        .collect();
     let project_ids: Vec<ObjectId> = projects.keys().copied().collect();
-    let parts: HashMap<ObjectId, ProjectConcept> = match state
+    let parts: HashMap<ObjectId, ProjectConcept> = state
         .project_concepts
         .find(doc! {
             "company_id": company_id,
             "project_id": { "$in": &project_ids },
             "material.length": { "$exists": true },
         })
-        .await
-    {
-        Ok(c) => c
-            .try_collect::<Vec<_>>()
-            .await
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|c| Some((c.id?, c)))
-            .collect(),
-        Err(_) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load parts"),
-    };
-    let mut receipts = list_material_receipts(&state, &company_id).await.unwrap_or_default();
+        .await?
+        .try_collect::<Vec<_>>()
+        .await?
+        .into_iter()
+        .filter_map(|c| Some((c.id?, c)))
+        .collect();
+    let mut receipts = list_material_receipts(state, company_id).await?;
     // Oldest delivery first, so earlier bars are used before newer ones.
     receipts.reverse();
-    let mut plan = cut_plan(&receipts, &parts, needed);
+    let plan = cut_plan(&receipts, &parts, needed);
+    Ok(CutPlanData { projects, parts, plan })
+}
+
+pub async fn api_cut_list(session_user: SessionUser, State(state): State<Arc<AppState>>) -> Response {
+    if !can_view(&session_user) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let company_id = require_active_company(&session_user);
+    let Ok(CutPlanData { projects, parts, mut plan }) = load_cut_plan(&state, &company_id).await else {
+        return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load the cut list");
+    };
     let saw = saw_positions(&state, &company_id, find_saw(&state, &company_id).await).await;
 
     let mut items: Vec<CutListItemData> = parts

@@ -19,7 +19,7 @@ use super::production::{PersonData, member_names, person};
 use super::project_backend::{iso, json_error, parse_oid};
 use crate::{
     models::{
-        MachineQueueEntry, MachineState, MachineStatus, PlacedMachine, PlantLabel, PlantLayout,
+        MachineQueueEntry, MachineState, MachineStatus, PartMaterial, PlacedMachine, PlantLabel, PlantLayout,
         Project, ProjectConcept, ResourceType, UserPermission,
     },
     session::SessionUser,
@@ -84,6 +84,19 @@ pub struct MachineOrderData {
     pub client: Option<String>,
     pub quantity: f64,
     pub completed_quantity: f64,
+    /// Material and blank (stock) size, so the operator sees what to load.
+    pub material: Option<PartMaterial>,
+    /// Cuts from each assigned bar (same as the cut list): for the saw.
+    pub cuts: Vec<MachineCutData>,
+}
+
+#[derive(Serialize, Clone)]
+pub struct MachineCutData {
+    pub thickness: Option<f64>,
+    pub width: Option<f64>,
+    pub length: f64,
+    pub cuts: i64,
+    pub leftover: f64,
 }
 
 #[derive(Serialize)]
@@ -170,10 +183,26 @@ async fn orders_by_id(
             .collect(),
         Err(_) => HashMap::new(),
     };
+    let mut plan = match super::material::load_cut_plan(state, company_id).await {
+        Ok(p) => p.plan,
+        Err(_) => HashMap::new(),
+    };
     for concept in concepts {
         let (Some(id), Some(project)) = (concept.id, projects.get(&concept.project_id)) else {
             continue;
         };
+        let cuts = plan
+            .remove(&id)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|b| MachineCutData {
+                thickness: b.thickness,
+                width: b.width,
+                length: b.length,
+                cuts: b.cuts,
+                leftover: b.leftover,
+            })
+            .collect();
         out.insert(
             id,
             MachineOrderData {
@@ -187,6 +216,8 @@ async fn orders_by_id(
                 client: project.contact_id.and_then(|c| contacts.get(&c).cloned()),
                 quantity: concept.quantity,
                 completed_quantity: concept.completed_quantity,
+                material: concept.material,
+                cuts,
             },
         );
     }

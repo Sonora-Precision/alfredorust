@@ -10,6 +10,7 @@ pub mod part_progress;
 pub mod plant;
 pub mod material;
 pub mod part_files;
+pub mod quoting;
 pub mod production;
 pub mod quality;
 pub mod project_backend;
@@ -47,6 +48,9 @@ pub use quality::{api_quality_queue, api_quality_record};
 pub use material::{
     api_cut_done, api_cut_list, api_cut_queue, api_material_receipt_assign, api_material_receipt_create, api_material_receipt_show, api_material_receipts_index,
     api_part_material_set,
+};
+pub use quoting::{
+    api_material_price_set, api_material_prices_index, api_part_quote_set, api_project_quote, api_project_quote_apply,
 };
 pub use part_files::{
     api_company_part_drawings, api_part_drawing_upload, api_part_file_delete, api_part_file_download, api_project_part_files,

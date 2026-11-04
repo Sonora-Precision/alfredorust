@@ -648,6 +648,10 @@ export interface PlantMachine {
     client: string | null
     quantity: number
     completed_quantity: number
+    /** Material and blank (stock) size. */
+    material: PartMaterial | null
+    /** Cuts from each assigned bar, as in the cut list. */
+    cuts: { thickness: number | null; width: number | null; length: number; cuts: number; leftover: number }[]
   } | null
   programmer: WorkOrderPerson | null
   /** Setup or operation set by hand ("Setup 1"). */

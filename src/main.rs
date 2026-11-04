@@ -702,6 +702,10 @@ async fn main() {
                 .layer(axum::extract::DefaultBodyLimit::max(45 * 1024 * 1024)),
         )
         .route("/api/admin/project_concepts/{id}/material", axum::routing::post(routes::api_part_material_set))
+        .route("/api/admin/material_prices", get(routes::api_material_prices_index).post(routes::api_material_price_set))
+        .route("/api/admin/projects/{id}/quote", get(routes::api_project_quote))
+        .route("/api/admin/projects/{id}/quote/apply", axum::routing::post(routes::api_project_quote_apply))
+        .route("/api/admin/project_concepts/{id}/quote", axum::routing::post(routes::api_part_quote_set))
         .route("/api/production/material_receipts", get(routes::api_material_receipts_index).post(routes::api_material_receipt_create))
         .route("/api/production/material_receipts/{id}", get(routes::api_material_receipt_show))
         .route("/api/production/cut_list", get(routes::api_cut_list))
