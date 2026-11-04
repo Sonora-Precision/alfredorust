@@ -9,7 +9,7 @@ use crate::models::{
     Account, ApiToken, Category, Company, ConceptStatus, Contact, Forecast, MachineRun,
     PlannedEntry, ProcessOperation, Project, ProjectConcept, RecurringPlan, Resource, ResourceLog,
     ResourceUsage, ResourceUsageAllocation, SatConfig, ServiceOrder, Session, Transaction, User,
-    UserCompany, WorkOrderEvent, MachineQueueEntry, MachineState, MaterialPrice, MaterialReceipt, PartFile, PlantLayout,
+    UserCompany, WorkOrderEvent, MachineQueueEntry, MachineState, MaterialPrice, MaterialReceipt, PartFile, PlantLayout, Quote, QuoteSettings, ClientQuoteDefaults,
     ShopDailyReport,
 };
 use bson::Document;
@@ -51,6 +51,7 @@ mod finance;
 mod machine_queue;
 mod material;
 mod quoting;
+mod quotes;
 mod machine_runs;
 mod shop_reports;
 mod orders;
@@ -75,6 +76,7 @@ pub use finance::*;
 pub use machine_queue::*;
 pub use material::*;
 pub use quoting::*;
+pub use quotes::*;
 pub use machine_runs::*;
 pub use shop_reports::*;
 pub use orders::*;
@@ -132,6 +134,9 @@ pub struct AppState {
     pub machine_queue: Collection<MachineQueueEntry>,
     pub material_receipts: Collection<MaterialReceipt>,
     pub material_prices: Collection<MaterialPrice>,
+    pub quotes: Collection<Quote>,
+    pub quote_settings: Collection<QuoteSettings>,
+    pub client_quote_defaults: Collection<ClientQuoteDefaults>,
     pub part_files: Collection<PartFile>,
 }
 
@@ -377,6 +382,9 @@ pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppStat
         machine_queue: db.collection::<MachineQueueEntry>("machine_queue_entries"),
         material_receipts: db.collection::<MaterialReceipt>("material_receipts"),
         material_prices: db.collection::<MaterialPrice>("material_prices"),
+        quotes: db.collection::<Quote>("quotes"),
+        quote_settings: db.collection::<QuoteSettings>("quote_settings"),
+        client_quote_defaults: db.collection::<ClientQuoteDefaults>("client_quote_defaults"),
         part_files: db.collection::<PartFile>("part_files"),
     };
 

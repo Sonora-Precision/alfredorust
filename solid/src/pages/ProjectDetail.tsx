@@ -343,7 +343,7 @@ export default function ProjectDetail(): JSX.Element {
                   { value: 'detalle', label: 'Detalle', content: detailTable() },
                   // Money: only the admin quotes.
                   ...(isAdmin()
-                    ? [{ value: 'cotizador', label: 'Cotizador', content: <QuoteTab projectId={params.id} /> }]
+                    ? [{ value: 'cotizador', label: 'Cotizador', content: <QuoteTab projectId={params.id} contactId={projectQuery.data?.contact_id} /> }]
                     : []),
                 ]}
               />
