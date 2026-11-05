@@ -18,7 +18,8 @@ import {
   updatePartProgress,
   updateProcessOperation,
 } from '../../lib/api/operations'
-import { assignWorkOrder, listBoardMembers } from '../../lib/api/production'
+import { assignWorkOrder, getPlant, listBoardMembers } from '../../lib/api/production'
+import { PartMachines, placesByPart } from './PartMachines'
 import { folioOf, matchesWorkOrder } from '../production/WorkOrderSearch'
 import { type PartFile, listProjectPartFiles } from '../../lib/api/partFiles'
 import { PartDrawing } from './PartDrawing'
@@ -257,6 +258,15 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
   // Each part's row in the saw's cut list ("Pasar a corte" / place in the queue).
   const cutQuery = createQuery(() => ({ queryKey: ['cut-list'], queryFn: getCutList }))
   const cutOf = createMemo(() => new Map((cutQuery.data ?? []).map((i) => [i.concept_id, i])))
+  // Machines: where each part runs or waits, and "Asignar a máquina".
+  const plantQuery = createQuery(() => ({
+    queryKey: ['production', 'plant'],
+    queryFn: getPlant,
+    enabled: props.canEdit,
+    refetchInterval: 60_000,
+  }))
+  const machines = () => plantQuery.data?.machines ?? []
+  const placesOf = createMemo(() => placesByPart(machines()))
 
   const [filter, setFilter] = createSignal('')
   const visibleConcepts = createMemo(() =>
@@ -380,6 +390,13 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
                         status={c.material_status}
                         canEdit={props.canUploadFiles}
                         cut={cutOf().get(c.id)}
+                      />
+                      <PartMachines
+                        conceptId={c.id}
+                        partName={c.name}
+                        places={placesOf().get(c.id) ?? []}
+                        machines={machines()}
+                        canEdit={props.canEdit && !cancelled()}
                       />
                       <Show when={c.description}>
                         <p class="max-w-[16rem] truncate text-xs text-muted-foreground" title={c.description ?? ''}>
