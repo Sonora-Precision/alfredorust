@@ -1,14 +1,13 @@
-// Clicking a machine in the plant view opens this panel: the part number it runs now and
+// Clicking a machine in the plant view shows this panel below the map: the part number it runs now and
 // what is planned to run next, each with its drawing (Daniel, 2026-11-03: "saber qué
 // número de parte se está corriendo y qué es lo que se planea correr a futuro"). The DNC's
 // last program is a hint, not the whole story, so what runs is also set by hand: each
 // programmer picks the machine they work on and finishes their job there. No money.
 import { createMutation, createQuery, useQueryClient } from '@tanstack/solid-query'
 import { ArrowDown, ArrowUp, Play, Plus, Square, X } from 'lucide-solid'
-import { type JSX, For, Show, createEffect, createSignal, onCleanup } from 'solid-js'
+import { type JSX, For, Show, createEffect, createSignal, on, onCleanup } from 'solid-js'
 
 import { Button } from '../ui/Button'
-import { Drawer } from '../ui/Drawer'
 import { toast } from '../ui/Toast'
 import { PartDrawingThumb, PartName } from './PartName'
 import { ProgrammerName } from './ProgrammerPanel'
@@ -48,6 +47,18 @@ export function MachinePanel(props: {
     onError: (err) => toast.error('No se pudo actualizar', humanizeError(err, 'Intenta de nuevo')),
   }))
 
+  // Shown under the plant map, not as a side drawer (Daniel, 2026-11-05): picking another
+  // machine swaps the list and brings it into view, the map stays in sight above.
+  let box: HTMLElement | undefined
+  createEffect(
+    on(
+      () => m()?.resource_id,
+      (id) => {
+        if (id) requestAnimationFrame(() => box?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }))
+      },
+    ),
+  )
+
   // Changing only the light keeps the order and setup it runs.
   const setStatus = (status: MachineStatus) => {
     const machine = m()!
@@ -63,19 +74,24 @@ export function MachinePanel(props: {
   }
 
   return (
-    <Drawer
-      open={props.machine !== undefined}
-      onOpenChange={(open) => !open && props.onClose()}
-      title={m()?.name ?? 'Máquina'}
-      subtitle={
-        m()?.status
-          ? `${STATUS_LABEL[m()!.status!]} · ${SOURCE_LABEL[m()!.source] ?? 'sin fuente'}`
-          : 'Sin datos'
-      }
-    >
-      <Show when={m()}>
-        {(machine) => (
-          <div class="space-y-5 p-4">
+    <Show when={m()}>
+      {(machine) => (
+        <section ref={box} class="mt-4 scroll-mt-4 overflow-hidden rounded-xl border border-border bg-card/70">
+          <header class="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
+            <div class="min-w-0">
+              <h2 class="truncate text-base font-semibold text-foreground">{machine().name}</h2>
+              <p class="text-xs text-muted-foreground">
+                {machine().status
+                  ? `${STATUS_LABEL[machine().status!]} · ${SOURCE_LABEL[machine().source] ?? 'sin fuente'}`
+                  : 'Sin datos'}
+              </p>
+            </div>
+            <Button variant="ghost" aria-label="Cerrar" onClick={() => props.onClose()}>
+              <X class="h-4 w-4" />
+            </Button>
+          </header>
+          <div class="grid gap-5 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+           <div class="space-y-5">
             <section class="space-y-2">
               <h3 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Corriendo ahora</h3>
               <Show
@@ -151,13 +167,19 @@ export function MachinePanel(props: {
               </Show>
             </section>
 
-            <section class="space-y-2">
+            <Show when={props.canEdit}>
+              <AddJob machine={machine()} busy={run.isPending} onRun={(v) => run.mutate(v)} />
+            </Show>
+           </div>
+
+            <section class="min-w-0 space-y-2">
               <h3 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Lo que sigue ({machine().queue.length})
               </h3>
               <Show when={machine().queue.length === 0}>
                 <p class="text-sm text-muted-foreground">No hay trabajos en fila.</p>
               </Show>
+              <div class="grid max-h-[75vh] gap-3 overflow-y-auto pr-1 sm:grid-cols-2 2xl:grid-cols-3">
               <For each={machine().queue}>
                 {(e, i) => (
                   <div class="overflow-hidden rounded-xl border border-border bg-card">
@@ -232,15 +254,12 @@ export function MachinePanel(props: {
                   </div>
                 )}
               </For>
+              </div>
             </section>
-
-            <Show when={props.canEdit}>
-              <AddJob machine={machine()} busy={run.isPending} onRun={(v) => run.mutate(v)} />
-            </Show>
           </div>
-        )}
-      </Show>
-    </Drawer>
+        </section>
+      )}
+    </Show>
   )
 }
 
