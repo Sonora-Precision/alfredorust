@@ -1,6 +1,7 @@
 //! Quotes JSON API (openspec add-quote-document): company data for quotes, quote values per
 //! client, quotes of a project with their revisions, and "sent". Admin only: it is money.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::{
@@ -828,4 +829,153 @@ pub async fn api_quote_to_project(
         return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not link the quote");
     }
     (StatusCode::CREATED, Json(serde_json::json!({ "project_id": project_id.to_hex(), "title": title }))).into_response()
+}
+
+// --- what a part was quoted and sold for ---------------------------------------------
+//
+// Daniel, 2026-11-06: "que el sistema sea capaz de recordar los nombres de las partidas por si
+// en futuras ocasiones nos piden la misma partida que nos recuerde en cuánto se vendió".
+
+/// "zbl136-plt a260129" and "ZBL136-PLT-A260129" are one part: no spaces, no case.
+fn part_key(s: &str) -> String {
+    s.chars().filter(|c| c.is_alphanumeric()).collect::<String>().to_uppercase()
+}
+
+#[derive(Serialize, Clone)]
+pub struct PartReferenceData {
+    /// "vendida" (a project's part), "aprobada" (a quote that became a project) or "cotizada".
+    pub kind: &'static str,
+    pub description: String,
+    pub unit_price: f64,
+    pub quantity: f64,
+    pub currency: String,
+    pub client_name: Option<String>,
+    pub folio: Option<String>,
+    pub quote_id: Option<String>,
+    pub project_id: Option<String>,
+    pub project_title: Option<String>,
+    pub date: String,
+    #[serde(skip)]
+    at: DateTime,
+}
+
+/// Every price a part has had, newest first, by part key.
+async fn part_references(state: &AppState, company_id: &ObjectId) -> anyhow::Result<HashMap<String, Vec<PartReferenceData>>> {
+    use futures::stream::TryStreamExt;
+    let quotes = list_quotes(state, company_id).await?;
+    let projects: HashMap<ObjectId, (String, Option<ObjectId>)> = state
+        .projects
+        .find(doc! { "company_id": company_id })
+        .await?
+        .try_collect::<Vec<_>>()
+        .await?
+        .into_iter()
+        .filter_map(|p| Some((p.id?, (p.title, p.contact_id))))
+        .collect();
+    let contacts: HashMap<ObjectId, String> = state
+        .contacts
+        .find(doc! { "company_id": company_id })
+        .await?
+        .try_collect::<Vec<_>>()
+        .await?
+        .into_iter()
+        .filter_map(|c| Some((c.id?, c.name)))
+        .collect();
+    let mut out: HashMap<String, Vec<PartReferenceData>> = HashMap::new();
+    // Parts that came from a quote line are told once, as the approved quote.
+    let mut from_quotes = std::collections::HashSet::new();
+    for q in &quotes {
+        for l in &q.lines {
+            if l.unit_price <= 0.0 {
+                continue;
+            }
+            if let Some(c) = l.concept_id {
+                from_quotes.insert(c);
+            }
+            out.entry(part_key(&l.description)).or_default().push(PartReferenceData {
+                kind: if q.project_id.is_some() { "aprobada" } else { "cotizada" },
+                description: l.description.clone(),
+                unit_price: l.unit_price,
+                quantity: l.quantity,
+                currency: q.currency.clone(),
+                client_name: Some(q.client_name.clone()),
+                folio: Some(folio(&q.folio_base, q.revision)),
+                quote_id: q.id.map(|i| i.to_hex()),
+                project_id: q.project_id.map(|p| p.to_hex()),
+                project_title: q.project_id.and_then(|p| projects.get(&p)).map(|p| p.0.clone()),
+                date: iso(q.date),
+                at: q.date,
+            });
+        }
+    }
+    let sold: Vec<crate::models::ProjectConcept> = state
+        .project_concepts
+        .find(doc! { "company_id": company_id, "unit_price": { "$gt": 0.0 } })
+        .await?
+        .try_collect()
+        .await?;
+    for c in sold {
+        if c.id.is_some_and(|id| from_quotes.contains(&id)) {
+            continue;
+        }
+        let project = projects.get(&c.project_id);
+        let at = c.created_at.unwrap_or(DateTime::from_millis(0));
+        out.entry(part_key(&c.name)).or_default().push(PartReferenceData {
+            kind: "vendida",
+            description: c.name.clone(),
+            unit_price: c.unit_price.unwrap_or(0.0),
+            quantity: c.quantity,
+            currency: "MXN".into(),
+            client_name: project.and_then(|p| p.1).and_then(|id| contacts.get(&id)).cloned(),
+            folio: c.work_order_number.map(|n| format!("OT-{n:04}")),
+            quote_id: None,
+            project_id: Some(c.project_id.to_hex()),
+            project_title: project.map(|p| p.0.clone()),
+            date: iso(at),
+            at,
+        });
+    }
+    for refs in out.values_mut() {
+        refs.sort_by(|a, b| b.at.cmp(&a.at));
+    }
+    Ok(out)
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ReferencesPayload {
+    pub names: Vec<String>,
+}
+
+/// For each name, the last prices of that part (up to 5): sold, approved or quoted.
+pub async fn api_quote_references(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Json(p): Json<ReferencesPayload>,
+) -> Response {
+    let company_id = admin_company!(session_user);
+    match part_references(&state, &company_id).await {
+        Ok(all) => Json(
+            p.names
+                .iter()
+                .take(200)
+                .map(|n| all.get(&part_key(n)).map(|r| r.iter().take(5).cloned().collect()).unwrap_or_default())
+                .collect::<Vec<Vec<PartReferenceData>>>(),
+        )
+        .into_response(),
+        Err(_) => json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load the references"),
+    }
+}
+
+/// Every part name that has had a price, to suggest while typing a line.
+pub async fn api_quote_part_names(session_user: SessionUser, State(state): State<Arc<AppState>>) -> Response {
+    let company_id = admin_company!(session_user);
+    match part_references(&state, &company_id).await {
+        Ok(all) => {
+            let mut names: Vec<(DateTime, String)> =
+                all.values().filter_map(|r| r.first().map(|x| (x.at, x.description.clone()))).collect();
+            names.sort_by(|a, b| b.0.cmp(&a.0));
+            Json(names.into_iter().map(|(_, n)| n).take(3000).collect::<Vec<_>>()).into_response()
+        }
+        Err(_) => json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not list the parts"),
+    }
 }

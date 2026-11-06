@@ -47,13 +47,14 @@ pub use plant::{
 };
 pub use quality::{api_quality_queue, api_quality_record};
 pub use material::{
-    api_cut_done, api_cut_list, api_cut_queue, api_material_receipt_assign, api_material_receipt_create, api_material_receipt_show, api_material_receipts_index,
+    api_cut_done, api_cut_list, api_cut_queue, api_material_receipt_assign, api_material_receipt_create, api_material_receipt_prices,
+    api_material_receipt_show, api_material_receipts_index,
     api_part_material_set,
 };
 pub use quotes::{
     api_client_quote_defaults_index, api_client_quote_defaults_save, api_project_quote_create, api_project_quotes_index,
     api_quote_create, api_quote_revise, api_quote_sent, api_quote_settings_save, api_quote_settings_show, api_quote_show,
-    api_quote_suggest, api_quote_to_project, api_quotes_index,
+    api_quote_part_names, api_quote_references, api_quote_suggest, api_quote_to_project, api_quotes_index,
 };
 pub use quoting::{
     api_material_price_set, api_material_prices_index, api_part_quote_set, api_project_quote, api_project_quote_apply,

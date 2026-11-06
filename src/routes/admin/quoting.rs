@@ -18,7 +18,8 @@ use crate::{
     models::PartQuote,
     session::SessionUser,
     state::{
-        AppState, get_project_concept_by_id_for_company, list_material_prices, list_project_concepts, quote_line,
+        AppState, get_project_concept_by_id_for_company, list_material_prices, list_project_concepts, material_price_history,
+        quote_line, same_name,
         set_concept_unit_price, set_material_price, set_part_quote,
     },
 };
@@ -30,6 +31,20 @@ pub struct MaterialPriceData {
     pub source: String,
     pub note: Option<String>,
     pub updated_at: String,
+    /// Date the price is good for (invoice date or when it was written).
+    pub as_of: String,
+    /// What it cost on the latest invoices, newest first.
+    pub history: Vec<PricePointData>,
+}
+
+#[derive(Serialize)]
+pub struct PricePointData {
+    pub price_per_kg: f64,
+    pub supplier: String,
+    pub folio: Option<String>,
+    pub at: String,
+    pub kg: f64,
+    pub kg_source: String,
 }
 
 pub async fn api_material_prices_index(session_user: SessionUser, State(state): State<Arc<AppState>>) -> Response {
@@ -37,21 +52,42 @@ pub async fn api_material_prices_index(session_user: SessionUser, State(state): 
         return StatusCode::FORBIDDEN.into_response();
     }
     let company_id = require_active_company(&session_user);
-    match list_material_prices(&state, &company_id).await {
-        Ok(list) => Json(
-            list.into_iter()
-                .map(|p| MaterialPriceData {
+    let (list, points) = match tokio::try_join!(
+        list_material_prices(&state, &company_id),
+        material_price_history(&state, &company_id),
+    ) {
+        Ok(v) => v,
+        Err(_) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not list prices"),
+    };
+    Json(
+        list.into_iter()
+            .map(|p| {
+                let history = points
+                    .iter()
+                    .filter(|h| same_name(&h.material, &p.material))
+                    .take(8)
+                    .map(|h| PricePointData {
+                        price_per_kg: h.price_per_kg,
+                        supplier: h.supplier.clone(),
+                        folio: h.folio.clone(),
+                        at: iso(h.at),
+                        kg: h.kg,
+                        kg_source: h.kg_source.clone(),
+                    })
+                    .collect();
+                MaterialPriceData {
+                    as_of: iso(p.as_of.unwrap_or(p.updated_at)),
                     material: p.material,
                     price_per_kg: p.price_per_kg,
                     source: p.source,
                     note: p.note,
                     updated_at: iso(p.updated_at),
-                })
-                .collect::<Vec<_>>(),
-        )
-        .into_response(),
-        Err(_) => json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not list prices"),
-    }
+                    history,
+                }
+            })
+            .collect::<Vec<_>>(),
+    )
+    .into_response()
 }
 
 #[derive(Debug, Deserialize)]

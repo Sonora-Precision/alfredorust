@@ -1,6 +1,7 @@
 //! Part material and material receipts JSON API (openspec add-part-material). Recording
 //! material and receiving invoices is for whoever manages the board; everyone who sees
-//! parts sees it. Never stores or returns prices.
+//! parts sees it. Receipts never hold prices: the amount of each invoice line goes to the
+//! material's price history (admin only), and only the admin sees it back.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -23,7 +24,8 @@ use crate::{
     state::{
         AppState, assign_receipt_line, cut_plan, fit_bar, material_status, get_material_receipt,
         get_project_concept_by_id_for_company,
-        insert_material_receipt, list_material_receipts, receipt_pieces_by_part, read_line, set_part_material,
+        insert_material_receipt, list_material_receipts, receipt_pieces_by_part, receipt_price_points, read_line,
+        record_receipt_prices, set_part_material,
     },
 };
 
@@ -98,6 +100,9 @@ pub struct ReceiptLinePayload {
     pub quantity: Option<f64>,
     #[serde(default)]
     pub unit: Option<String>,
+    /// Line amount before tax; only the admin's is kept (it is money).
+    #[serde(default)]
+    pub amount: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -132,10 +137,11 @@ pub async fn api_material_receipt_create(
         .received_at
         .as_deref()
         .and_then(|s| DateTime::parse_rfc3339_str(s).ok());
-    let mut raw: Vec<(String, f64, String)> = payload
+    let admin = session_user.is_admin();
+    let mut raw: Vec<(String, f64, String, Option<f64>)> = payload
         .lines
         .into_iter()
-        .map(|l| (l.description, l.quantity.unwrap_or(1.0), l.unit.unwrap_or_default()))
+        .map(|l| (l.description, l.quantity.unwrap_or(1.0), l.unit.unwrap_or_default(), l.amount.filter(|_| admin)))
         .collect();
 
     let cfdi_uuid = clean_text(payload.cfdi_uuid, 40);
@@ -166,10 +172,17 @@ pub async fn api_material_receipt_create(
                     a.iter()
                         .filter_map(|c| c.as_document())
                         .map(|c| {
+                            let num = |k: &str| c.get_str(k).ok().and_then(|q| q.parse::<f64>().ok());
+                            let quantity = num("cantidad").unwrap_or(1.0);
+                            // The SAT's own amount, before tax and less its discount.
+                            let amount = num("importe")
+                                .or_else(|| num("valorUnitario").map(|p| p * quantity))
+                                .map(|a| a - num("descuento").unwrap_or(0.0));
                             (
                                 c.get_str("descripcion").unwrap_or("").to_string(),
-                                c.get_str("cantidad").ok().and_then(|q| q.parse().ok()).unwrap_or(1.0),
+                                quantity,
                                 c.get_str("claveUnidad").unwrap_or("").to_string(),
+                                amount,
                             )
                         })
                         .collect()
@@ -180,12 +193,16 @@ pub async fn api_material_receipt_create(
     let Some(supplier) = supplier else {
         return json_error(StatusCode::BAD_REQUEST, "falta el proveedor");
     };
-    let lines: Vec<ReceiptLine> = raw
-        .into_iter()
-        .filter(|(d, _, _)| !d.trim().is_empty())
-        .take(200)
+    let kept: Vec<_> = raw.into_iter().filter(|(d, _, _, _)| !d.trim().is_empty()).take(200).collect();
+    let amounts: Vec<(i32, f64)> = kept
+        .iter()
         .enumerate()
-        .map(|(i, (d, q, u))| read_line(i as i32 + 1, &d, q, &u))
+        .filter_map(|(i, (_, _, _, a))| Some((i as i32 + 1, (*a)?)))
+        .collect();
+    let lines: Vec<ReceiptLine> = kept
+        .into_iter()
+        .enumerate()
+        .map(|(i, (d, q, u, _))| read_line(i as i32 + 1, &d, q, &u))
         .collect();
     if lines.is_empty() {
         return json_error(StatusCode::BAD_REQUEST, "la recepción no tiene renglones");
@@ -201,9 +218,68 @@ pub async fn api_material_receipt_create(
         created_by: *session_user.user_id(),
         created_at: DateTime::now(),
     };
-    match insert_material_receipt(&state, receipt).await {
-        Ok(r) => (StatusCode::CREATED, Json(serde_json::json!({ "id": r.id.map(|i| i.to_hex()) }))).into_response(),
-        Err(_) => json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not save the receipt"),
+    let receipt = match insert_material_receipt(&state, receipt).await {
+        Ok(r) => r,
+        Err(_) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not save the receipt"),
+    };
+    // Each invoice keeps the material prices current (a failure never loses the receipt).
+    if !amounts.is_empty() {
+        let _ = record_receipt_prices(&state, &receipt, &amounts, *session_user.user_id()).await;
+    }
+    (StatusCode::CREATED, Json(serde_json::json!({ "id": receipt.id.map(|i| i.to_hex()) }))).into_response()
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ReceiptPriceLine {
+    pub line: i32,
+    /// Line amount before tax; null or missing: no price for that line.
+    #[serde(default)]
+    pub amount: Option<f64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ReceiptPricesPayload {
+    pub lines: Vec<ReceiptPriceLine>,
+}
+
+/// The amounts of an invoice captured by hand (a PDF, or one loaded before prices were
+/// kept): replaces that receipt's prices and updates the materials. Admin only.
+pub async fn api_material_receipt_prices(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(p): Json<ReceiptPricesPayload>,
+) -> Response {
+    if !session_user.is_admin() {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let company_id = require_active_company(&session_user);
+    let id = match parse_oid(&id) {
+        Ok(id) => id,
+        Err(resp) => return resp,
+    };
+    let receipt = match get_material_receipt(&state, &company_id, &id).await {
+        Ok(Some(r)) => r,
+        Ok(None) => return json_error(StatusCode::NOT_FOUND, "receipt not found"),
+        Err(_) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load the receipt"),
+    };
+    let mut amounts = Vec::new();
+    for l in p.lines.into_iter().take(200) {
+        match l.amount {
+            Some(a) if !a.is_finite() || a < 0.0 => return json_error(StatusCode::BAD_REQUEST, "el importe no puede ser negativo"),
+            Some(a) if a > 0.0 => amounts.push((l.line, a)),
+            _ => {}
+        }
+    }
+    match record_receipt_prices(&state, &receipt, &amounts, *session_user.user_id()).await {
+        Ok(points) => Json(serde_json::json!({
+            "priced": points.len(),
+            "lines": points.iter().map(|p| serde_json::json!({
+                "line": p.line, "material": p.material, "kg": p.kg, "price_per_kg": p.price_per_kg, "kg_source": p.kg_source,
+            })).collect::<Vec<_>>(),
+        }))
+        .into_response(),
+        Err(_) => json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not save the prices"),
     }
 }
 
@@ -287,6 +363,17 @@ pub struct ReceiptLineData {
     pub pieces: f64,
     pub assigned: Vec<PartRefData>,
     pub suggestions: Vec<SuggestionData>,
+    /// Admin only: the line amount, its kilos and $/kg.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub price: Option<LinePriceData>,
+}
+
+#[derive(Serialize)]
+pub struct LinePriceData {
+    pub amount: f64,
+    pub kg: f64,
+    pub price_per_kg: f64,
+    pub kg_source: String,
 }
 
 #[derive(Serialize)]
@@ -377,6 +464,16 @@ pub async fn api_material_receipt_show(
         Err(_) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load the receipt"),
     };
     let parts = candidate_parts(&state, &company_id, &receipt).await;
+    let mut prices: HashMap<i32, LinePriceData> = if session_user.is_admin() {
+        receipt_price_points(&state, &company_id, &id)
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .map(|p| (p.line, LinePriceData { amount: p.amount, kg: p.kg, price_per_kg: p.price_per_kg, kg_source: p.kg_source }))
+            .collect()
+    } else {
+        HashMap::new()
+    };
     let mut ordered: Vec<&ProjectConcept> = parts.values().collect();
     ordered.sort_by_key(|c| c.work_order_number.unwrap_or(i64::MAX));
 
@@ -441,6 +538,7 @@ pub async fn api_material_receipt_show(
                 pieces: l.pieces,
                 assigned: l.concept_ids.iter().filter_map(|c| parts.get(c).and_then(part_ref)).collect(),
                 suggestions,
+                price: prices.remove(&l.line),
             }
         })
         .collect();
