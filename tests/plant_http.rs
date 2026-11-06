@@ -414,6 +414,19 @@ async fn machine_queue_setups_two_machines_and_finish() {
     let p = plant().await;
     assert_eq!(queue_of(machine(&p, "VF-3")), ["Setup 1", "Setup 3", "Setup 2"]);
 
+    // Dragged: Setup 1 dropped at the end, then back to the top.
+    let top = machine(&p, "VF-3")["queue"][0]["id"].as_str().unwrap().to_string();
+    let (status, _) =
+        post(format!("/api/production/machine_queue/{top}/move"), jose.clone(), serde_json::json!({ "to": 9 })).await;
+    assert_eq!(status, StatusCode::OK);
+    let p = plant().await;
+    assert_eq!(queue_of(machine(&p, "VF-3")), ["Setup 3", "Setup 2", "Setup 1"]);
+    let (status, _) =
+        post(format!("/api/production/machine_queue/{top}/move"), jose.clone(), serde_json::json!({ "to": 0 })).await;
+    assert_eq!(status, StatusCode::OK);
+    let p = plant().await;
+    assert_eq!(queue_of(machine(&p, "VF-3")), ["Setup 1", "Setup 3", "Setup 2"]);
+
     // José picks VF-3 and moves Setup 1 to production; the admin runs the same part on VF-6.
     let first = machine(&p, "VF-3")["queue"][0]["id"].as_str().unwrap().to_string();
     let (status, _) =

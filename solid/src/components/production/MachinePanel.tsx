@@ -4,7 +4,7 @@
 // last program is a hint, not the whole story, so what runs is also set by hand: each
 // programmer picks the machine they work on and finishes their job there. No money.
 import { createMutation, createQuery, useQueryClient } from '@tanstack/solid-query'
-import { ArrowDown, ArrowUp, Play, Plus, Square, X } from 'lucide-solid'
+import { ArrowDown, ArrowUp, GripVertical, Play, Plus, Square, X } from 'lucide-solid'
 import { type JSX, For, Show, createEffect, createSignal, on, onCleanup } from 'solid-js'
 
 import { Button } from '../ui/Button'
@@ -73,34 +73,73 @@ export function MachinePanel(props: {
     })
   }
 
+  // One list, top to bottom (Daniel, 2026-11-05): first what runs now, then the queue in the
+  // order it will run. Drag a queued job to another place, or use the arrows.
+  const [dragId, setDragId] = createSignal<string | null>(null)
+  const [overAt, setOverAt] = createSignal<number | null>(null)
+  const dropAt = (to: number) => {
+    const id = dragId()
+    setDragId(null)
+    setOverAt(null)
+    const from = m()?.queue.findIndex((e) => e.id === id) ?? -1
+    if (!id || from < 0 || from === to) return
+    run.mutate({ fn: () => productionApi.moveQueueEntryTo(id, to) })
+  }
+
   return (
     <Show when={m()}>
       {(machine) => (
         <section ref={box} class="mt-4 scroll-mt-4 overflow-hidden rounded-xl border border-border bg-card/70">
-          <header class="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
+          <header class="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
             <div class="min-w-0">
               <h2 class="truncate text-base font-semibold text-foreground">{machine().name}</h2>
               <p class="text-xs text-muted-foreground">
                 {machine().status
                   ? `${STATUS_LABEL[machine().status!]} · ${SOURCE_LABEL[machine().source] ?? 'sin fuente'}`
                   : 'Sin datos'}
+                <Show when={machine().program}>
+                  {' '}· DNC: último programa {machine().program}
+                  <Show when={machine().part_number}> · parte {machine().part_number}</Show>
+                </Show>
+                <Show when={machine().note}> · Nota: {machine().note}</Show>
               </p>
             </div>
-            <Button variant="ghost" aria-label="Cerrar" onClick={() => props.onClose()}>
-              <X class="h-4 w-4" />
-            </Button>
+            <div class="flex flex-wrap items-center gap-2">
+              <Show when={props.canEdit}>
+                <For each={Object.entries(STATUS_LABEL) as [MachineStatus, string][]}>
+                  {([status, label]) => (
+                    <Button
+                      variant={machine().status === status ? 'secondary' : 'outline'}
+                      disabled={run.isPending}
+                      onClick={() => setStatus(status)}
+                    >
+                      {label}
+                    </Button>
+                  )}
+                </For>
+              </Show>
+              <Button variant="ghost" aria-label="Cerrar" onClick={() => props.onClose()}>
+                <X class="h-4 w-4" />
+              </Button>
+            </div>
           </header>
-          <div class="grid gap-5 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
-           <div class="space-y-5">
-            <section class="space-y-2">
-              <h3 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Corriendo ahora</h3>
+
+          <ol class="max-h-[75vh] divide-y divide-border overflow-y-auto">
+            {/* 1. What runs now. */}
+            <li class="flex gap-3 border-l-4 border-emerald-500 bg-emerald-500/5 p-3">
               <Show
                 when={machine().order}
-                fallback={<p class="text-sm text-muted-foreground">Nada en producción.</p>}
+                fallback={<p class="py-2 text-sm text-muted-foreground">▶ Nada en producción.</p>}
               >
                 {(o) => (
-                  <div class="overflow-hidden rounded-xl border-2 border-emerald-500/60 bg-card">
-                    <div class="space-y-0.5 px-3 py-2 text-sm">
+                  <>
+                    <div class="h-32 w-44 shrink-0 overflow-hidden rounded-lg border border-border">
+                      <PartDrawingThumb conceptId={o().id} part={o().part} class="h-full" />
+                    </div>
+                    <div class="min-w-0 flex-1 space-y-0.5 text-sm">
+                      <p class="text-[11px] font-semibold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
+                        ▶ Corriendo ahora
+                      </p>
                       <p class="truncate">
                         <span class="font-semibold tabular-nums text-foreground">{o().folio}</span>{' '}
                         <PartName conceptId={o().id} part={o().part} class="text-foreground" />
@@ -121,142 +160,141 @@ export function MachinePanel(props: {
                       </p>
                       <StockAndCuts order={o()} />
                     </div>
-                    <PartDrawingThumb conceptId={o().id} part={o().part} class="h-56 border-t border-border" />
-                  </div>
-                )}
-              </Show>
-              <Show when={machine().program}>
-                <p class="text-xs text-muted-foreground">
-                  DNC: último programa {machine().program}
-                  <Show when={machine().part_number}> · parte {machine().part_number}</Show>
-                </p>
-              </Show>
-              <Show when={machine().note}>
-                <p class="text-xs text-muted-foreground">Nota: {machine().note}</p>
-              </Show>
-              <Show when={props.canEdit}>
-                <div class="flex flex-wrap gap-2 pt-1">
-                  <Show when={machine().order && machine().source === 'manual'}>
-                    <Button
-                      variant="primary"
-                      disabled={run.isPending}
-                      onClick={() => {
-                        if (window.confirm(`¿Terminar el trabajo de ${machine().order!.folio} en ${machine().name}?`))
-                          run.mutate({
-                            fn: () => productionApi.finishMachineJob(machine().resource_id),
-                            done: `Trabajo terminado en ${machine().name}`,
-                          })
-                      }}
-                    >
-                      <Square class="h-4 w-4" />
-                      Terminar trabajo
-                    </Button>
-                  </Show>
-                  <For each={Object.entries(STATUS_LABEL) as [MachineStatus, string][]}>
-                    {([status, label]) => (
-                      <Button
-                        variant={machine().status === status ? 'secondary' : 'outline'}
-                        disabled={run.isPending}
-                        onClick={() => setStatus(status)}
-                      >
-                        {label}
-                      </Button>
-                    )}
-                  </For>
-                </div>
-              </Show>
-            </section>
-
-            <Show when={props.canEdit}>
-              <AddJob machine={machine()} busy={run.isPending} onRun={(v) => run.mutate(v)} />
-            </Show>
-           </div>
-
-            <section class="min-w-0 space-y-2">
-              <h3 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Lo que sigue ({machine().queue.length})
-              </h3>
-              <Show when={machine().queue.length === 0}>
-                <p class="text-sm text-muted-foreground">No hay trabajos en fila.</p>
-              </Show>
-              <div class="grid max-h-[75vh] gap-3 overflow-y-auto pr-1 sm:grid-cols-2 2xl:grid-cols-3">
-              <For each={machine().queue}>
-                {(e, i) => (
-                  <div class="overflow-hidden rounded-xl border border-border bg-card">
-                    <div class="flex items-start justify-between gap-2 px-3 py-2 text-sm">
-                      <div class="min-w-0">
-                        <p class="truncate">
-                          <span class="mr-1 text-xs text-muted-foreground">{i() + 1}.</span>
-                          <span class="font-semibold tabular-nums text-foreground">{e.order.folio}</span>{' '}
-                          <PartName conceptId={e.order.id} part={e.order.part} class="text-foreground" />
-                          <Show when={e.label}>
-                            <span class="ml-1 rounded bg-muted px-1.5 text-xs">{e.label}</span>
-                          </Show>
-                        </p>
-                        <p class="truncate text-xs text-muted-foreground">
-                          {e.order.client ?? e.order.project} · {pieces(e.order)}
-                        </p>
-                        <StockAndCuts order={e.order} />
-                      </div>
-                      <Show when={props.canEdit}>
-                        <div class="flex shrink-0 gap-0.5">
-                          <Button
-                            variant="ghost"
-                            aria-label={`Subir ${e.order.folio}`}
-                            disabled={run.isPending || i() === 0}
-                            onClick={() => run.mutate({ fn: () => productionApi.moveQueueEntry(e.id, true) })}
-                          >
-                            <ArrowUp class="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            aria-label={`Bajar ${e.order.folio}`}
-                            disabled={run.isPending || i() === machine().queue.length - 1}
-                            onClick={() => run.mutate({ fn: () => productionApi.moveQueueEntry(e.id, false) })}
-                          >
-                            <ArrowDown class="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            aria-label={`Quitar ${e.order.folio} de la fila`}
-                            disabled={run.isPending}
-                            onClick={() => run.mutate({ fn: () => productionApi.removeQueueEntry(e.id) })}
-                          >
-                            <X class="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </Show>
-                    </div>
-                    <PartDrawingThumb conceptId={e.order.id} part={e.order.part} class="h-40 border-t border-border" />
-                    <Show when={props.canEdit}>
-                      <div class="border-t border-border px-3 py-2">
+                    <Show when={props.canEdit && machine().source === 'manual'}>
+                      <div class="shrink-0 self-center">
                         <Button
-                          variant={i() === 0 ? 'primary' : 'outline'}
+                          variant="primary"
                           disabled={run.isPending}
                           onClick={() => {
-                            const replacing = machine().order
-                            if (
-                              replacing &&
-                              !window.confirm(`${machine().name} tiene ${replacing.folio} en producción. ¿Cambiar a ${e.order.folio}?`)
-                            )
-                              return
-                            run.mutate({
-                              fn: () => productionApi.startQueueEntry(e.id),
-                              done: `${e.order.folio} en producción en ${machine().name}`,
-                            })
+                            if (window.confirm(`¿Terminar el trabajo de ${o().folio} en ${machine().name}?`))
+                              run.mutate({
+                                fn: () => productionApi.finishMachineJob(machine().resource_id),
+                                done: `Trabajo terminado en ${machine().name}`,
+                              })
                           }}
                         >
-                          <Play class="h-4 w-4" />
-                          Pasar a producción
+                          <Square class="h-4 w-4" />
+                          Terminar trabajo
                         </Button>
                       </div>
                     </Show>
-                  </div>
+                  </>
                 )}
-              </For>
-              </div>
-            </section>
-          </div>
+              </Show>
+            </li>
+
+            {/* 2..n. The queue, in the order it will run. */}
+            <For each={machine().queue}>
+              {(e, i) => (
+                <li
+                  draggable={props.canEdit}
+                  class={`flex gap-3 p-3 transition-colors ${dragId() === e.id ? 'opacity-40' : ''} ${
+                    overAt() === i() && dragId() !== e.id ? 'bg-primary/10 ring-2 ring-inset ring-primary' : ''
+                  }`}
+                  onDragStart={(ev) => {
+                    setDragId(e.id)
+                    ev.dataTransfer?.setData('text/plain', e.id)
+                    if (ev.dataTransfer) ev.dataTransfer.effectAllowed = 'move'
+                  }}
+                  onDragOver={(ev) => {
+                    if (!dragId()) return
+                    ev.preventDefault()
+                    setOverAt(i())
+                  }}
+                  onDragLeave={() => overAt() === i() && setOverAt(null)}
+                  onDrop={(ev) => {
+                    ev.preventDefault()
+                    dropAt(i())
+                  }}
+                  onDragEnd={() => {
+                    setDragId(null)
+                    setOverAt(null)
+                  }}
+                >
+                  <Show when={props.canEdit}>
+                    <span class="flex shrink-0 cursor-grab items-center text-muted-foreground" title="Arrastra para cambiar el orden">
+                      <GripVertical class="h-5 w-5" />
+                    </span>
+                  </Show>
+                  <div class="h-28 w-40 shrink-0 overflow-hidden rounded-lg border border-border">
+                    <PartDrawingThumb conceptId={e.order.id} part={e.order.part} class="h-full" />
+                  </div>
+                  <div class="min-w-0 flex-1 space-y-0.5 text-sm">
+                    <p class="truncate">
+                      <span class="mr-1 rounded bg-muted px-1.5 text-xs font-semibold tabular-nums">{i() + 1}</span>
+                      <span class="font-semibold tabular-nums text-foreground">{e.order.folio}</span>{' '}
+                      <PartName conceptId={e.order.id} part={e.order.part} class="text-foreground" />
+                      <Show when={e.label}>
+                        <span class="ml-1 rounded bg-muted px-1.5 text-xs">{e.label}</span>
+                      </Show>
+                    </p>
+                    <p class="truncate text-xs text-muted-foreground">
+                      {e.order.client ?? e.order.project} · {pieces(e.order)}
+                    </p>
+                    <StockAndCuts order={e.order} />
+                  </div>
+                  <Show when={props.canEdit}>
+                    <div class="flex shrink-0 flex-col items-end justify-between gap-1">
+                      <div class="flex gap-0.5">
+                        <Button
+                          variant="ghost"
+                          aria-label={`Subir ${e.order.folio}`}
+                          disabled={run.isPending || i() === 0}
+                          onClick={() => run.mutate({ fn: () => productionApi.moveQueueEntry(e.id, true) })}
+                        >
+                          <ArrowUp class="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          aria-label={`Bajar ${e.order.folio}`}
+                          disabled={run.isPending || i() === machine().queue.length - 1}
+                          onClick={() => run.mutate({ fn: () => productionApi.moveQueueEntry(e.id, false) })}
+                        >
+                          <ArrowDown class="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          aria-label={`Quitar ${e.order.folio} de la fila`}
+                          disabled={run.isPending}
+                          onClick={() => run.mutate({ fn: () => productionApi.removeQueueEntry(e.id) })}
+                        >
+                          <X class="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <Button
+                        variant={i() === 0 ? 'primary' : 'outline'}
+                        disabled={run.isPending}
+                        onClick={() => {
+                          const replacing = machine().order
+                          if (
+                            replacing &&
+                            !window.confirm(`${machine().name} tiene ${replacing.folio} en producción. ¿Cambiar a ${e.order.folio}?`)
+                          )
+                            return
+                          run.mutate({
+                            fn: () => productionApi.startQueueEntry(e.id),
+                            done: `${e.order.folio} en producción en ${machine().name}`,
+                          })
+                        }}
+                      >
+                        <Play class="h-4 w-4" />
+                        Pasar a producción
+                      </Button>
+                    </div>
+                  </Show>
+                </li>
+              )}
+            </For>
+            <Show when={machine().queue.length === 0}>
+              <li class="p-3 text-sm text-muted-foreground">No hay trabajos en fila.</li>
+            </Show>
+          </ol>
+
+          <Show when={props.canEdit}>
+            <div class="border-t border-border p-4">
+              <AddJob machine={machine()} busy={run.isPending} onRun={(v) => run.mutate(v)} />
+            </div>
+          </Show>
         </section>
       )}
     </Show>
