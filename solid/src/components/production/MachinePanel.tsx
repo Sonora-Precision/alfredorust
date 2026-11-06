@@ -14,6 +14,7 @@ import { ProgrammerName } from './ProgrammerPanel'
 import { humanizeError } from '../../lib/api/client'
 import * as productionApi from '../../lib/api/production'
 import type { MachineStatus, PlantMachine } from '../../lib/api/types'
+import { type PickedPart, carriesPart, droppedPart } from './ProjectPartsTray'
 
 const STATUS_LABEL: Record<MachineStatus, string> = {
   working: 'Trabajando',
@@ -35,8 +36,11 @@ export function MachinePanel(props: {
   /** Programmers and whoever manages the board say what runs and edit the queue. */
   canEdit: boolean
   onClose: () => void
+  /** A project's part dropped on this list goes to the end of the machine's queue. */
+  onDropPart?: (part: PickedPart, resourceId: string) => void
 }): JSX.Element {
   const qc = useQueryClient()
+  const [partOver, setPartOver] = createSignal(false)
   const m = () => props.machine
   const run = createMutation(() => ({
     mutationFn: (v: { fn: () => Promise<void>; done?: string }) => v.fn(),
@@ -89,7 +93,27 @@ export function MachinePanel(props: {
   return (
     <Show when={m()}>
       {(machine) => (
-        <section ref={box} class="mt-4 scroll-mt-4 overflow-hidden rounded-xl border border-border bg-card/70">
+        <section
+          ref={box}
+          class={`mt-4 scroll-mt-4 overflow-hidden rounded-xl border bg-card/70 ${
+            partOver() ? 'border-primary ring-2 ring-primary/40' : 'border-border'
+          }`}
+          onDragOver={(e) => {
+            if (!props.canEdit || !props.onDropPart || !carriesPart(e)) return
+            e.preventDefault()
+            setPartOver(true)
+          }}
+          onDragLeave={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setPartOver(false)
+          }}
+          onDrop={(e) => {
+            setPartOver(false)
+            const part = droppedPart(e)
+            if (!part || !props.canEdit || !props.onDropPart) return
+            e.preventDefault()
+            props.onDropPart(part, machine().resource_id)
+          }}
+        >
           <header class="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
             <div class="min-w-0">
               <h2 class="truncate text-base font-semibold text-foreground">{machine().name}</h2>
