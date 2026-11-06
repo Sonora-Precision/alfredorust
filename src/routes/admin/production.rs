@@ -601,6 +601,11 @@ pub struct PersonPiecesData {
     pub name: String,
     pub pieces: f64,
     pub previous_week: f64,
+    /// Admin only: released pieces × each part's quoted unit price (Daniel, 2026-11-05).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub amount: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub previous_amount: Option<f64>,
 }
 
 #[derive(Serialize)]
@@ -617,15 +622,21 @@ pub struct WeeklyPiecesData {
     pub week_end: String,
     pub team: f64,
     pub team_previous_week: f64,
-    /// Everyone's pieces (Daniel, 2026-11-02: programmers see the pieces of all). Pieces
-    /// only: money per person stays in the admin report.
+    /// Admin only, like each person's `amount`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub team_amount: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub team_previous_amount: Option<f64>,
+    /// Everyone's pieces (Daniel, 2026-11-02: programmers see the pieces of all). Money
+    /// only for the admin.
     pub people: Vec<PersonPiecesData>,
     /// The caller's pieces this week, per part.
     pub mine_by_part: Vec<PartPiecesData>,
 }
 
 /// Finished pieces this shop week (Monday–Sunday, Hermosillo) and the week before, per
-/// person who programmed each part and for the whole team. Never returns money.
+/// person who programmed each part and for the whole team. Money (pieces × unit price)
+/// goes to the admin only.
 pub async fn api_production_weekly_pieces(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -658,20 +669,39 @@ pub async fn api_production_weekly_pieces(
         programmer.insert(*concept, who);
     }
 
-    let mut per_person: HashMap<Option<ObjectId>, (f64, f64)> = HashMap::new();
+    // Quoted unit price per part, only when the caller is the admin.
+    let admin = session_user.is_admin();
+    let mut price: HashMap<ObjectId, f64> = HashMap::new();
+    if admin {
+        for concept in programmer.keys() {
+            if let Ok(Some(c)) = get_project_concept_by_id_for_company(&state, concept, &company_id).await {
+                price.insert(*concept, c.unit_price.unwrap_or(0.0));
+            }
+        }
+    }
+    let value = |concept: &ObjectId, pieces: f64| pieces * price.get(concept).copied().unwrap_or(0.0);
+
+    // (pieces now, pieces before, money now, money before)
+    let mut per_person: HashMap<Option<ObjectId>, (f64, f64, f64, f64)> = HashMap::new();
     for m in &members {
-        per_person.insert(Some(m.user_id), (0.0, 0.0));
+        per_person.insert(Some(m.user_id), (0.0, 0.0, 0.0, 0.0));
     }
     for (concept, pieces) in &this_week {
-        per_person.entry(programmer[concept]).or_default().0 += pieces;
+        let row = per_person.entry(programmer[concept]).or_default();
+        row.0 += pieces;
+        row.2 += value(concept, *pieces);
     }
     for (concept, pieces) in &last_week {
-        per_person.entry(programmer[concept]).or_default().1 += pieces;
+        let row = per_person.entry(programmer[concept]).or_default();
+        row.1 += pieces;
+        row.3 += value(concept, *pieces);
     }
+    let team_amount = admin.then(|| per_person.values().map(|r| r.2).sum());
+    let team_previous_amount = admin.then(|| per_person.values().map(|r| r.3).sum());
     let mut people: Vec<PersonPiecesData> = per_person
         .into_iter()
-        .filter(|(id, (now, prev))| id.is_some() || *now != 0.0 || *prev != 0.0)
-        .map(|(id, (now, prev))| PersonPiecesData {
+        .filter(|(id, (now, prev, _, _))| id.is_some() || *now != 0.0 || *prev != 0.0)
+        .map(|(id, (now, prev, money, money_prev))| PersonPiecesData {
             id: id.map(|i| i.to_hex()),
             name: match id {
                 Some(i) => person(i, &names).name,
@@ -679,6 +709,8 @@ pub async fn api_production_weekly_pieces(
             },
             pieces: now,
             previous_week: prev,
+            amount: admin.then_some(money),
+            previous_amount: admin.then_some(money_prev),
         })
         .collect();
     people.sort_by(|a, b| a.name.cmp(&b.name));
@@ -705,6 +737,8 @@ pub async fn api_production_weekly_pieces(
         week_end: iso(end),
         team: this_week.values().sum(),
         team_previous_week: last_week.values().sum(),
+        team_amount,
+        team_previous_amount,
         people,
         mine_by_part,
     })
