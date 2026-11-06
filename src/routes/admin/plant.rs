@@ -26,7 +26,7 @@ use crate::{
     state::{
         AppState, RunMatch, add_machine_queue_entry, build_part_index, get_machine_queue_entry,
         get_plant_layout, latest_runs_by_machine, list_board_members, list_machine_queues,
-        list_machine_states, list_resources, machine_key, move_machine_queue_entry, programmer_of,
+        list_machine_states, list_resources, machine_key, move_machine_queue_entry, programmer_of, QueueMove,
         remove_machine_queue_entry, resolve_status, save_plant_layout, set_machine_state,
     },
 };
@@ -673,7 +673,11 @@ pub async fn api_machine_queue_remove(
 #[derive(Debug, Deserialize)]
 pub struct QueueMovePayload {
     /// true = one place earlier.
+    #[serde(default)]
     pub up: bool,
+    /// 0-based place to drop it at; wins over `up`.
+    #[serde(default)]
+    pub to: Option<usize>,
 }
 
 pub async fn api_machine_queue_move(
@@ -686,7 +690,16 @@ pub async fn api_machine_queue_move(
         Ok(v) => v,
         Err(resp) => return resp,
     };
-    match move_machine_queue_entry(&state, &company_id, &entry, payload.up).await {
+    match move_machine_queue_entry(
+        &state,
+        &company_id,
+        &entry,
+        match (payload.to, payload.up) {
+            (Some(i), _) => QueueMove::To(i),
+            (None, true) => QueueMove::Up,
+            (None, false) => QueueMove::Down,
+        },
+    ).await {
         Ok(moved) => Json(serde_json::json!({ "ok": true, "moved": moved })).into_response(),
         Err(_) => json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not move the entry"),
     }

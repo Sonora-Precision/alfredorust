@@ -90,13 +90,22 @@ pub async fn remove_part_from_machine_queue(
     Ok(res.deleted_count)
 }
 
-/// Moves an entry one place up or down in its machine's queue. Ranks are renumbered 1..n
-/// so ties from older data never block a move. Returns false at either end.
+/// Where an entry goes in its machine's queue.
+#[derive(Debug, Clone, Copy)]
+pub enum QueueMove {
+    Up,
+    Down,
+    /// 0-based place, dragged there (Daniel, 2026-11-05); past the end = last.
+    To(usize),
+}
+
+/// Moves an entry in its machine's queue. Ranks are renumbered 1..n so ties from older
+/// data never block a move. Returns false when it stays where it was.
 pub async fn move_machine_queue_entry(
     state: &AppState,
     company_id: &ObjectId,
     entry: &MachineQueueEntry,
-    up: bool,
+    how: QueueMove,
 ) -> Result<bool> {
     let mut queue = list_machine_queues(state, company_id)
         .await?
@@ -105,9 +114,14 @@ pub async fn move_machine_queue_entry(
     let Some(at) = queue.iter().position(|e| e.id == entry.id) else {
         return Ok(false);
     };
-    let to = if up { at.checked_sub(1) } else { Some(at + 1).filter(|&i| i < queue.len()) };
-    let Some(to) = to else { return Ok(false) };
-    queue.swap(at, to);
+    let to = match how {
+        QueueMove::Up => at.checked_sub(1),
+        QueueMove::Down => Some(at + 1).filter(|&i| i < queue.len()),
+        QueueMove::To(i) => Some(i.min(queue.len() - 1)),
+    };
+    let Some(to) = to.filter(|&t| t != at) else { return Ok(false) };
+    let moved = queue.remove(at);
+    queue.insert(to, moved);
     for (i, e) in queue.iter().enumerate() {
         state
             .machine_queue
