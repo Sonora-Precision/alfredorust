@@ -21,3 +21,6 @@ export const setCutDone = (conceptId: string, done: boolean) =>
   apiPost<void>(`/api/production/cut_list/${conceptId}/done`, { done })
 export const queuePartToSaw = (conceptId: string) =>
   apiPost<{ id: string }>(`/api/production/cut_list/${conceptId}/queue`, {})
+/** Admin: the amounts (before tax) of an invoice's lines; the materials' prices follow. */
+export const setReceiptPrices = (id: string, lines: { line: number; amount: number | null }[]) =>
+  apiPost<{ priced: number }>(`/api/production/material_receipts/${id}/prices`, { lines })

@@ -9,7 +9,7 @@ use crate::models::{
     Account, ApiToken, Category, Company, ConceptStatus, Contact, Forecast, MachineRun,
     PlannedEntry, ProcessOperation, Project, ProjectConcept, RecurringPlan, Resource, ResourceLog,
     ResourceUsage, ResourceUsageAllocation, SatConfig, ServiceOrder, Session, Transaction, User,
-    UserCompany, WorkOrderEvent, MachineQueueEntry, MachineState, MaterialPrice, MaterialReceipt, PartFile, PlantLayout, Quote, QuoteSettings, ClientQuoteDefaults,
+    UserCompany, WorkOrderEvent, MachineQueueEntry, MachineState, MaterialPrice, MaterialPricePoint, MaterialReceipt, PartFile, PlantLayout, Quote, QuoteSettings, ClientQuoteDefaults,
     ShopDailyReport,
 };
 use bson::Document;
@@ -134,6 +134,7 @@ pub struct AppState {
     pub machine_queue: Collection<MachineQueueEntry>,
     pub material_receipts: Collection<MaterialReceipt>,
     pub material_prices: Collection<MaterialPrice>,
+    pub material_price_points: Collection<MaterialPricePoint>,
     pub quotes: Collection<Quote>,
     pub quote_settings: Collection<QuoteSettings>,
     pub client_quote_defaults: Collection<ClientQuoteDefaults>,
@@ -382,6 +383,7 @@ pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppStat
         machine_queue: db.collection::<MachineQueueEntry>("machine_queue_entries"),
         material_receipts: db.collection::<MaterialReceipt>("material_receipts"),
         material_prices: db.collection::<MaterialPrice>("material_prices"),
+        material_price_points: db.collection::<MaterialPricePoint>("material_price_points"),
         quotes: db.collection::<Quote>("quotes"),
         quote_settings: db.collection::<QuoteSettings>("quote_settings"),
         client_quote_defaults: db.collection::<ClientQuoteDefaults>("client_quote_defaults"),

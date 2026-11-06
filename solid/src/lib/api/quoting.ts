@@ -6,6 +6,10 @@ export interface MaterialPrice {
   source: string
   note: string | null
   updated_at: string
+  /** Date the price is good for (invoice date or when it was written). */
+  as_of: string
+  /** What it cost on the latest invoices, newest first. */
+  history: { price_per_kg: number; supplier: string; folio: string | null; at: string; kg: number; kg_source: string }[]
 }
 
 export interface QuoteLine {

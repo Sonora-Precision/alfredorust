@@ -125,3 +125,23 @@ export const getQuote = (id: string) => apiGet<QuoteDocument>(`/api/admin/quotes
 export const reviseQuote = (id: string) => apiPost<QuoteView>(`/api/admin/quotes/${id}/revise`, {})
 export const markQuoteSent = (id: string) => apiPost<void>(`/api/admin/quotes/${id}/sent`, {})
 export const listClientQuoteDefaults = () => apiGet<ClientQuoteDefaults[]>('/api/admin/client_quote_defaults')
+
+/** A past price of a part: sold (a project's part), approved (quote that became a project) or quoted. */
+export interface PartReference {
+  kind: 'vendida' | 'aprobada' | 'cotizada'
+  description: string
+  unit_price: number
+  quantity: number
+  currency: 'MXN' | 'USD'
+  client_name: string | null
+  folio: string | null
+  quote_id: string | null
+  project_id: string | null
+  project_title: string | null
+  date: string
+}
+
+/** For each name, its last prices (newest first, up to 5). */
+export const partReferences = (names: string[]) => apiPost<PartReference[][]>('/api/admin/quotes/references', { names })
+/** Every part name that has had a price, newest first. */
+export const listPartNames = () => apiGet<string[]>('/api/admin/quotes/part_names')

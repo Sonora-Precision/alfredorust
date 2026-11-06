@@ -154,8 +154,23 @@ export default function QuoteEditor(): JSX.Element {
     placeholderData: (prev: quotesApi.SuggestedLine[] | undefined) => prev,
     staleTime: 30_000,
   }))
-  const materials = createMemo(() => [...new Set(lines.map((l) => l.material.trim()).filter(Boolean))])
-  const priceOf = (m: string) => prices.data?.find((p) => p.material.toLowerCase() === m.toLowerCase())
+  // "Acero 1045" and "1045" (as the invoice names it) are one material, like on the server.
+  const materials = createMemo(() => {
+    const seen = new Map<string, string>()
+    for (const l of lines) if (l.material.trim() && !seen.has(matKey(l.material))) seen.set(matKey(l.material), l.material.trim())
+    return [...seen.values()]
+  })
+  const priceOf = (m: string) => prices.data?.find((p) => matKey(p.material) === matKey(m))
+
+  // Daniel, 2026-11-06: remember each part, and what it was sold or quoted for, as a reference.
+  const partNames = createQuery(() => ({ queryKey: ['quote-part-names'], queryFn: quotesApi.listPartNames, staleTime: 60_000 }))
+  const lineNames = createMemo(() => lines.map((l) => l.description.trim()))
+  const references = createQuery(() => ({
+    queryKey: ['quote-references', JSON.stringify(lineNames())],
+    queryFn: () => quotesApi.partReferences(lineNames()),
+    placeholderData: (prev: quotesApi.PartReference[][] | undefined) => prev,
+    staleTime: 60_000,
+  }))
   const savePrice = createMutation(() => ({
     mutationFn: (v: { material: string; price: number | null }) => quotingApi.setMaterialPrice(v.material, v.price),
     onSuccess: (_d, v) => {
@@ -335,7 +350,13 @@ export default function QuoteEditor(): JSX.Element {
                       <tr class="border-t border-border align-top">
                         <td class="py-1.5 text-xs text-muted-foreground">{i() + 1}</td>
                         <td class="py-1.5 pr-1">
-                          <input class={cell} value={l.description} onInput={(e) => set(i(), 'description', e.currentTarget.value)} />
+                          <input
+                            class={cell}
+                            list="quote-parts"
+                            value={l.description}
+                            onInput={(e) => set(i(), 'description', e.currentTarget.value)}
+                          />
+                          <PastPrices refs={references.data?.[i()] ?? []} onUse={(p) => set(i(), 'price', String(p))} />
                         </td>
                         <td class="py-1.5 pr-1">
                           <input class={`${cell} text-right`} inputmode="decimal" value={l.quantity} onInput={(e) => set(i(), 'quantity', e.currentTarget.value)} />
@@ -399,6 +420,9 @@ export default function QuoteEditor(): JSX.Element {
                 </For>
               </tbody>
             </table>
+            <datalist id="quote-parts">
+              <For each={partNames.data ?? []}>{(n) => <option value={n} />}</For>
+            </datalist>
             <datalist id="quote-materials">
               <For each={prices.data ?? []}>{(p) => <option value={p.material} />}</For>
             </datalist>
@@ -419,18 +443,36 @@ export default function QuoteEditor(): JSX.Element {
       <Show when={materials().length > 0}>
         <Card glass glow={false}>
           <CardContent class="space-y-2 p-4">
-            <p class="text-sm font-semibold text-foreground">Precio por kg del material</p>
+            <div class="flex flex-wrap items-baseline justify-between gap-2">
+              <p class="text-sm font-semibold text-foreground">Precio por kg del material</p>
+              <p class="text-xs text-muted-foreground">Se actualiza solo con cada factura de Material recibido; puedes cambiarlo aquí.</p>
+            </div>
             <div class="flex flex-wrap gap-3">
               <For each={materials()}>
-                {(m) => (
-                  <PriceInput
-                    material={m}
-                    current={priceOf(m)?.price_per_kg ?? null}
-                    note={priceOf(m)?.note ?? null}
-                    busy={savePrice.isPending}
-                    onSave={(p) => savePrice.mutate({ material: m, price: p })}
-                  />
-                )}
+                {(m) => {
+                  const p = () => priceOf(m)
+                  // The price before the current one, if it changed.
+                  const before = () => p()?.history.find((h) => h.price_per_kg !== p()!.price_per_kg)
+                  return (
+                    <div class="space-y-0.5">
+                      <PriceInput
+                        material={m}
+                        current={p()?.price_per_kg ?? null}
+                        note={p()?.note ?? null}
+                        busy={savePrice.isPending}
+                        onSave={(price) => savePrice.mutate({ material: m, price })}
+                      />
+                      <p class="px-1 text-[11px] text-muted-foreground">
+                        <Show when={p()} fallback="Sin precio todavía">
+                          {p()!.source === 'factura' ? `Factura ${p()!.note ?? ''}` : `A mano · ${shortDay(p()!.as_of)}`}
+                          <Show when={before()}>
+                            {' '}· antes {money(before()!.price_per_kg)} ({before()!.folio ?? shortDay(before()!.at)})
+                          </Show>
+                        </Show>
+                      </p>
+                    </div>
+                  )
+                }}
               </For>
             </div>
           </CardContent>
@@ -471,4 +513,46 @@ export default function QuoteEditor(): JSX.Element {
 function initialsOf(name: string): string | null {
   const parts = name.trim().split(/\s+/).filter(Boolean)
   return parts.length ? parts.slice(0, 2).map((p) => p[0]!.toUpperCase()).join('') : null
+}
+
+/** Same material key as the server: the alloy when there is one ("Acero 1045" = "1045"). */
+function matKey(s: string): string {
+  const t = s.trim().toLowerCase().replace('acetal', 'delrin')
+  const alloy = t.match(/\b(6061|7075|6063|5052|2024|4140|1018|1045|4340|d2|a2|o1)\b/)
+  return alloy ? alloy[1]! : t
+}
+
+const shortDay = (iso: string) => new Date(iso).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: '2-digit' })
+
+const KIND: Record<quotesApi.PartReference['kind'], { label: string; class: string }> = {
+  vendida: { label: 'vendida', class: 'text-emerald-700 dark:text-emerald-300' },
+  aprobada: { label: 'aprobada', class: 'text-emerald-700 dark:text-emerald-300' },
+  cotizada: { label: 'cotizada', class: 'text-muted-foreground' },
+}
+
+/** What this part was sold or quoted for before; tap the price to use it. */
+function PastPrices(props: { refs: quotesApi.PartReference[]; onUse: (price: number) => void }): JSX.Element {
+  const last = () => props.refs[0]
+  const others = () =>
+    props.refs
+      .slice(1)
+      .map((r) => `${money(r.unit_price)} ${r.kind} · ${r.client_name ?? ''} · ${r.folio ?? ''} · ${shortDay(r.date)}`)
+      .join('\n')
+  return (
+    <Show when={last()}>
+      {(r) => (
+        <p class="mt-0.5 truncate text-[11px] text-muted-foreground" title={others() || undefined}>
+          Antes:{' '}
+          <button type="button" class="font-semibold tabular-nums text-sky-600 hover:underline" title="Usar este precio" onClick={() => props.onUse(r().unit_price)}>
+            {money(r().unit_price)}
+          </button>{' '}
+          {r().currency !== 'MXN' ? `${r().currency} ` : ''}
+          <span class={KIND[r().kind].class}>{KIND[r().kind].label}</span>
+          {' · '}
+          {[r().client_name, r().folio, `${r().quantity} pzas`, shortDay(r().date)].filter(Boolean).join(' · ')}
+          <Show when={props.refs.length > 1}> · +{props.refs.length - 1} más</Show>
+        </p>
+      )}
+    </Show>
+  )
 }

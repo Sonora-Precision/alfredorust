@@ -253,5 +253,104 @@ async fn quote_document_from_project() {
     let (_, body) = get(format!("/api/admin/quotes/{rev_id}"), admin.clone()).await;
     assert!(!json(&body)["lines"][0]["concept_id"].is_null());
 
+    // --- What each part was quoted / sold for ------------------------------------------
+    let (status, body) = post(
+        "/api/admin/quotes/references".into(),
+        admin.clone(),
+        serde_json::json!({ "names": ["pa-r261019-1b", "ZBL136-PLT-A260129-2", "NUEVA"] }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let refs = json(&body);
+    // Newest first; the parts made from the quote are not told twice.
+    assert_eq!(refs[0].as_array().unwrap().len(), 2, "{refs}");
+    assert_eq!((refs[0][0]["unit_price"].as_f64(), refs[0][0]["kind"].as_str()), (Some(430.0), Some("aprobada")));
+    assert_eq!(refs[0][0]["client_name"], "Brabatech");
+    assert_eq!(refs[1][0]["unit_price"], 1300.0);
+    assert!(refs[2].as_array().unwrap().is_empty());
+    // A part priced in a project without a quote counts as sold.
+    let loose = create_project_concept(&state, &company, &empty, None, "SUELTA-1", 4.0, None, None, None, None, None, 1).await.unwrap();
+    alfredodev::state::set_concept_unit_price(&state, &loose, &company, Some(275.0)).await.unwrap();
+    let (_, body) = post("/api/admin/quotes/references".into(), admin.clone(), serde_json::json!({ "names": ["suelta 1"] })).await;
+    assert_eq!((json(&body)[0][0]["kind"].as_str(), json(&body)[0][0]["unit_price"].as_f64()), (Some("vendida"), Some(275.0)));
+    let (_, body) = get("/api/admin/quotes/part_names".into(), admin.clone()).await;
+    assert!(json(&body).as_array().unwrap().iter().any(|n| n == "PA-R261019-1B"), "{body}");
+    let (status, _) = post("/api/admin/quotes/references".into(), jose.clone(), serde_json::json!({ "names": ["x"] })).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    // --- Material prices from invoices (Daniel, 2026-11-06) -----------------------------
+    // Billed by kg: 288 / 2.4 kg = 120; billed by piece: kilos from the bar (Ø2.5 × 16 × 2).
+    let (status, body) = post(
+        "/api/production/material_receipts".into(),
+        admin.clone(),
+        serde_json::json!({
+            "supplier": "HG Aceros y Metales de Hermosillo", "folio": "F90001",
+            "lines": [
+                { "description": "Aluminio solera 6061 de 1/4\" x 1 1/2\" x 144\" ( 1 pz )", "quantity": 2.4, "unit": "KGM", "amount": 288.0 },
+                { "description": "Redondo 1045 de 2 1/2\" x 16\"", "quantity": 2, "unit": "H87", "amount": 808.26 },
+                { "description": "Flete", "quantity": 1, "unit": "E48", "amount": 300.0 },
+            ],
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "body: {body}");
+    let receipt = json(&body)["id"].as_str().unwrap().to_string();
+    let prices = |body: &str| -> std::collections::HashMap<String, serde_json::Value> {
+        json(body).as_array().unwrap().iter().map(|p| (p["material"].as_str().unwrap().to_string(), p.clone())).collect()
+    };
+    let (_, body) = get("/api/admin/material_prices".into(), admin.clone()).await;
+    let p = prices(&body);
+    // The invoice is newer than the price written by hand, so it replaces it.
+    assert_eq!((p["Aluminio 6061"]["price_per_kg"].as_f64(), p["Aluminio 6061"]["source"].as_str()), (Some(120.0), Some("factura")));
+    assert!(p["Aluminio 6061"]["note"].as_str().unwrap().contains("F90001"));
+    assert_eq!(p["1045"]["price_per_kg"], 40.0);
+    assert_eq!(p["1045"]["history"][0]["kg_source"], "calculado");
+    // The quote finds it as "Acero 1045".
+    let (_, body) = post(
+        "/api/admin/quotes/suggest".into(),
+        admin.clone(),
+        serde_json::json!({ "lines": [{ "material": { "material": "Acero 1045", "shape": "redondo", "thickness": 2.5, "length": 16.0 } }] }),
+    )
+    .await;
+    assert_eq!(json(&body)[0]["price_per_kg"], 40.0);
+
+    // An older invoice loaded later goes to the history, not over the current price.
+    let (status, _) = post(
+        "/api/production/material_receipts".into(),
+        admin.clone(),
+        serde_json::json!({
+            "supplier": "HG", "folio": "F80000", "received_at": "2026-01-15T12:00:00-07:00",
+            "lines": [{ "description": "Aluminio solera 6061 de 1/4\" x 1 1/2\" x 144\" ( 1 pz )", "quantity": 2.4, "unit": "KGM", "amount": 216.0 }],
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let (_, body) = get("/api/admin/material_prices".into(), admin.clone()).await;
+    let p = prices(&body);
+    assert_eq!(p["Aluminio 6061"]["price_per_kg"], 120.0);
+    let history: Vec<f64> = p["Aluminio 6061"]["history"].as_array().unwrap().iter().map(|h| h["price_per_kg"].as_f64().unwrap()).collect();
+    assert_eq!(history, vec![120.0, 90.0]);
+
+    // Programmers see the receipt, never its prices.
+    let (status, body) = get(format!("/api/production/material_receipts/{receipt}"), jose.clone()).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    assert!(!body.contains("price_per_kg") && !body.contains("808"), "{body}");
+    let (_, body) = get(format!("/api/production/material_receipts/{receipt}"), admin.clone()).await;
+    assert_eq!(json(&body)["lines"][1]["price"]["price_per_kg"], 40.0);
+    let (status, _) = post(format!("/api/production/material_receipts/{receipt}/prices"), jose.clone(), serde_json::json!({ "lines": [] })).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    // Amounts captured later (a PDF): replace that receipt's prices.
+    let (status, body) = post(
+        format!("/api/production/material_receipts/{receipt}/prices"),
+        admin.clone(),
+        serde_json::json!({ "lines": [{ "line": 1, "amount": 300.0 }, { "line": 2, "amount": null }] }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    assert_eq!(json(&body)["priced"], 1);
+    let (_, body) = get("/api/admin/material_prices".into(), admin.clone()).await;
+    assert_eq!(prices(&body)["Aluminio 6061"]["price_per_kg"], 125.0);
+
     common::teardown(Some(ctx)).await;
 }

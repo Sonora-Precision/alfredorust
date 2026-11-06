@@ -1178,6 +1178,8 @@ export interface ReceiptLineView {
   pieces: number
   assigned: ReceiptPartRef[]
   suggestions: ReceiptSuggestion[]
+  /** Admin only: the line amount before tax, its kilos and $/kg. */
+  price?: { amount: number; kg: number; price_per_kg: number; kg_source: 'factura' | 'calculado' } | null
 }
 
 export interface MaterialReceiptDetail {

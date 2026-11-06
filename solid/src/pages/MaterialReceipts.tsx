@@ -1,6 +1,8 @@
 // Material recibido — a supplier invoice read as bars and matched against the blank each
 // part needs (openspec add-part-material, corte 2): ✅ como se pidió · 🟡 otra medida que
-// sirve · ⚪ sin parte. The admin confirms which part each bar goes to. No prices.
+// sirve · ⚪ sin parte. The admin confirms which part each bar goes to. Only the admin sees
+// "Precios de la factura": the amount of each line and its $/kg, which keep the material
+// prices of Cotizaciones current (Daniel, 2026-11-06).
 import { createMutation, createQuery, useQueryClient } from '@tanstack/solid-query'
 import { type JSX, For, Show, createSignal } from 'solid-js'
 
@@ -56,7 +58,7 @@ export default function MaterialReceipts(): JSX.Element {
           </Show>
         </div>
         <Show when={current()} fallback={<span />}>
-          {(id) => <ReceiptDetail id={id()} canManage={canManage()} />}
+          {(id) => <ReceiptDetail id={id()} canManage={canManage()} isAdmin={auth.isAdmin()} />}
         </Show>
       </div>
     </div>
@@ -127,7 +129,7 @@ function NewReceipt(props: { onCreated: (id: string) => void }): JSX.Element {
   )
 }
 
-function ReceiptDetail(props: { id: string; canManage: boolean }): JSX.Element {
+function ReceiptDetail(props: { id: string; canManage: boolean; isAdmin: boolean }): JSX.Element {
   const qc = useQueryClient()
   const detail = createQuery(() => ({
     queryKey: ['material-receipts', props.id],
@@ -158,6 +160,9 @@ function ReceiptDetail(props: { id: string; canManage: boolean }): JSX.Element {
               <Coverage receipt={r()} />
             </CardContent>
           </Card>
+          <Show when={props.isAdmin}>
+            <ReceiptPrices receipt={r()} />
+          </Show>
           <For each={r().lines}>
             {(l) => (
               <Card glass glow={false}>
@@ -285,5 +290,105 @@ function Coverage(props: { receipt: MaterialReceiptDetail }): JSX.Element {
         </For>
       </ul>
     </Show>
+  )
+}
+
+/**
+ * Admin only: the amount before tax of each invoice line. Billed by kg the quantity is the
+ * kilos; billed by piece the kilos come from the bar (density × volume). Saving updates the
+ * price per kg of each material, unless it already has a newer price.
+ */
+function ReceiptPrices(props: { receipt: MaterialReceiptDetail }): JSX.Element {
+  const qc = useQueryClient()
+  const [amounts, setAmounts] = createSignal<Record<number, string>>({})
+  const valueOf = (l: ReceiptLineView) => amounts()[l.line] ?? (l.price ? String(l.price.amount) : '')
+  const save = createMutation(() => ({
+    mutationFn: () =>
+      materialApi.setReceiptPrices(
+        props.receipt.id,
+        props.receipt.lines.map((l) => {
+          const v = Number(valueOf(l).replace(/[$,\s]/g, ''))
+          return { line: l.line, amount: valueOf(l).trim() && Number.isFinite(v) && v > 0 ? v : null }
+        }),
+      ),
+    onSuccess: (r) => {
+      toast.success(`Precios guardados`, `${r.priced} ${r.priced === 1 ? 'renglón' : 'renglones'} con precio por kg`)
+      setAmounts({})
+      void qc.invalidateQueries({ queryKey: ['material-receipts', props.receipt.id] })
+      void qc.invalidateQueries({ queryKey: ['material-prices'] })
+    },
+    onError: (err) => toast.error('No se pudieron guardar', humanizeError(err, 'Revisa los importes')),
+  }))
+  const money = (v: number) => v.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
+  return (
+    <Card glass glow={false}>
+      <CardContent class="space-y-2 p-4">
+        <div class="flex flex-wrap items-baseline justify-between gap-2">
+          <p class="text-sm font-semibold text-foreground">Precios de la factura</p>
+          <p class="text-xs text-muted-foreground">Solo tú los ves. Importe sin IVA de cada renglón; el precio por kg pasa a Cotizaciones.</p>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[560px] text-sm">
+            <thead class="text-left text-xs text-muted-foreground">
+              <tr>
+                <th class="py-1">#</th>
+                <th class="py-1">Material</th>
+                <th class="py-1 text-right">Cant.</th>
+                <th class="w-36 py-1 text-right">Importe</th>
+                <th class="py-1 text-right">kg</th>
+                <th class="py-1 text-right">$/kg</th>
+              </tr>
+            </thead>
+            <tbody>
+              <For each={props.receipt.lines}>
+                {(l) => (
+                  <tr class="border-t border-border">
+                    <td class="py-1 text-xs text-muted-foreground">{l.line}</td>
+                    <td class="py-1">
+                      {[l.material ?? 'Material ?', l.shape].filter(Boolean).join(' ')}
+                      <Show when={dims(l)}>
+                        <span class="text-xs text-muted-foreground"> · {dims(l)}"</span>
+                      </Show>
+                    </td>
+                    <td class="py-1 text-right tabular-nums text-muted-foreground">
+                      {l.quantity} {l.unit}
+                    </td>
+                    <td class="py-1 pl-2">
+                      <input
+                        class="h-8 w-full rounded border border-border bg-background px-1 text-right tabular-nums"
+                        inputmode="decimal"
+                        placeholder="—"
+                        aria-label={`Importe del renglón ${l.line}`}
+                        value={valueOf(l)}
+                        onInput={(e) => setAmounts({ ...amounts(), [l.line]: e.currentTarget.value })}
+                      />
+                    </td>
+                    <td class="py-1 text-right tabular-nums">
+                      <Show when={l.price} fallback={<span class="text-muted-foreground">—</span>}>
+                        <span title={l.price!.kg_source === 'factura' ? 'Kilos de la factura' : 'Kilos calculados por medida y densidad'}>
+                          {l.price!.kg.toFixed(2)}
+                          {l.price!.kg_source === 'calculado' ? '*' : ''}
+                        </span>
+                      </Show>
+                    </td>
+                    <td class="py-1 text-right font-semibold tabular-nums">
+                      <Show when={l.price} fallback={<span class="font-normal text-muted-foreground">—</span>}>
+                        {money(l.price!.price_per_kg)}
+                      </Show>
+                    </td>
+                  </tr>
+                )}
+              </For>
+            </tbody>
+          </table>
+        </div>
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <p class="text-xs text-muted-foreground">* kilos calculados por medida y densidad (la factura no venía en kg).</p>
+          <Button disabled={save.isPending} onClick={() => save.mutate()}>
+            {save.isPending ? 'Guardando…' : 'Guardar importes'}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   )
 }

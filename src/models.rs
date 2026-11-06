@@ -1155,15 +1155,46 @@ pub struct MaterialPrice {
     pub company_id: ObjectId,
     pub material: String,
     pub price_per_kg: f64,
-    /// "manual" today; "cfdi" once learned from supplier invoices.
+    /// "manual" (Daniel wrote it) or "factura" (learned from a supplier invoice).
     pub source: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
     pub updated_by: ObjectId,
     pub updated_at: DateTime,
+    /// Date the price is good for: the invoice date, or when Daniel wrote it. A newer one
+    /// replaces it; an older invoice loaded later does not.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub as_of: Option<DateTime>,
 }
 
-/// A supplier delivery read from its invoice (CFDI or captured lines). Never holds prices.
+/// What a material cost on one invoice line (Daniel, 2026-11-06: "de cada factura que me
+/// esté llegando ir actualizando los precios de los materiales"). Kept apart from the
+/// receipt, which programmers see; admin only.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MaterialPricePoint {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub company_id: ObjectId,
+    pub material: String,
+    pub receipt_id: ObjectId,
+    pub line: i32,
+    pub supplier: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folio: Option<String>,
+    /// Line amount before tax.
+    pub amount: f64,
+    /// Kilos billed (unit KGM) or computed from the bar: density × volume × bars.
+    pub kg: f64,
+    pub price_per_kg: f64,
+    /// "factura" when the invoice bills by kg, "calculado" when the kg come from the size.
+    pub kg_source: String,
+    /// Invoice date.
+    pub at: DateTime,
+    pub created_at: DateTime,
+}
+
+/// A supplier delivery read from its invoice (CFDI or captured lines). Never holds prices:
+/// those go to `MaterialPricePoint`, admin only.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MaterialReceipt {
     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
