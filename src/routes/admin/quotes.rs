@@ -15,12 +15,17 @@ use serde::{Deserialize, Serialize};
 use super::finance::helpers::require_active_company;
 use super::project_backend::{iso, json_error, parse_oid};
 use crate::{
-    models::{ClientPerson, ClientQuoteDefaults, ProjectStatus, Quote, QuoteItem, QuoteSettings},
+    models::{
+        ClientPerson, ClientQuoteDefaults, PartMaterial, PartQuote, Project, ProjectPriority, ProjectStatus, Quote, QuoteItem,
+        QuoteSettings,
+    },
     session::SessionUser,
     state::{
-        AppState, folio, get_client_quote_defaults, get_quote, get_quote_settings, insert_quote, last_revision,
-        list_client_quote_defaults, list_project_concepts, list_project_quotes, mark_quote_sent, next_folio_base,
-        quote_totals, save_client_quote_defaults, save_quote_settings,
+        AppState, create_project, create_project_concept, folio, folio_project, get_client_quote_defaults,
+        get_initial_concept_status, get_project_by_id_for_company, get_quote, get_quote_settings, insert_quote,
+        last_revision, link_folio_to_project, list_client_quote_defaults, list_material_prices, list_project_concepts,
+        list_project_quotes, list_quotes, mark_quote_sent, next_folio_base, quote_totals, save_client_quote_defaults,
+        save_quote_settings, set_concept_unit_price, set_part_material, set_part_quote, suggest_line,
     },
 };
 
@@ -161,6 +166,10 @@ pub async fn api_client_quote_defaults_save(
 }
 
 // --- quotes ------------------------------------------------------------------------
+//
+// A quote is made before the project exists (Daniel, 2026-11-06): the client asks, Daniel
+// quotes, and once the client approves (or sends the PO) the quote becomes the project with
+// its parts and prices. Quotes made from a project (the old way) still work.
 
 #[derive(Debug, Deserialize, Default)]
 pub struct QuoteLinePayload {
@@ -169,11 +178,17 @@ pub struct QuoteLinePayload {
     pub unit_price: f64,
     #[serde(default)]
     pub concept_id: Option<String>,
+    #[serde(default)]
+    pub material: Option<PartMaterial>,
+    #[serde(default)]
+    pub weight_kg: Option<f64>,
+    #[serde(default)]
+    pub multiplier: Option<f64>,
 }
 
 #[derive(Debug, Deserialize, Default)]
 pub struct QuoteCreatePayload {
-    /// Client; defaults to the project's contact.
+    /// Client; defaults to the project's contact (or the revised quote's).
     #[serde(default)]
     pub contact_id: Option<String>,
     #[serde(default)]
@@ -183,6 +198,9 @@ pub struct QuoteCreatePayload {
     /// Folio base written by hand ("261103-01"); else the next of the day.
     #[serde(default)]
     pub folio_base: Option<String>,
+    /// A new revision of this quote: same folio base, next revision.
+    #[serde(default)]
+    pub revision_of: Option<String>,
     #[serde(default)]
     pub currency: Option<String>,
     #[serde(default)]
@@ -203,7 +221,7 @@ pub struct QuoteCreatePayload {
     pub advance_pct: Option<f64>,
     #[serde(default)]
     pub notes: Vec<String>,
-    /// Lines written by hand; else the parts with a quoted price.
+    /// Lines written by hand; else (from a project) the parts with a quoted price.
     #[serde(default)]
     pub lines: Option<Vec<QuoteLinePayload>>,
 }
@@ -211,7 +229,9 @@ pub struct QuoteCreatePayload {
 #[derive(Serialize)]
 pub struct QuoteData {
     pub id: String,
-    pub project_id: String,
+    /// The project the quote became (or was made from); None while it is not approved.
+    pub project_id: Option<String>,
+    pub project_title: Option<String>,
     pub folio: String,
     pub folio_base: String,
     pub revision: i32,
@@ -249,9 +269,14 @@ async fn quote_data(state: &AppState, q: Quote) -> Option<QuoteData> {
         Some(c) => get_client_quote_defaults(state, &q.company_id, &c).await.ok().flatten().and_then(|d| d.abbreviation),
         None => None,
     };
+    let project_title = match q.project_id {
+        Some(p) => get_project_by_id_for_company(state, &p, &q.company_id).await.ok().flatten().map(|p| p.title),
+        None => None,
+    };
     Some(QuoteData {
         id: q.id?.to_hex(),
-        project_id: q.project_id.to_hex(),
+        project_id: q.project_id.map(|p| p.to_hex()),
+        project_title,
         folio: folio(&q.folio_base, q.revision),
         folio_base: q.folio_base,
         revision: q.revision,
@@ -284,6 +309,13 @@ async fn quote_data(state: &AppState, q: Quote) -> Option<QuoteData> {
     })
 }
 
+fn created(d: Option<QuoteData>) -> Response {
+    match d {
+        Some(d) => (StatusCode::CREATED, Json(d)).into_response(),
+        None => json_error(StatusCode::INTERNAL_SERVER_ERROR, "quote missing id"),
+    }
+}
+
 /// The parts of the project with a quoted price, in order, as quote lines.
 async fn lines_from_parts(state: &AppState, company_id: &ObjectId, project_id: &ObjectId) -> anyhow::Result<Vec<QuoteItem>> {
     let mut parts = list_project_concepts(state, company_id, project_id).await?;
@@ -298,128 +330,158 @@ async fn lines_from_parts(state: &AppState, company_id: &ObjectId, project_id: &
             description: c.name,
             unit_price: c.unit_price.unwrap_or(0.0),
             concept_id: c.id,
+            material: c.material,
+            weight_kg: c.quote.as_ref().and_then(|q| q.weight_kg),
+            multiplier: c.quote.as_ref().and_then(|q| q.multiplier),
         })
         .collect())
 }
 
-pub async fn api_project_quotes_index(
-    session_user: SessionUser,
-    State(state): State<Arc<AppState>>,
-    Path(project_id): Path<String>,
-) -> Response {
-    let company_id = admin_company!(session_user);
-    let project_id = match parse_oid(&project_id) {
-        Ok(id) => id,
-        Err(resp) => return resp,
-    };
-    match list_project_quotes(&state, &company_id, &project_id).await {
-        Ok(list) => {
-            let mut out = Vec::new();
-            for q in list {
-                if let Some(d) = quote_data(&state, q).await {
-                    out.push(d);
-                }
-            }
-            Json(out).into_response()
-        }
-        Err(_) => json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not list quotes"),
+fn positive(v: Option<f64>) -> Result<Option<f64>, Response> {
+    match v {
+        Some(x) if !x.is_finite() || x <= 0.0 => Err(json_error(StatusCode::BAD_REQUEST, "peso y multiplicador deben ser mayores a 0")),
+        other => Ok(other),
     }
 }
 
-pub async fn api_project_quote_create(
-    session_user: SessionUser,
-    State(state): State<Arc<AppState>>,
-    Path(project_id): Path<String>,
-    Json(p): Json<QuoteCreatePayload>,
-) -> Response {
-    let company_id = admin_company!(session_user);
-    let project_id = match parse_oid(&project_id) {
-        Ok(id) => id,
-        Err(resp) => return resp,
-    };
-    let Ok(Some(project)) = state.projects.find_one(doc! { "_id": project_id, "company_id": company_id }).await else {
-        return json_error(StatusCode::NOT_FOUND, "project not found");
+fn clean_material(m: Option<PartMaterial>) -> Option<PartMaterial> {
+    let mut m = m?;
+    m.material = text(m.material, 60);
+    m.shape = text(m.shape, 30);
+    m.bar_to_order = text(m.bar_to_order, 80);
+    m.notes = text(m.notes, 300);
+    let dim = |v: Option<f64>| v.filter(|x| x.is_finite() && *x > 0.0);
+    m.thickness = dim(m.thickness);
+    m.width = dim(m.width);
+    m.length = dim(m.length);
+    (m != PartMaterial::default()).then_some(m)
+}
+
+fn lines_from_payload(lines: Vec<QuoteLinePayload>) -> Result<Vec<QuoteItem>, Response> {
+    let mut out = Vec::new();
+    for (i, l) in lines.into_iter().take(200).enumerate() {
+        if !l.quantity.is_finite() || l.quantity <= 0.0 || !l.unit_price.is_finite() || l.unit_price < 0.0 {
+            return Err(json_error(StatusCode::BAD_REQUEST, "cada partida necesita cantidad mayor a 0 y precio"));
+        }
+        let description: String = l.description.trim().chars().take(300).collect();
+        if description.is_empty() {
+            return Err(json_error(StatusCode::BAD_REQUEST, "cada partida necesita su número de parte o descripción"));
+        }
+        out.push(QuoteItem {
+            item: i as i32 + 1,
+            quantity: l.quantity,
+            description,
+            unit_price: l.unit_price,
+            concept_id: l.concept_id.as_deref().and_then(|c| ObjectId::parse_str(c).ok()),
+            material: clean_material(l.material),
+            weight_kg: positive(l.weight_kg)?,
+            multiplier: positive(l.multiplier)?,
+        });
+    }
+    Ok(out)
+}
+
+/// One quote from the form: client values as defaults, the folio of the day (or the next
+/// revision of `revision_of`), and the lines given or (from a project) its priced parts.
+async fn build_quote(
+    state: &AppState,
+    session_user: &SessionUser,
+    company_id: ObjectId,
+    project: Option<&Project>,
+    p: QuoteCreatePayload,
+) -> Result<Quote, Response> {
+    let previous = match p.revision_of.as_deref().filter(|r| !r.is_empty()) {
+        Some(r) => {
+            let r = parse_oid(r)?;
+            match get_quote(state, &company_id, &r).await {
+                Ok(Some(q)) => Some(q),
+                Ok(None) => return Err(json_error(StatusCode::NOT_FOUND, "quote not found")),
+                Err(_) => return Err(json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load the quote")),
+            }
+        }
+        None => None,
     };
     let contact_id = match p.contact_id.as_deref().filter(|c| !c.is_empty()) {
-        Some(c) => match parse_oid(c) {
-            Ok(c) => Some(c),
-            Err(resp) => return resp,
-        },
-        None => project.contact_id,
+        Some(c) => Some(parse_oid(c)?),
+        None => project.and_then(|p| p.contact_id).or(previous.as_ref().and_then(|q| q.contact_id)),
     };
     let contact = match contact_id {
         Some(c) => state.contacts.find_one(doc! { "_id": c, "company_id": company_id }).await.ok().flatten(),
         None => None,
     };
     if contact_id.is_some() && contact.is_none() {
-        return json_error(StatusCode::BAD_REQUEST, "client not found");
+        return Err(json_error(StatusCode::BAD_REQUEST, "client not found"));
+    }
+    if project.is_none() && contact.is_none() {
+        return Err(json_error(StatusCode::BAD_REQUEST, "escoge el cliente"));
     }
     let defaults = match contact_id {
-        Some(c) => get_client_quote_defaults(&state, &company_id, &c).await.ok().flatten(),
+        Some(c) => get_client_quote_defaults(state, &company_id, &c).await.ok().flatten(),
         None => None,
     };
-    let settings = match get_quote_settings(&state, &company_id).await {
-        Ok(s) => s,
-        Err(_) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load the settings"),
-    };
+    let settings = get_quote_settings(state, &company_id)
+        .await
+        .map_err(|_| json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load the settings"))?;
     let now = DateTime::now();
     let currency = p.currency.or_else(|| defaults.as_ref().map(|d| d.currency.clone())).unwrap_or_else(|| "MXN".into());
     let language = p.language.or_else(|| defaults.as_ref().map(|d| d.language.clone())).unwrap_or_else(|| "es".into());
     let validity_days = p.validity_days.or(defaults.as_ref().map(|d| d.validity_days)).unwrap_or(15);
     let advance_pct = p.advance_pct.or(defaults.as_ref().map(|d| d.advance_pct)).unwrap_or(50.0);
-    if let Err(resp) = valid_terms(&currency, &language, advance_pct, validity_days) {
-        return resp;
-    }
+    valid_terms(&currency, &language, advance_pct, validity_days)?;
     let delivery_unit = p.delivery_unit.unwrap_or_else(|| "dias".into());
     if !matches!(delivery_unit.as_str(), "dias" | "semanas") {
-        return json_error(StatusCode::BAD_REQUEST, "entrega en dias o semanas");
+        return Err(json_error(StatusCode::BAD_REQUEST, "entrega en dias o semanas"));
     }
     let discount = p.discount.unwrap_or(0.0);
     if !discount.is_finite() || discount < 0.0 {
-        return json_error(StatusCode::BAD_REQUEST, "el descuento no puede ser negativo");
+        return Err(json_error(StatusCode::BAD_REQUEST, "el descuento no puede ser negativo"));
     }
-    let lines = match p.lines {
-        Some(lines) => {
-            let mut out = Vec::new();
-            for (i, l) in lines.into_iter().take(200).enumerate() {
-                if !l.quantity.is_finite() || l.quantity <= 0.0 || !l.unit_price.is_finite() || l.unit_price < 0.0 {
-                    return json_error(StatusCode::BAD_REQUEST, "cada partida necesita cantidad mayor a 0 y precio");
-                }
-                out.push(QuoteItem {
-                    item: i as i32 + 1,
-                    quantity: l.quantity,
-                    description: l.description.trim().chars().take(300).collect(),
-                    unit_price: l.unit_price,
-                    concept_id: l.concept_id.as_deref().and_then(|c| ObjectId::parse_str(c).ok()),
-                });
-            }
-            out
-        }
-        None => match lines_from_parts(&state, &company_id, &project_id).await {
-            Ok(l) => l,
-            Err(_) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load the parts"),
-        },
+    let project_id = project.and_then(|p| p.id).or(previous.as_ref().and_then(|q| q.project_id));
+    let lines = match (p.lines, project_id) {
+        (Some(lines), _) => lines_from_payload(lines)?,
+        (None, Some(pid)) => lines_from_parts(state, &company_id, &pid)
+            .await
+            .map_err(|_| json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load the parts"))?,
+        (None, None) => Vec::new(),
     };
     if lines.is_empty() {
-        return json_error(StatusCode::BAD_REQUEST, "ninguna parte tiene precio cotizado; ponlo en el Cotizador");
+        return Err(json_error(
+            StatusCode::BAD_REQUEST,
+            if project.is_some() { "ninguna parte tiene precio cotizado" } else { "agrega al menos una partida" },
+        ));
     }
-    let folio_base = match text(p.folio_base, 20) {
-        Some(b) => b,
-        None => match next_folio_base(&state, &company_id, now).await {
-            Ok(b) => b,
-            Err(_) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not number the quote"),
+    let (folio_base, revision) = match &previous {
+        Some(q) => {
+            let last = last_revision(state, &company_id, &q.folio_base)
+                .await
+                .map_err(|_| json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not number the revision"))?;
+            (q.folio_base.clone(), last + 1)
+        }
+        None => match text(p.folio_base, 20) {
+            Some(b) => (b, 0),
+            None => (
+                next_folio_base(state, &company_id, now)
+                    .await
+                    .map_err(|_| json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not number the quote"))?,
+                0,
+            ),
         },
     };
-    let quote = Quote {
+    let client_name = contact
+        .map(|c| c.name)
+        .or_else(|| previous.as_ref().map(|q| q.client_name.clone()))
+        .or_else(|| project.map(|p| p.title.clone()))
+        .unwrap_or_default();
+    Ok(Quote {
         id: None,
         company_id,
         project_id,
         contact_id,
-        client_name: contact.map(|c| c.name).unwrap_or_else(|| project.title.clone()),
+        client_name,
         attention: text(p.attention, 80),
         attention_initials: text(p.attention_initials, 6),
         folio_base,
-        revision: 0,
+        revision,
         date: now,
         currency,
         language,
@@ -437,14 +499,143 @@ pub async fn api_project_quote_create(
         sent_at: None,
         created_by: *session_user.user_id(),
         created_at: now,
-    };
-    match insert_quote(&state, quote).await {
-        Ok(q) => match quote_data(&state, q).await {
-            Some(d) => (StatusCode::CREATED, Json(d)).into_response(),
-            None => json_error(StatusCode::INTERNAL_SERVER_ERROR, "quote missing id"),
-        },
+    })
+}
+
+async fn insert_and_respond(state: &AppState, quote: Quote) -> Response {
+    match insert_quote(state, quote).await {
+        Ok(q) => created(quote_data(state, q).await),
         Err(_) => json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not save the quote"),
     }
+}
+
+async fn quotes_json(state: &AppState, list: Vec<Quote>) -> Response {
+    let mut out = Vec::new();
+    for q in list {
+        if let Some(d) = quote_data(state, q).await {
+            out.push(d);
+        }
+    }
+    Json(out).into_response()
+}
+
+/// Every quote, newest first, with the project each one became.
+pub async fn api_quotes_index(session_user: SessionUser, State(state): State<Arc<AppState>>) -> Response {
+    let company_id = admin_company!(session_user);
+    match list_quotes(&state, &company_id).await {
+        Ok(list) => quotes_json(&state, list).await,
+        Err(_) => json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not list quotes"),
+    }
+}
+
+/// A new quote for a client, before there is a project.
+pub async fn api_quote_create(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Json(p): Json<QuoteCreatePayload>,
+) -> Response {
+    let company_id = admin_company!(session_user);
+    match build_quote(&state, &session_user, company_id, None, p).await {
+        Ok(q) => insert_and_respond(&state, q).await,
+        Err(resp) => resp,
+    }
+}
+
+pub async fn api_project_quotes_index(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(project_id): Path<String>,
+) -> Response {
+    let company_id = admin_company!(session_user);
+    let project_id = match parse_oid(&project_id) {
+        Ok(id) => id,
+        Err(resp) => return resp,
+    };
+    match list_project_quotes(&state, &company_id, &project_id).await {
+        Ok(list) => quotes_json(&state, list).await,
+        Err(_) => json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not list quotes"),
+    }
+}
+
+pub async fn api_project_quote_create(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(project_id): Path<String>,
+    Json(p): Json<QuoteCreatePayload>,
+) -> Response {
+    let company_id = admin_company!(session_user);
+    let project_id = match parse_oid(&project_id) {
+        Ok(id) => id,
+        Err(resp) => return resp,
+    };
+    let Ok(Some(project)) = get_project_by_id_for_company(&state, &project_id, &company_id).await else {
+        return json_error(StatusCode::NOT_FOUND, "project not found");
+    };
+    match build_quote(&state, &session_user, company_id, Some(&project), p).await {
+        Ok(q) => insert_and_respond(&state, q).await,
+        Err(resp) => resp,
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SuggestLinePayload {
+    #[serde(default)]
+    pub material: Option<PartMaterial>,
+    #[serde(default)]
+    pub weight_kg: Option<f64>,
+    #[serde(default)]
+    pub multiplier: Option<f64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SuggestPayload {
+    pub lines: Vec<SuggestLinePayload>,
+}
+
+#[derive(Serialize)]
+pub struct SuggestedLine {
+    pub weight_kg: Option<f64>,
+    pub weight_source: Option<&'static str>,
+    pub price_per_kg: Option<f64>,
+    pub material_cost: Option<f64>,
+    pub multiplier: f64,
+    pub suggested_unit_price: Option<f64>,
+    pub missing: Vec<&'static str>,
+}
+
+/// Daniel's method for lines without a part: blank weight × $/kg × multiplier.
+pub async fn api_quote_suggest(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Json(p): Json<SuggestPayload>,
+) -> Response {
+    let company_id = admin_company!(session_user);
+    let Ok(prices) = list_material_prices(&state, &company_id).await else {
+        return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load the prices");
+    };
+    let out: Vec<SuggestedLine> = p
+        .lines
+        .into_iter()
+        .take(200)
+        .map(|l| {
+            let material = clean_material(l.material);
+            let quote = PartQuote {
+                weight_kg: l.weight_kg.filter(|w| w.is_finite() && *w > 0.0),
+                multiplier: l.multiplier.filter(|m| m.is_finite() && *m > 0.0),
+            };
+            let s = suggest_line(material.as_ref(), &quote, &prices);
+            SuggestedLine {
+                weight_kg: s.weight_kg,
+                weight_source: s.weight_source,
+                price_per_kg: s.price_per_kg,
+                material_cost: s.material_cost,
+                multiplier: s.multiplier,
+                suggested_unit_price: s.suggested_unit_price,
+                missing: s.missing,
+            }
+        })
+        .collect();
+    Json(out).into_response()
 }
 
 async fn load_quote(session_user: &SessionUser, state: &AppState, id: &str) -> Result<(ObjectId, Quote), Response> {
@@ -482,7 +673,8 @@ pub async fn api_quote_show(session_user: SessionUser, State(state): State<Arc<A
     }
 }
 
-/// "Nueva revisión": same folio base, next revision, same terms, current part prices.
+/// "Nueva revisión": same folio base, next revision, same terms. Lines that came from a
+/// project's parts take the parts' current prices; any other lines stay as they were.
 pub async fn api_quote_revise(session_user: SessionUser, State(state): State<Arc<AppState>>, Path(id): Path<String>) -> Response {
     let (company_id, q) = match load_quote(&session_user, &state, &id).await {
         Ok(v) => v,
@@ -492,8 +684,10 @@ pub async fn api_quote_revise(session_user: SessionUser, State(state): State<Arc
         Ok(r) => r + 1,
         Err(_) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not number the revision"),
     };
-    // Lines that came from parts take the part's current price; hand-written ones stay.
-    let parts = lines_from_parts(&state, &company_id, &q.project_id).await.unwrap_or_default();
+    let parts = match q.project_id {
+        Some(pid) => lines_from_parts(&state, &company_id, &pid).await.unwrap_or_default(),
+        None => Vec::new(),
+    };
     let lines: Vec<QuoteItem> = if q.lines.iter().all(|l| l.concept_id.is_some()) && !parts.is_empty() {
         parts
     } else {
@@ -501,17 +695,11 @@ pub async fn api_quote_revise(session_user: SessionUser, State(state): State<Arc
     };
     let now = DateTime::now();
     let next = Quote { id: None, revision, date: now, lines, sent_at: None, created_by: *session_user.user_id(), created_at: now, ..q };
-    match insert_quote(&state, next).await {
-        Ok(q) => match quote_data(&state, q).await {
-            Some(d) => (StatusCode::CREATED, Json(d)).into_response(),
-            None => json_error(StatusCode::INTERNAL_SERVER_ERROR, "quote missing id"),
-        },
-        Err(_) => json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not save the revision"),
-    }
+    insert_and_respond(&state, next).await
 }
 
-/// "Marcar como enviada": records the date and moves the project to Cotizado if it was still
-/// in Pedidos or Análisis.
+/// "Marcar como enviada": records the date and, for a quote that has a project still in
+/// Pedidos or Análisis, moves it to Cotizado.
 pub async fn api_quote_sent(session_user: SessionUser, State(state): State<Arc<AppState>>, Path(id): Path<String>) -> Response {
     let (company_id, q) = match load_quote(&session_user, &state, &id).await {
         Ok(v) => v,
@@ -520,13 +708,124 @@ pub async fn api_quote_sent(session_user: SessionUser, State(state): State<Arc<A
     if mark_quote_sent(&state, &company_id, &q.id.unwrap_or_default()).await.is_err() {
         return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not mark the quote");
     }
-    let early = [ProjectStatus::Pedidos.as_str(), ProjectStatus::Analisis.as_str()];
-    let _ = state
-        .projects
-        .update_one(
-            doc! { "_id": q.project_id, "company_id": company_id, "status": { "$in": early.to_vec() } },
-            doc! { "$set": { "status": ProjectStatus::Cotizado.as_str(), "updated_at": DateTime::now() } },
-        )
-        .await;
+    if let Some(project_id) = q.project_id {
+        let early = [ProjectStatus::Pedidos.as_str(), ProjectStatus::Analisis.as_str()];
+        let _ = state
+            .projects
+            .update_one(
+                doc! { "_id": project_id, "company_id": company_id, "status": { "$in": early.to_vec() } },
+                doc! { "$set": { "status": ProjectStatus::Cotizado.as_str(), "updated_at": DateTime::now() } },
+            )
+            .await;
+    }
     Json(serde_json::json!({ "ok": true })).into_response()
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct QuoteToProjectPayload {
+    /// Project name; defaults to "<client abbreviation> <folio>".
+    #[serde(default)]
+    pub title: Option<String>,
+}
+
+/// "Convertir en proyecto": the approved quote becomes a project in Pedidos, one part per
+/// line with its quantity, price, material, weight and multiplier. Every revision of the
+/// folio then points to that project; a folio becomes a project only once.
+pub async fn api_quote_to_project(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    payload: Option<Json<QuoteToProjectPayload>>,
+) -> Response {
+    let (company_id, q) = match load_quote(&session_user, &state, &id).await {
+        Ok(v) => v,
+        Err(resp) => return resp,
+    };
+    let p = payload.map(|Json(p)| p).unwrap_or_default();
+    match folio_project(&state, &company_id, &q.folio_base).await {
+        Ok(Some(existing)) => {
+            return (
+                StatusCode::CONFLICT,
+                Json(serde_json::json!({ "error": "esta cotización ya es un proyecto", "project_id": existing.to_hex() })),
+            )
+                .into_response();
+        }
+        Ok(None) => {}
+        Err(_) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not check the quote"),
+    }
+    if q.lines.iter().any(|l| l.description.trim().is_empty() || l.quantity <= 0.0) {
+        return json_error(StatusCode::BAD_REQUEST, "cada partida necesita número de parte y cantidad");
+    }
+    // Parts start in the company's first status; without one nothing is created.
+    match get_initial_concept_status(&state, &company_id).await {
+        Ok(Some(_)) => {}
+        _ => return json_error(StatusCode::INTERNAL_SERVER_ERROR, "no hay estado inicial de partes configurado"),
+    }
+    let code = folio(&q.folio_base, q.revision);
+    let abbreviation = match q.contact_id {
+        Some(c) => get_client_quote_defaults(&state, &company_id, &c).await.ok().flatten().and_then(|d| d.abbreviation),
+        None => None,
+    };
+    let title = text(p.title, 120)
+        .unwrap_or_else(|| format!("{} {code}", abbreviation.unwrap_or_else(|| q.client_name.clone())));
+    let t = quote_totals(&q);
+    let project_id = match create_project(
+        &state,
+        &company_id,
+        &title,
+        q.contact_id,
+        None,
+        Some(format!("Cotización {code}")),
+        ProjectPriority::default(),
+        Some(t.subtotal - t.discount),
+        None,
+        None,
+    )
+    .await
+    {
+        Ok(id) => id,
+        Err(_) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not create the project"),
+    };
+    let mut lines = q.lines.clone();
+    for (i, line) in lines.iter_mut().enumerate() {
+        let concept_id = match create_project_concept(
+            &state, &company_id, &project_id, None, &line.description, line.quantity, None, None, None, None, None, i as i32 + 1,
+        )
+        .await
+        {
+            Ok(id) => id,
+            Err(_) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not create the parts"),
+        };
+        let price = (line.unit_price > 0.0).then_some(line.unit_price);
+        let quote = PartQuote { weight_kg: line.weight_kg, multiplier: line.multiplier };
+        let saved = async {
+            if price.is_some() {
+                set_concept_unit_price(&state, &concept_id, &company_id, price).await?;
+            }
+            if line.material.is_some() {
+                set_part_material(&state, &company_id, &concept_id, line.material.as_ref()).await?;
+            }
+            if quote != PartQuote::default() {
+                set_part_quote(&state, &company_id, &concept_id, &quote).await?;
+            }
+            anyhow::Ok(())
+        }
+        .await;
+        if saved.is_err() {
+            return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not save the parts");
+        }
+        line.concept_id = Some(concept_id);
+    }
+    let linked = async {
+        state
+            .quotes
+            .update_one(doc! { "_id": q.id, "company_id": company_id }, doc! { "$set": { "lines": mongodb::bson::to_bson(&lines)? } })
+            .await?;
+        link_folio_to_project(&state, &company_id, &q.folio_base, &project_id).await
+    }
+    .await;
+    if linked.is_err() {
+        return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not link the quote");
+    }
+    (StatusCode::CREATED, Json(serde_json::json!({ "project_id": project_id.to_hex(), "title": title }))).into_response()
 }

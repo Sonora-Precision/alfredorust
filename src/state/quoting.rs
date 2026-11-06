@@ -81,8 +81,11 @@ pub struct QuoteLine {
 }
 
 pub fn quote_line(concept: &ProjectConcept, prices: &[MaterialPrice]) -> QuoteLine {
-    let quote = concept.quote.clone().unwrap_or_default();
-    let material = concept.material.as_ref();
+    suggest_line(concept.material.as_ref(), &concept.quote.clone().unwrap_or_default(), prices)
+}
+
+/// The same suggestion for a line of a quote that has no part yet.
+pub fn suggest_line(material: Option<&PartMaterial>, quote: &PartQuote, prices: &[MaterialPrice]) -> QuoteLine {
     let mut missing = Vec::new();
     let (weight_kg, weight_source) = match (quote.weight_kg, material.and_then(blank_kg)) {
         (Some(w), _) => (Some(w), Some("solidworks")),

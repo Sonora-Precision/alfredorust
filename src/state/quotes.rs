@@ -93,6 +93,35 @@ pub async fn list_project_quotes(state: &AppState, company_id: &ObjectId, projec
         .await?)
 }
 
+/// Every quote of the company, newest first (each revision is its own record).
+pub async fn list_quotes(state: &AppState, company_id: &ObjectId) -> Result<Vec<Quote>> {
+    Ok(state
+        .quotes
+        .find(doc! { "company_id": company_id })
+        .sort(doc! { "created_at": -1 })
+        .await?
+        .try_collect()
+        .await?)
+}
+
+/// The project a folio already became, if any revision of it did.
+pub async fn folio_project(state: &AppState, company_id: &ObjectId, base: &str) -> Result<Option<ObjectId>> {
+    Ok(state
+        .quotes
+        .find_one(doc! { "company_id": company_id, "folio_base": base, "project_id": { "$exists": true, "$ne": null } })
+        .await?
+        .and_then(|q| q.project_id))
+}
+
+/// Every revision of the folio points to the project it became.
+pub async fn link_folio_to_project(state: &AppState, company_id: &ObjectId, base: &str, project_id: &ObjectId) -> Result<()> {
+    state
+        .quotes
+        .update_many(doc! { "company_id": company_id, "folio_base": base }, doc! { "$set": { "project_id": project_id } })
+        .await?;
+    Ok(())
+}
+
 /// Highest revision of a folio base.
 pub async fn last_revision(state: &AppState, company_id: &ObjectId, base: &str) -> Result<i32> {
     Ok(state
@@ -169,7 +198,7 @@ mod tests {
         Quote {
             id: None,
             company_id: ObjectId::new(),
-            project_id: ObjectId::new(),
+            project_id: None,
             contact_id: None,
             client_name: "Brabatech".into(),
             attention: Some("Angel Cedillo".into()),
@@ -192,7 +221,7 @@ mod tests {
             lines: lines
                 .iter()
                 .enumerate()
-                .map(|(i, (q, p))| QuoteItem { item: i as i32 + 1, quantity: *q, description: "P".into(), unit_price: *p, concept_id: None })
+                .map(|(i, (q, p))| QuoteItem { item: i as i32 + 1, quantity: *q, description: "P".into(), unit_price: *p, concept_id: None, material: None, weight_kg: None, multiplier: None })
                 .collect(),
             sent_at: None,
             created_by: ObjectId::new(),

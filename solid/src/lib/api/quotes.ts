@@ -1,16 +1,23 @@
 import { apiGet, apiPost } from './client'
+import type { PartMaterial } from './types'
 
 export interface QuoteItem {
   item: number
   quantity: number
   description: string
   unit_price: number
-  concept_id?: string | null
+  concept_id?: string | { $oid: string } | null
+  /** What the part is cut from, for the suggested price; goes to the part on "Convertir en proyecto". */
+  material?: PartMaterial | null
+  weight_kg?: number | null
+  multiplier?: number | null
 }
 
 export interface QuoteView {
   id: string
-  project_id: string
+  /** The project the quote became (or was made from); null while not approved. */
+  project_id: string | null
+  project_title: string | null
   folio: string
   folio_base: string
   revision: number
@@ -70,7 +77,18 @@ export interface ClientQuoteDefaults {
   people: { name: string; initials?: string | null; email?: string | null }[]
 }
 
+export interface QuoteLinePayload {
+  quantity: number
+  description: string
+  unit_price: number
+  material?: PartMaterial | null
+  weight_kg?: number | null
+  multiplier?: number | null
+}
+
 export interface QuoteCreatePayload {
+  contact_id?: string | null
+  revision_of?: string | null
   attention?: string | null
   attention_initials?: string | null
   currency?: string
@@ -83,11 +101,26 @@ export interface QuoteCreatePayload {
   validity_days?: number
   advance_pct?: number
   notes?: string[]
+  lines?: QuoteLinePayload[]
 }
 
+export interface SuggestedLine {
+  weight_kg: number | null
+  weight_source: 'solidworks' | 'tocho' | null
+  price_per_kg: number | null
+  material_cost: number | null
+  multiplier: number
+  suggested_unit_price: number | null
+  missing: string[]
+}
+
+export const listQuotes = () => apiGet<QuoteView[]>('/api/admin/quotes')
+export const createQuote = (payload: QuoteCreatePayload) => apiPost<QuoteView>('/api/admin/quotes', payload)
+export const suggestLines = (lines: { material?: PartMaterial | null; weight_kg?: number | null; multiplier?: number | null }[]) =>
+  apiPost<SuggestedLine[]>('/api/admin/quotes/suggest', { lines })
+export const quoteToProject = (id: string, title?: string | null) =>
+  apiPost<{ project_id: string; title: string }>(`/api/admin/quotes/${id}/project`, { title: title || null })
 export const listProjectQuotes = (projectId: string) => apiGet<QuoteView[]>(`/api/admin/projects/${projectId}/quotes`)
-export const createQuote = (projectId: string, payload: QuoteCreatePayload) =>
-  apiPost<QuoteView>(`/api/admin/projects/${projectId}/quotes`, payload)
 export const getQuote = (id: string) => apiGet<QuoteDocument>(`/api/admin/quotes/${id}`)
 export const reviseQuote = (id: string) => apiPost<QuoteView>(`/api/admin/quotes/${id}/revise`, {})
 export const markQuoteSent = (id: string) => apiPost<void>(`/api/admin/quotes/${id}/sent`, {})
