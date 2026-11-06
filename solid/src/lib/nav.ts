@@ -7,6 +7,7 @@ import {
   ClipboardList,
   Clock,
   Factory,
+  FileText,
   Home,
   Landmark,
   Map as MapIcon,
@@ -98,6 +99,8 @@ export const NAV: NavEntry[] = [
     href: '/produccion/material',
     can: adminOr('view_production_board'),
   },
+  // Quotes come before the project (Daniel, 2026-11-06); money, so admins only.
+  { id: 'cotizaciones', label: 'Cotizaciones', icon: FileText, href: '/cotizaciones', can: admin },
   // They say who was at which machine and when: admins only.
   { id: 'reportes-taller', label: 'Reportes del taller', icon: ClipboardList, href: '/produccion/reportes', can: admin },
   { id: 'tiempo', label: 'Tiempo', icon: Clock, href: '/tiempo', can: adminOr('view_timeline') },

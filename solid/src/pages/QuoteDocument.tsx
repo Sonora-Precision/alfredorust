@@ -4,7 +4,7 @@
 // the toolbar never prints. openspec add-quote-document. Admin only.
 import { A, useNavigate, useParams } from '@solidjs/router'
 import { createMutation, createQuery, useQueryClient } from '@tanstack/solid-query'
-import { ArrowLeft, FileDown, Send, Copy } from 'lucide-solid'
+import { ArrowLeft, Copy, FileDown, FolderPlus, Send } from 'lucide-solid'
 import { type JSX, For, Show } from 'solid-js'
 
 import { Button } from '../components/ui/Button'
@@ -49,21 +49,31 @@ export default function QuoteDocument(): JSX.Element {
   const qc = useQueryClient()
   const doc = createQuery(() => ({ queryKey: ['quote', params.id], queryFn: () => quotesApi.getQuote(params.id) }))
 
-  const revise = createMutation(() => ({
-    mutationFn: () => quotesApi.reviseQuote(params.id),
-    onSuccess: (q) => {
-      toast.success(`Revisión ${q.folio}`)
-      void qc.invalidateQueries({ queryKey: ['project-quotes'] })
-      navigate(`/cotizaciones/${q.id}`)
+  // Approved: the quote becomes a project in Pedidos with its parts and prices.
+  const toProject = createMutation(() => ({
+    mutationFn: (title: string) => quotesApi.quoteToProject(params.id, title),
+    onSuccess: (r) => {
+      toast.success(`Proyecto ${r.title} creado`)
+      void qc.invalidateQueries({ queryKey: ['quotes'] })
+      void qc.invalidateQueries({ queryKey: ['quote'] })
+      void qc.invalidateQueries({ queryKey: ['projects'] })
+      navigate(`/projects/${r.project_id}`)
     },
-    onError: (err) => toast.error('No se pudo crear la revisión', humanizeError(err, 'Intenta de nuevo')),
+    onError: (err) => toast.error('No se pudo crear el proyecto', humanizeError(err, 'Intenta de nuevo')),
   }))
+  const convert = (d: Doc) => {
+    const title = window.prompt(
+      `Se crea el proyecto en Pedidos con ${d.lines.length} ${d.lines.length === 1 ? 'número de parte' : 'números de parte'} y sus precios.\n\nNombre del proyecto:`,
+      `${d.client_abbreviation ?? d.client_name} ${d.folio}`,
+    )
+    if (title?.trim()) toProject.mutate(title.trim())
+  }
   const sent = createMutation(() => ({
     mutationFn: () => quotesApi.markQuoteSent(params.id),
     onSuccess: () => {
       toast.success('Cotización marcada como enviada')
       void qc.invalidateQueries({ queryKey: ['quote', params.id] })
-      void qc.invalidateQueries({ queryKey: ['project-quotes'] })
+      void qc.invalidateQueries({ queryKey: ['quotes'] })
     },
     onError: (err) => toast.error('No se pudo marcar', humanizeError(err, 'Intenta de nuevo')),
   }))
@@ -83,14 +93,26 @@ export default function QuoteDocument(): JSX.Element {
         {(d) => (
           <>
             <div class="no-print flex flex-wrap items-center justify-between gap-2">
-              <A href={`/projects/${d().project_id}`} class="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-                <ArrowLeft class="h-4 w-4" /> Proyecto
-              </A>
+              <div class="flex flex-wrap items-center gap-3">
+                <A href="/cotizaciones" class="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
+                  <ArrowLeft class="h-4 w-4" /> Cotizaciones
+                </A>
+                <Show when={d().project_id}>
+                  <A href={`/projects/${d().project_id}`} class="rounded bg-emerald-500/15 px-2 py-0.5 text-xs text-emerald-700 hover:underline dark:text-emerald-300">
+                    Ya es proyecto: {d().project_title ?? 'abrir'}
+                  </A>
+                </Show>
+              </div>
               <div class="flex flex-wrap gap-2">
-                <Button onClick={() => savePdf(d())}>
+                <Show when={!d().project_id}>
+                  <Button disabled={toProject.isPending} onClick={() => convert(d())}>
+                    <FolderPlus class="h-4 w-4" /> {toProject.isPending ? 'Creando…' : 'Convertir en proyecto'}
+                  </Button>
+                </Show>
+                <Button variant={d().project_id ? 'primary' : 'outline'} onClick={() => savePdf(d())}>
                   <FileDown class="h-4 w-4" /> Guardar PDF
                 </Button>
-                <Button variant="outline" disabled={revise.isPending} onClick={() => revise.mutate()}>
+                <Button variant="outline" onClick={() => navigate(`/cotizaciones/nueva?rev=${d().id}`)}>
                   <Copy class="h-4 w-4" /> Nueva revisión
                 </Button>
                 <Button

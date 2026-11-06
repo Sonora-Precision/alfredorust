@@ -1086,13 +1086,16 @@ pub struct ClientPerson {
     pub email: Option<String>,
 }
 
-/// A quote sent to a client for a project; each revision is its own record.
+/// A quote sent to a client; each revision is its own record. It is made before the project
+/// exists (Daniel, 2026-11-06): `project_id` is set when the approved quote becomes a project
+/// (older quotes were made from a project and carry it from the start).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Quote {
     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
     pub id: Option<ObjectId>,
     pub company_id: ObjectId,
-    pub project_id: ObjectId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<ObjectId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contact_id: Option<ObjectId>,
     pub client_name: String,
@@ -1133,6 +1136,15 @@ pub struct QuoteItem {
     pub unit_price: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub concept_id: Option<ObjectId>,
+    /// What the part is cut from, for the suggested price; it goes to the part when the quote
+    /// becomes a project.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub material: Option<PartMaterial>,
+    /// SolidWorks weight and multiplier, as on a part.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weight_kg: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub multiplier: Option<f64>,
 }
 
 /// Price per kg of a material for the company (MXN before tax). Admin only.
