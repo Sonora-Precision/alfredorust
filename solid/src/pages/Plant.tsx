@@ -3,7 +3,8 @@
 // state set by hand), the order it runs and who programmed it. On the side, programmers
 // with their load and the pending orders: drag an order onto a person (or tap the order,
 // then the person) to assign it. A few dozen shapes, so SVG + DOM (CLAUDE.md rendering
-// guide). Never shows money.
+// guide). Under the map, the open projects: drag a remaining part onto a machine to queue it
+// there (Daniel, 2026-11-06). Money only in the admin's weekly total.
 import { A } from '@solidjs/router'
 import { createMutation, createQuery, useQueryClient } from '@tanstack/solid-query'
 import { ArrowLeft } from 'lucide-solid'
@@ -30,6 +31,12 @@ import { useAuth } from '../lib/auth/AuthContext'
 import { PartName } from '../components/production/PartName'
 import { ProgrammerDrawer } from '../components/production/ProgrammerPanel'
 import { MachinePanel } from '../components/production/MachinePanel'
+import {
+  type PickedPart,
+  ProjectPartsTray,
+  carriesPart,
+  droppedPart,
+} from '../components/production/ProjectPartsTray'
 
 const REFRESH_MS = 30_000
 const LOAD_LIMIT = 5
@@ -120,6 +127,18 @@ export default function Plant(): JSX.Element {
     },
   }))
 
+  // A project's part dragged (or tapped, then the machine tapped) goes to that machine's queue.
+  const [pickedPart, setPickedPart] = createSignal<PickedPart | null>(null)
+  const [machineDrop, setMachineDrop] = createSignal<string | null>(null)
+  const queuePart = (part: PickedPart, resourceId: string) => {
+    setPickedPart(null)
+    setMachineDrop(null)
+    const name = machines().get(resourceId)?.name ?? 'la máquina'
+    run.mutate(() => productionApi.queueOnMachine(resourceId, part.id, null), {
+      onSuccess: () => toast.success(`${part.name} → fila de ${name}`),
+    })
+  }
+
   const assign = (orderId: string, member: BoardMemberLoad) => {
     const order = pending().find((o) => o.id === orderId)
     setPicked(null)
@@ -206,11 +225,27 @@ export default function Plant(): JSX.Element {
                             place={place}
                             machine={machines().get(place.resource_id)}
                             selected={selectedMachine() === place.resource_id}
-                            onSelect={() =>
+                            dropActive={machineDrop() === place.resource_id}
+                            onSelect={() => {
+                              const part = pickedPart()
+                              if (part && canEditMachines()) return queuePart(part, place.resource_id)
                               setSelectedMachine(
                                 selectedMachine() === place.resource_id ? null : place.resource_id,
                               )
-                            }
+                            }}
+                            onDragOver={(e) => {
+                              if (!canEditMachines() || !carriesPart(e)) return
+                              e.preventDefault()
+                              setMachineDrop(place.resource_id)
+                            }}
+                            onDragLeave={() => machineDrop() === place.resource_id && setMachineDrop(null)}
+                            onDrop={(e) => {
+                              const part = droppedPart(e)
+                              setMachineDrop(null)
+                              if (!part || !canEditMachines()) return
+                              e.preventDefault()
+                              queuePart(part, place.resource_id)
+                            }}
                           />
                         )}
                       </For>
@@ -219,12 +254,31 @@ export default function Plant(): JSX.Element {
                 </Show>
                 <Legend />
                 <p class="mt-1 px-1 text-xs text-muted-foreground">
-                  Toca una máquina para ver qué corre, lo que sigue y sus planos.
+                  <Show
+                    when={pickedPart()}
+                    fallback={<>Toca una máquina para ver qué corre, lo que sigue y sus planos.</>}
+                  >
+                    {(p) => (
+                      <span class="font-medium text-primary">
+                        Toca la máquina a la que va {p().name}.{' '}
+                        <button type="button" class="underline" onClick={() => setPickedPart(null)}>
+                          Cancelar
+                        </button>
+                      </span>
+                    )}
+                  </Show>
                 </p>
                 <MachinePanel
                   machine={machines().get(selectedMachine() ?? '')}
                   canEdit={canEditMachines()}
                   onClose={() => setSelectedMachine(null)}
+                  onDropPart={(part, resourceId) => queuePart(part, resourceId)}
+                />
+                <ProjectPartsTray
+                  machines={plant().machines ?? []}
+                  canEdit={canEditMachines()}
+                  picked={pickedPart()}
+                  onPick={setPickedPart}
                 />
               </CardContent>
             </Card>
@@ -296,7 +350,11 @@ function MachineShape(props: {
   place: PlacedMachine
   machine: PlantMachine | undefined
   selected: boolean
+  dropActive: boolean
   onSelect: () => void
+  onDragOver: (e: DragEvent) => void
+  onDragLeave: () => void
+  onDrop: (e: DragEvent) => void
 }): JSX.Element {
   const p = () => props.place
   const color = () => (props.machine?.status ? STATUS_COLOR[props.machine.status] : UNKNOWN_COLOR)
@@ -321,6 +379,9 @@ function MachineShape(props: {
       }`}
       onClick={() => props.onSelect()}
       onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && props.onSelect()}
+      onDragOver={(e) => props.onDragOver(e)}
+      onDragLeave={() => props.onDragLeave()}
+      onDrop={(e) => props.onDrop(e)}
     >
       <g transform={`translate(${cx()} ${cy()}) rotate(${p().rotation})`}>
         <rect
@@ -329,9 +390,9 @@ function MachineShape(props: {
           width={p().w}
           height={p().h}
           rx="6"
-          fill="hsl(var(--card))"
-          stroke={color()}
-          stroke-width={props.selected ? 4 : 2}
+          fill={props.dropActive ? 'hsl(var(--primary) / 0.25)' : 'hsl(var(--card))'}
+          stroke={props.dropActive ? 'hsl(var(--primary))' : color()}
+          stroke-width={props.selected || props.dropActive ? 4 : 2}
         />
       </g>
       <circle cx={cx() + p().w / 2 - 8} cy={cy() - p().h / 2 + 8} r="5" fill={color()} />
