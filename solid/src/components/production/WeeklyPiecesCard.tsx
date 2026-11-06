@@ -1,6 +1,6 @@
 // Finished pieces this week (Monday–Sunday, Hermosillo): the caller's per part, everyone's
-// and the team total, against last week. Pieces only — money per person stays in the
-// admin report (Daniel, 2026-11-02).
+// and the team total, against last week. The admin also sees what those pieces are worth
+// at the quoted unit price (Daniel, 2026-11-05); the API sends money to nobody else.
 import { createQuery } from '@tanstack/solid-query'
 import { type JSX, For, Show } from 'solid-js'
 
@@ -10,6 +10,18 @@ import { PartName } from './PartName'
 import { ProgrammerName } from './ProgrammerPanel'
 
 const n = (v: number) => v.toLocaleString('es-MX', { maximumFractionDigits: 0 })
+const money = (v: number) =>
+  v.toLocaleString('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 })
+
+function MoneyTrend(props: { now: number; before: number }): JSX.Element {
+  const diff = () => props.now - props.before
+  return (
+    <span class={`text-xs ${diff() >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+      {diff() >= 0 ? '+' : '−'}
+      {money(Math.abs(diff()))}
+    </span>
+  )
+}
 
 function Trend(props: { now: number; before: number }): JSX.Element {
   const diff = () => props.now - props.before
@@ -44,6 +56,12 @@ export function WeeklyPiecesCard(props: {
                 <span class="text-lg font-semibold tabular-nums text-foreground">{n(w().team)}</span>{' '}
                 <span class="text-muted-foreground">equipo</span>{' '}
                 <Trend now={w().team} before={w().team_previous_week} />
+                <Show when={w().team_amount != null}>
+                  <span class="ml-2 font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
+                    {money(w().team_amount!)}
+                  </span>{' '}
+                  <MoneyTrend now={w().team_amount!} before={w().team_previous_amount ?? 0} />
+                </Show>
               </p>
             </div>
             <Show when={!props.compact}>
@@ -75,6 +93,14 @@ export function WeeklyPiecesCard(props: {
                     <div class="rounded-lg bg-muted/40 px-3 py-2">
                       <ProgrammerName id={p.id} name={p.name} class="block max-w-full truncate text-left text-xs text-muted-foreground" />
                       <p class="font-semibold tabular-nums text-foreground">{n(p.pieces)} pzas</p>
+                      <Show when={p.amount != null}>
+                        <p class="text-sm font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
+                          {money(p.amount!)}{' '}
+                          <span class="text-xs font-normal text-muted-foreground">
+                            vs {money(p.previous_amount ?? 0)} sem. pasada
+                          </span>
+                        </p>
+                      </Show>
                     </div>
                   )}
                 </For>

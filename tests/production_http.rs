@@ -424,6 +424,22 @@ async fn production_board_queues_sequence_and_assignment() {
     for leak in ["4500", "9000", "585", "unit_price", "value"] {
         assert!(!body_jose.contains(leak), "{leak} leaked: {body_jose}");
     }
+    // Money per person: the admin only (Daniel, 2026-11-05). 6 released × $585.
+    alfredodev::state::set_concept_unit_price(&state, &bson::oid::ObjectId::parse_str(&ot2).unwrap(), &company, Some(585.0))
+        .await
+        .unwrap();
+    let (_, body) = get_with_cookie(build_app(shared.clone()), host, weekly, &admin).await;
+    let w = json(&body);
+    assert_eq!(w["team_amount"], 3510.0, "{body}");
+    let carlos_row = w["people"].as_array().unwrap().iter().find(|p| p["id"] == carlos_id.to_hex()).unwrap();
+    assert_eq!(carlos_row["amount"], 3510.0, "{body}");
+    for who in [&jose, &carlos] {
+        let (_, body) = get_with_cookie(build_app(shared.clone()), host, weekly, who).await;
+        for leak in ["amount", "3510", "585"] {
+            assert!(!body.contains(leak), "{leak} leaked to a programmer: {body}");
+        }
+    }
+
     let (_, body) = get_with_cookie(build_app(shared.clone()), host, weekly, &carlos).await;
     let mine = &json(&body)["mine_by_part"][0];
     assert_eq!(mine["folio"], "OT-0002");

@@ -550,12 +550,22 @@ export interface BoardMemberLoad {
 }
 
 export interface WeeklyPieces {
+  /** Admin only: released pieces × quoted unit price. */
+  team_amount?: number
+  team_previous_amount?: number
   week_start: string
   week_end: string
   team: number
   team_previous_week: number
-  /** Everyone's finished pieces (pieces only, never money); id null = no programmer yet. */
-  people: { id: string | null; name: string; pieces: number; previous_week: number }[]
+  /** Everyone's finished pieces; id null = no programmer yet. `amount` only for the admin. */
+  people: {
+    id: string | null
+    name: string
+    pieces: number
+    previous_week: number
+    amount?: number
+    previous_amount?: number
+  }[]
   mine_by_part: { id: string; folio: string; part: string; pieces: number }[]
 }
 
