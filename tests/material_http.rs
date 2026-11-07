@@ -293,6 +293,30 @@ async fn material_receipt_matches_and_assigns_bars() {
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "body: {body}");
+    // Plates come cut to size: not in the cut list and never queued on the saw.
+    let plate = create_project_concept(&state, &company, &project, None, "CG-PLACA", 3.0, None, None, None, None, None, 8)
+        .await
+        .unwrap();
+    let (status, body) = post(
+        format!("/api/admin/project_concepts/{}/material", plate.to_hex()),
+        admin.clone(),
+        serde_json::json!({ "material": "Aluminio 6061", "shape": "Placa", "thickness": 1.0, "width": 4.0, "length": 6.0 }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let (status, body) =
+        post(format!("/api/production/cut_list/{}/queue", plate.to_hex()), jose.clone(), serde_json::json!({})).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "body: {body}");
+    assert!(body.contains("placas"), "{body}");
+    let (status, body) = post(
+        format!("/api/production/machines/{}/queue", saw.to_hex()),
+        jose.clone(),
+        serde_json::json!({ "concept_id": plate.to_hex() }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "body: {body}");
+    let (_, body) = get("/api/production/cut_list".into(), jose.clone()).await;
+    assert!(!body.contains("CG-PLACA"), "{body}");
     let no_material = create_project_concept(&state, &company, &project, None, "CG-99999", 5.0, None, None, None, None, None, 9)
         .await
         .unwrap();

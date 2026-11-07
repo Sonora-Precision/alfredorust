@@ -617,7 +617,11 @@ pub async fn api_machine_queue_add(
         Ok(None) => return json_error(StatusCode::BAD_REQUEST, "order not found"),
         Ok(Some(concept)) => {
             // The saw only cuts material already in the shop (Daniel, 2026-11-06).
-            if super::material::find_saw(&state, &company_id).await == Some(resource_id)
+            let on_saw = super::material::find_saw(&state, &company_id).await == Some(resource_id);
+            if on_saw && super::material::is_plate(&concept) {
+                return json_error(StatusCode::BAD_REQUEST, super::material::PLATE_NO_SAW);
+            }
+            if on_saw
                 && !super::material::material_in_shop(&state, &company_id, &concept).await
             {
                 return json_error(StatusCode::BAD_REQUEST, super::material::NOT_IN_SHOP);
