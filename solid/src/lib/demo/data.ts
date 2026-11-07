@@ -771,7 +771,14 @@ const DEMO_SHIFT = {
 }
 const DEMO_ATTENDANCE_EMPLOYEES = [
   { employee_no: '0002', name: 'Daniel Rivera', user_id: null, shift: null, active: true },
-  { employee_no: '0004', name: 'José Márquez', user_id: null, shift: DEMO_SHIFT, active: true },
+  {
+    employee_no: '0004',
+    name: 'José Márquez',
+    user_id: null,
+    shift: DEMO_SHIFT,
+    alternates: [{ start: '07:00', end: '15:00', days: [1, 2, 3, 4, 5], tolerance_min: 10, other: [{ days: [6], start: '07:00', end: '12:00' }] }],
+    active: true,
+  },
   { employee_no: '0005', name: 'Carlos Dávila', user_id: null, shift: DEMO_SHIFT, active: true },
 ]
 
@@ -798,7 +805,17 @@ function buildAttendanceReport(from: string): unknown {
     absences: days.filter((d) => d.status === 'falta').length,
     incomplete: 0,
   })
-  const jose = shiftWeek(1, -1)
+  const jose: (ReturnType<typeof day> & Record<string, unknown>)[] = shiftWeek(1, -1)
+  // Saturday in the morning shift (flexibility), typed by the admin.
+  jose[5] = {
+    ...day(dates[5], '07:00', '12:00', 'ok'),
+    window: '07:00–12:00',
+    alternate: true,
+    manual: [
+      { id: 'm1', time: '07:00', note: 'vino 7–12, todavía sin huella', author: 'Daniel Rivera' },
+      { id: 'm2', time: '12:00', note: 'vino 7–12, todavía sin huella', author: 'Daniel Rivera' },
+    ],
+  }
   const carlos = shiftWeek(-1, 3)
   const daniel = dates.map((d, i) => (i < 5 ? day(d, '08:40', '19:15', 'sin_horario') : day(d, null, null, 'sin_horario')))
   return {

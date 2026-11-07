@@ -827,6 +827,14 @@ async fn main() {
             get(routes::api_attendance_report),
         )
         .route(
+            "/api/admin/attendance/manual",
+            post(routes::api_attendance_manual_add),
+        )
+        .route(
+            "/api/admin/attendance/manual/{id}/delete",
+            post(routes::api_attendance_manual_delete),
+        )
+        .route(
             "/api/admin/projects/{id}/machine_time",
             get(routes::api_project_machine_time),
         )

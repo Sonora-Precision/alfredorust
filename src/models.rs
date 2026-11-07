@@ -2051,9 +2051,15 @@ pub struct AttendanceEvent {
     /// Employee number in the terminal, e.g. "0002".
     pub employee_no: String,
     pub at: DateTime,
-    /// "huella", "tarjeta", "pin", "rostro" or "otro".
+    /// "huella", "tarjeta", "pin", "rostro", "otro", or "manual" (typed by an admin).
     pub method: String,
     pub created_at: DateTime,
+    /// Why a manual check was added, e.g. "vino 7-12, todavía sin huella".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    /// Who added a manual check.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub author: Option<String>,
 }
 
 /// A daily window on some weekdays.
@@ -2110,6 +2116,10 @@ pub struct AttendanceEmployee {
     /// None = no fixed schedule: checks are recorded but there is no lateness or absence.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shift: Option<AttendanceShift>,
+    /// Other shifts they may work instead (flexibility): each day is measured against the shift
+    /// whose start is closest to their entry.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub alternates: Vec<AttendanceShift>,
     #[serde(default = "default_true")]
     pub active: bool,
     pub updated_at: DateTime,

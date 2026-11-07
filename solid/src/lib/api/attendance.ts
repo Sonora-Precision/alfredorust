@@ -26,7 +26,16 @@ export interface AttendanceEmployee {
   name: string
   user_id?: string | null
   shift?: AttendanceShift | null
+  /** Other shifts they may work instead; each day uses the one closest to their entry. */
+  alternates?: AttendanceShift[]
   active: boolean
+}
+
+export interface ManualCheck {
+  id: string
+  time: string
+  note?: string | null
+  author?: string | null
 }
 
 export type AttendanceStatus =
@@ -47,12 +56,18 @@ export interface AttendanceDay {
   worked_min: number
   late_min: number
   status: AttendanceStatus
+  /** "HH:MM–HH:MM" the day was measured against. */
+  window?: string | null
+  /** The window came from an alternate shift. */
+  alternate?: boolean
+  manual?: ManualCheck[]
 }
 
 export interface AttendanceEmployeeReport {
   employee_no: string
   name: string
   shift?: AttendanceShift | null
+  alternates?: AttendanceShift[]
   days: AttendanceDay[]
   totals: { worked_min: number; late_min: number; late_days: number; absences: number; incomplete: number }
 }
@@ -69,5 +84,8 @@ export const getAttendanceReport = (from?: string, to?: string) =>
 export const listAttendanceEmployees = () => apiGet<AttendanceEmployee[]>('/api/admin/attendance/employees')
 export const saveAttendanceEmployee = (payload: AttendanceEmployee) =>
   apiPost<void>('/api/admin/attendance/employees', payload)
-export const deleteAttendanceEmployee = (employeeNo: string) =>
+export const addManualCheck = (payload: { employee_no: string; date: string; time: string; note?: string | null }) =>
+  apiPost<{ id: string }>('/api/admin/attendance/manual', payload)
+export const deleteManualCheck = (id: string) => apiPost<void>(`/api/admin/attendance/manual/${encodeURIComponent(id)}/delete`)
+export const deleteAttendanceEmployee =(employeeNo: string) =>
   apiPost<void>(`/api/admin/attendance/employees/${encodeURIComponent(employeeNo)}/delete`)

@@ -24,8 +24,9 @@ use crate::{
     models::{AttendanceEmployee, AttendanceEvent, AttendanceShift, ShiftWindow},
     session::SessionUser,
     state::{
-        AppState, MAX_EVENTS_PER_INGEST, NewAttendanceEvent, delete_attendance_employee,
-        insert_attendance_events, last_attendance_event_at, list_attendance_employees,
+        AppState, MANUAL_DEVICE, MAX_EVENTS_PER_INGEST, NewAttendanceEvent,
+        delete_attendance_employee, delete_manual_attendance_event, insert_attendance_events,
+        insert_manual_attendance_event, last_attendance_event_at, list_attendance_employees,
         list_attendance_events, upsert_attendance_employee,
     },
 };
@@ -197,6 +198,7 @@ pub struct EmployeeData {
     pub name: String,
     pub user_id: Option<String>,
     pub shift: Option<ShiftData>,
+    pub alternates: Vec<ShiftData>,
     pub active: bool,
 }
 
@@ -224,6 +226,7 @@ fn employee_data(e: &AttendanceEmployee) -> EmployeeData {
         name: e.name.clone(),
         user_id: e.user_id.map(|id| id.to_hex()),
         shift: e.shift.as_ref().map(shift_data),
+        alternates: e.alternates.iter().map(shift_data).collect(),
         active: e.active,
     }
 }
@@ -287,6 +290,9 @@ pub struct EmployeePayload {
     pub name: String,
     pub user_id: Option<String>,
     pub shift: Option<ShiftData>,
+    /// Other shifts they may work instead; needs `shift`.
+    #[serde(default)]
+    pub alternates: Vec<ShiftData>,
     #[serde(default = "yes")]
     pub active: bool,
 }
@@ -369,6 +375,21 @@ pub async fn api_attendance_employee_save(
         Ok(s) => s,
         Err(msg) => return json_error(StatusCode::BAD_REQUEST, msg),
     };
+    if shift.is_none() && !p.alternates.is_empty() {
+        return json_error(StatusCode::BAD_REQUEST, "alternates need a main shift");
+    }
+    if p.alternates.len() > 4 {
+        return json_error(StatusCode::BAD_REQUEST, "at most 4 alternate shifts");
+    }
+    let alternates = match p
+        .alternates
+        .into_iter()
+        .map(validate_shift)
+        .collect::<Result<Vec<_>, _>>()
+    {
+        Ok(a) => a,
+        Err(msg) => return json_error(StatusCode::BAD_REQUEST, msg),
+    };
     match upsert_attendance_employee(
         &state,
         &company_id,
@@ -376,6 +397,7 @@ pub async fn api_attendance_employee_save(
         name,
         user_id,
         shift,
+        alternates,
         p.active,
     )
     .await
@@ -414,6 +436,113 @@ pub async fn api_attendance_employee_delete(
     }
 }
 
+// ---------- manual checks ----------
+
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub struct ManualCheckPayload {
+    pub employee_no: String,
+    /// YYYY-MM-DD, shop time.
+    pub date: String,
+    /// "HH:MM", shop time.
+    pub time: String,
+    pub note: Option<String>,
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/admin/attendance/manual",
+    tag = "operations",
+    request_body = ManualCheckPayload,
+    responses(
+        (status = 200, description = "Manual check added"),
+        (status = 400, description = "Invalid input or that check already exists"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Admin only")
+    ),
+    security(("session" = []))
+)]
+pub async fn api_attendance_manual_add(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Json(p): Json<ManualCheckPayload>,
+) -> Response {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let employee_no = p.employee_no.trim();
+    if !valid_code(employee_no, 32) {
+        return json_error(
+            StatusCode::BAD_REQUEST,
+            "employee_no must be 1-32 letters or digits",
+        );
+    }
+    let (Ok(date), Some(time)) = (
+        NaiveDate::parse_from_str(p.date.trim(), "%Y-%m-%d"),
+        parse_hm(&p.time),
+    ) else {
+        return json_error(
+            StatusCode::BAD_REQUEST,
+            "date must be YYYY-MM-DD and time HH:MM",
+        );
+    };
+    let at = DateTime::from_millis(
+        shop_midnight(date).timestamp_millis()
+            + i64::from(time.hour() * 60 + time.minute()) * 60_000,
+    );
+    let note: Option<String> = p
+        .note
+        .as_deref()
+        .map(|n| n.trim().chars().take(200).collect::<String>())
+        .filter(|n| !n.is_empty());
+    let u = session_user.user();
+    let author = u
+        .display_name
+        .clone()
+        .filter(|n| !n.trim().is_empty())
+        .unwrap_or_else(|| u.username.clone());
+    match insert_manual_attendance_event(&state, &company_id, employee_no, at, note, &author).await
+    {
+        Ok(id) => Json(serde_json::json!({ "id": id.to_hex() })).into_response(),
+        Err(err) if err.to_string().contains("E11000") => {
+            json_error(StatusCode::BAD_REQUEST, "that check already exists")
+        }
+        Err(err) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()),
+    }
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/admin/attendance/manual/{id}/delete",
+    tag = "operations",
+    params(("id" = String, Path, description = "Manual check id")),
+    responses(
+        (status = 200, description = "Manual check removed"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Admin only"),
+        (status = 404, description = "No such manual check (terminal checks can't be removed)")
+    ),
+    security(("session" = []))
+)]
+pub async fn api_attendance_manual_delete(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Response {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let Ok(id) = ObjectId::parse_str(id.trim()) else {
+        return json_error(StatusCode::BAD_REQUEST, "invalid id");
+    };
+    match delete_manual_attendance_event(&state, &company_id, id).await {
+        Ok(true) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Ok(false) => json_error(StatusCode::NOT_FOUND, "no such manual check"),
+        Err(err) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()),
+    }
+}
+
 // ---------- report ----------
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -431,6 +560,20 @@ pub struct DayData {
     /// "extra" (checks on a day off), "pendiente" (the shift has not ended yet),
     /// "sin_horario" (no shift: only the checks).
     pub status: String,
+    /// "HH:MM–HH:MM" the day was measured against (with alternates, the one closest to the entry).
+    pub window: Option<String>,
+    /// True when that window is not from the main shift.
+    pub alternate: bool,
+    /// Checks typed by an admin that day.
+    pub manual: Vec<ManualCheckData>,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+pub struct ManualCheckData {
+    pub id: String,
+    pub time: String,
+    pub note: Option<String>,
+    pub author: Option<String>,
 }
 
 #[derive(Debug, Serialize, PartialEq, Default)]
@@ -447,6 +590,7 @@ pub struct EmployeeReport {
     pub employee_no: String,
     pub name: String,
     pub shift: Option<ShiftData>,
+    pub alternates: Vec<ShiftData>,
     pub days: Vec<DayData>,
     pub totals: Totals,
 }
@@ -496,15 +640,26 @@ fn minute_of(value: &str) -> i64 {
     parse_hm(value).map_or(0, |t| i64::from(t.hour() * 60 + t.minute()))
 }
 
-/// One employee's day from their checks (sorted).
+/// One employee's day from their checks (sorted by time). `shifts` = main shift first, then
+/// the alternates; empty = no fixed schedule.
 fn day_data(
     date: NaiveDate,
-    stamps: &[DateTime],
-    shift: Option<&AttendanceShift>,
+    events: &[&AttendanceEvent],
+    shifts: &[&AttendanceShift],
     now: DateTime,
 ) -> DayData {
+    let manual: Vec<ManualCheckData> = events
+        .iter()
+        .filter(|e| e.device == MANUAL_DEVICE)
+        .map(|e| ManualCheckData {
+            id: e.id.map(|id| id.to_hex()).unwrap_or_default(),
+            time: hm(shop_minute(e.at)),
+            note: e.note.clone(),
+            author: e.author.clone(),
+        })
+        .collect();
     let mut checks: Vec<DateTime> = Vec::new();
-    for &s in stamps {
+    for s in events.iter().map(|e| e.at) {
         if checks
             .last()
             .is_none_or(|last| s.timestamp_millis() - last.timestamp_millis() >= DOUBLE_CHECK_MS)
@@ -524,17 +679,31 @@ fn day_data(
         _ => 0,
     };
     let weekday = date.weekday().number_from_monday() as u8;
+    // (shift, start, end, is_alternate) of every shift that works this weekday
+    let candidates: Vec<(&AttendanceShift, &str, &str, bool)> = shifts
+        .iter()
+        .enumerate()
+        .filter_map(|(i, s)| s.window(weekday).map(|(a, b)| (*s, a, b, i > 0)))
+        .collect();
+    // With an entry, the shift whose start is closest to it; without one, the first (main).
+    let chosen = match entry {
+        Some(e) => candidates
+            .iter()
+            .min_by_key(|(_, start, _, _)| (e - minute_of(start)).abs())
+            .copied(),
+        None => candidates.first().copied(),
+    };
     let mut late_min = 0;
-    let status = match shift.map(|s| (s, s.window(weekday))) {
-        None => "sin_horario",
-        Some((_, None)) => {
+    let status = match (shifts.is_empty(), chosen) {
+        (true, _) => "sin_horario",
+        (false, None) => {
             if checks.is_empty() {
                 "descanso"
             } else {
                 "extra"
             }
         }
-        Some((s, Some((win_start, win_end)))) => {
+        (false, Some((s, win_start, win_end, _))) => {
             let start = minute_of(win_start);
             let end_at = shop_midnight(date).timestamp_millis() + minute_of(win_end) * 60_000;
             match entry {
@@ -565,6 +734,9 @@ fn day_data(
         worked_min,
         late_min,
         status: status.to_string(),
+        window: chosen.map(|(_, a, b, _)| format!("{a}–{b}")),
+        alternate: chosen.is_some_and(|c| c.3),
+        manual,
     }
 }
 
@@ -576,7 +748,8 @@ pub fn build_report(
     to: NaiveDate,
     now: DateTime,
 ) -> AttendanceReport {
-    let mut by_employee: BTreeMap<&str, BTreeMap<NaiveDate, Vec<DateTime>>> = BTreeMap::new();
+    let mut by_employee: BTreeMap<&str, BTreeMap<NaiveDate, Vec<&AttendanceEvent>>> =
+        BTreeMap::new();
     for e in events {
         let date = shop_date(e.at);
         if date < from || date > to {
@@ -587,7 +760,7 @@ pub fn build_report(
             .or_default()
             .entry(date)
             .or_default()
-            .push(e.at);
+            .push(e);
     }
     let dates: Vec<NaiveDate> = from.iter_days().take_while(|d| *d <= to).collect();
     let mut reports = Vec::new();
@@ -596,12 +769,13 @@ pub fn build_report(
             .remove(emp.employee_no.as_str())
             .unwrap_or_default();
         let mut totals = Totals::default();
+        let shifts: Vec<&AttendanceShift> = emp.shift.iter().chain(emp.alternates.iter()).collect();
         let days: Vec<DayData> = dates
             .iter()
             .map(|&d| {
-                let mut stamps = mine.get(&d).cloned().unwrap_or_default();
-                stamps.sort();
-                let day = day_data(d, &stamps, emp.shift.as_ref(), now);
+                let mut day_events = mine.get(&d).cloned().unwrap_or_default();
+                day_events.sort_by_key(|e| e.at);
+                let day = day_data(d, &day_events, &shifts, now);
                 totals.worked_min += day.worked_min;
                 totals.late_min += day.late_min;
                 match day.status.as_str() {
@@ -617,6 +791,7 @@ pub fn build_report(
             employee_no: emp.employee_no.clone(),
             name: emp.name.clone(),
             shift: emp.shift.as_ref().map(shift_data),
+            alternates: emp.alternates.iter().map(shift_data).collect(),
             days,
             totals,
         });
@@ -727,6 +902,7 @@ mod tests {
             name: format!("Empleado {no}"),
             user_id: None,
             shift,
+            alternates: vec![],
             active: true,
             updated_at: DateTime::now(),
         }
@@ -756,7 +932,72 @@ mod tests {
             at: t(at),
             method: "huella".into(),
             created_at: DateTime::now(),
+            note: None,
+            author: None,
         }
+    }
+
+    fn manana() -> AttendanceShift {
+        AttendanceShift {
+            start: "07:00".into(),
+            end: "15:00".into(),
+            days: vec![1, 2, 3, 4, 5],
+            tolerance_min: 10,
+            other: vec![ShiftWindow {
+                days: vec![6],
+                start: "07:00".into(),
+                end: "12:00".into(),
+            }],
+        }
+    }
+
+    #[test]
+    fn flexible_shift_and_manual_checks() {
+        let mut jose = employee("0004", Some(tarde()));
+        jose.alternates = vec![manana()];
+        let manual = |at: &str| {
+            let mut e = check("0004", at);
+            e.id = Some(ObjectId::new());
+            e.device = MANUAL_DEVICE.into();
+            e.method = "manual".into();
+            e.note = Some("vino 7-12, sin huella".into());
+            e
+        };
+        let events = vec![
+            // Mon 9: came in the morning, 15 min late for the morning shift
+            check("0004", "2026-11-09T07:15:00-07:00"),
+            check("0004", "2026-11-09T15:00:00-07:00"),
+            // Tue 10: normal afternoon, on time
+            check("0004", "2026-11-10T13:58:00-07:00"),
+            check("0004", "2026-11-10T22:00:00-07:00"),
+            // Sat 14: morning, typed by the admin
+            manual("2026-11-14T07:00:00-07:00"),
+            manual("2026-11-14T12:00:00-07:00"),
+        ];
+        let now = t("2026-11-16T09:00:00-07:00");
+        let r = build_report(&[jose], &events, d("2026-11-09"), d("2026-11-15"), now);
+        let days = &r.employees[0].days;
+        let view = |i: usize| {
+            (
+                days[i].status.as_str(),
+                days[i].window.as_deref(),
+                days[i].alternate,
+                days[i].late_min,
+            )
+        };
+        assert_eq!(view(0), ("retardo", Some("07:00–15:00"), true, 15));
+        assert_eq!(view(1), ("ok", Some("14:00–22:00"), false, 0));
+        // no checks: measured against the main shift
+        assert_eq!(view(2), ("falta", Some("14:00–22:00"), false, 0));
+        assert_eq!(view(5), ("ok", Some("07:00–12:00"), true, 0));
+        assert_eq!(days[5].worked_min, 300);
+        assert_eq!(days[5].manual.len(), 2);
+        assert_eq!(days[5].manual[0].time, "07:00");
+        assert_eq!(
+            days[5].manual[0].note.as_deref(),
+            Some("vino 7-12, sin huella")
+        );
+        assert_eq!(view(6), ("descanso", None, false, 0));
     }
 
     #[test]

@@ -91,7 +91,52 @@ pub async fn list_attendance_employees(
     Ok(cursor.try_collect().await?)
 }
 
+/// The terminal name used for checks typed by an admin.
+pub const MANUAL_DEVICE: &str = "manual";
+
+/// Adds a check typed by an admin (forgotten check, no fingerprint yet...). Returns its id.
+pub async fn insert_manual_attendance_event(
+    state: &AppState,
+    company_id: &ObjectId,
+    employee_no: &str,
+    at: DateTime,
+    note: Option<String>,
+    author: &str,
+) -> Result<ObjectId> {
+    let event = AttendanceEvent {
+        id: None,
+        company_id: *company_id,
+        device: MANUAL_DEVICE.to_string(),
+        // unique per instant; two manual checks at the same minute would be the same check
+        serial_no: at.timestamp_millis(),
+        employee_no: employee_no.to_string(),
+        at,
+        method: "manual".to_string(),
+        created_at: DateTime::now(),
+        note,
+        author: Some(author.to_string()),
+    };
+    let r = state.attendance_events.insert_one(event).await?;
+    r.inserted_id
+        .as_object_id()
+        .ok_or_else(|| anyhow::anyhow!("no id"))
+}
+
+/// Deletes a manual check; checks from the terminal can't be deleted.
+pub async fn delete_manual_attendance_event(
+    state: &AppState,
+    company_id: &ObjectId,
+    id: ObjectId,
+) -> Result<bool> {
+    let r = state
+        .attendance_events
+        .delete_one(doc! { "_id": id, "company_id": company_id, "device": MANUAL_DEVICE })
+        .await?;
+    Ok(r.deleted_count > 0)
+}
+
 /// Creates or replaces the employee with that number.
+#[allow(clippy::too_many_arguments)]
 pub async fn upsert_attendance_employee(
     state: &AppState,
     company_id: &ObjectId,
@@ -99,12 +144,14 @@ pub async fn upsert_attendance_employee(
     name: &str,
     user_id: Option<ObjectId>,
     shift: Option<AttendanceShift>,
+    alternates: Vec<AttendanceShift>,
     active: bool,
 ) -> Result<()> {
     let shift = match shift {
         Some(s) => Some(mongodb::bson::to_bson(&s)?),
         None => None,
     };
+    let alternates = mongodb::bson::to_bson(&alternates)?;
     state
         .attendance_employees
         .update_one(
@@ -113,6 +160,7 @@ pub async fn upsert_attendance_employee(
                 "name": name,
                 "user_id": user_id,
                 "shift": shift,
+                "alternates": alternates,
                 "active": active,
                 "updated_at": DateTime::now(),
             } },

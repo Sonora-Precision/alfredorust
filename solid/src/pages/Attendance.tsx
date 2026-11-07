@@ -23,7 +23,9 @@ import {
   type AttendanceShift,
   type AttendanceStatus,
   type ShiftWindow,
+  addManualCheck,
   deleteAttendanceEmployee,
+  deleteManualCheck,
   getAttendanceReport,
   listAttendanceEmployees,
   saveAttendanceEmployee,
@@ -87,10 +89,19 @@ const dias = (days: number[]): string =>
 const ventanas = (s: AttendanceShift): string =>
   [{ days: s.days, start: s.start, end: s.end }, ...(s.other ?? [])].map((w) => `${dias(w.days)} ${w.start}–${w.end}`).join(' · ')
 
-const turno = (e: AttendanceEmployee): string =>
-  e.shift ? `${ventanas(e.shift)} · tolerancia ${e.shift.tolerance_min} min` : 'Sin horario fijo'
+/** "Mañana" / "Tarde" when the shift is one of the shop's, else its windows. */
+const nombreTurno = (s: AttendanceShift): string => {
+  const same = (p: AttendanceShift) => ventanas(p) === ventanas(s)
+  return same(SHIFT_PRESETS.manana) ? 'Mañana' : same(SHIFT_PRESETS.tarde) ? 'Tarde' : ventanas(s)
+}
 
-function DayCell(props: { day: AttendanceDay }): JSX.Element {
+const turno = (e: AttendanceEmployee): string => {
+  if (!e.shift) return 'Sin horario fijo'
+  const flex = (e.alternates ?? []).map(nombreTurno)
+  return `${ventanas(e.shift)} · tolerancia ${e.shift.tolerance_min} min${flex.length ? ` · también puede: ${flex.join(', ')}` : ''}`
+}
+
+function DayCell(props: { day: AttendanceDay; onDeleteManual: (id: string) => void }): JSX.Element {
   const st = () => STATUS[props.day.status]
   return (
     <TableCell class="align-top">
@@ -100,6 +111,27 @@ function DayCell(props: { day: AttendanceDay }): JSX.Element {
             {props.day.entry} – {props.day.exit ?? '¿?'}
           </p>
         </Show>
+        <Show when={props.day.alternate && props.day.window}>
+          <p class="text-muted-foreground">turno {props.day.window}</p>
+        </Show>
+        <For each={props.day.manual ?? []}>
+          {(m) => (
+            <p class="flex items-center gap-1 text-violet-700 dark:text-violet-300" title={[m.note, m.author && `por ${m.author}`].filter(Boolean).join(' · ')}>
+              <span class="tnum">{m.time}</span>
+              <span>manual</span>
+              <button
+                type="button"
+                class="rounded px-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                aria-label={`Borrar checada manual de las ${m.time}`}
+                onClick={() => {
+                  if (confirm(`¿Borrar la checada manual de las ${m.time}?`)) props.onDeleteManual(m.id)
+                }}
+              >
+                ×
+              </button>
+            </p>
+          )}
+        </For>
         <Show when={props.day.worked_min > 0}>
           <p class="tnum text-muted-foreground">{horas(props.day.worked_min)}</p>
         </Show>
@@ -141,6 +173,15 @@ export default function Attendance(): JSX.Element {
     },
     onError: (err) => toast.error('No se pudo quitar', humanizeError(err, '')),
   }))
+  const [manualOpen, setManualOpen] = createSignal(false)
+  const removeManual = createMutation(() => ({
+    mutationFn: (id: string) => deleteManualCheck(id),
+    onSuccess: () => {
+      toast.success('Checada manual borrada')
+      void qc.invalidateQueries({ queryKey: ['attendance-report'] })
+    },
+    onError: (err) => toast.error('No se pudo borrar', humanizeError(err, '')),
+  }))
 
   return (
     <div class="space-y-6">
@@ -162,6 +203,10 @@ export default function Attendance(): JSX.Element {
                 Esta semana
               </Button>
             </Show>
+            <Button variant="outline" onClick={() => setManualOpen(true)}>
+              <Plus class="mr-1.5 h-4 w-4" />
+              Checada manual
+            </Button>
           </div>
         }
       />
@@ -209,7 +254,7 @@ export default function Attendance(): JSX.Element {
                             {e.shift ? ` · ${ventanas(e.shift)}` : ''}
                           </p>
                         </TableCell>
-                        <For each={e.days}>{(d) => <DayCell day={d} />}</For>
+                        <For each={e.days}>{(d) => <DayCell day={d} onDeleteManual={(id) => removeManual.mutate(id)} />}</For>
                         <TableCell class="tnum align-top font-medium">{horas(e.totals.worked_min)}</TableCell>
                         <TableCell class="tnum align-top">
                           {e.totals.late_days > 0 ? `${e.totals.late_days} (${e.totals.late_min} min)` : e.shift ? '0' : '—'}
@@ -295,7 +340,89 @@ export default function Attendance(): JSX.Element {
       </Card>
 
       <Show when={editing()}>{(e) => <EmployeeForm initial={e()} onClose={() => setEditing(null)} />}</Show>
+      <Show when={manualOpen()}>
+        <ManualCheckForm employees={(employees.data ?? []).filter((e) => e.active)} onClose={() => setManualOpen(false)} />
+      </Show>
     </div>
+  )
+}
+
+/** Entry (and optional exit) typed by the admin: forgotten check, no fingerprint yet… */
+function ManualCheckForm(props: { employees: AttendanceEmployee[]; onClose: () => void }): JSX.Element {
+  const qc = useQueryClient()
+  const [no, setNo] = createSignal(props.employees[0]?.employee_no ?? '')
+  const [date, setDate] = createSignal(ymd(new Date()))
+  const [entry, setEntry] = createSignal('')
+  const [exit, setExit] = createSignal('')
+  const [note, setNote] = createSignal('')
+  const valid = () => no() !== '' && date() !== '' && (entry() !== '' || exit() !== '') && (!entry() || !exit() || entry() < exit())
+
+  const save = createMutation(() => ({
+    mutationFn: async () => {
+      for (const time of [entry(), exit()].filter(Boolean)) {
+        await addManualCheck({ employee_no: no(), date: date(), time, note: note().trim() || null })
+      }
+    },
+    onSuccess: () => {
+      toast.success('Checada guardada')
+      void qc.invalidateQueries({ queryKey: ['attendance-report'] })
+      props.onClose()
+    },
+    onError: (err) => {
+      void qc.invalidateQueries({ queryKey: ['attendance-report'] })
+      toast.error('No se pudo guardar', humanizeError(err, 'Revisa los datos'))
+    },
+  }))
+
+  return (
+    <Modal open onOpenChange={(o) => !o && props.onClose()} title="Checada manual">
+      <form
+        class="space-y-4"
+        onSubmit={(ev) => {
+          ev.preventDefault()
+          if (valid()) save.mutate()
+        }}
+      >
+        <p class="text-sm text-muted-foreground">
+          Para cuando alguien olvidó checar o todavía no tiene huella. Queda marcada como manual, con tu nombre y la nota.
+        </p>
+        <label class="block space-y-1">
+          <span class="text-sm font-medium text-foreground">Persona</span>
+          <Select value={no()} onChange={setNo}>
+            <For each={props.employees}>{(e) => <option value={e.employee_no}>{`${e.name} (#${e.employee_no})`}</option>}</For>
+          </Select>
+        </label>
+        <label class="block space-y-1">
+          <span class="text-sm font-medium text-foreground">Día</span>
+          <Input type="date" value={date()} onInput={setDate} />
+        </label>
+        <div class="grid grid-cols-2 gap-2">
+          <label class="space-y-1">
+            <span class="text-sm font-medium text-foreground">Entrada</span>
+            <Input type="time" value={entry()} onInput={setEntry} />
+          </label>
+          <label class="space-y-1">
+            <span class="text-sm font-medium text-foreground">Salida</span>
+            <Input type="time" value={exit()} onInput={setExit} />
+          </label>
+        </div>
+        <Show when={entry() && exit() && entry() >= exit()}>
+          <p class="text-xs text-red-600">La salida debe ser después de la entrada.</p>
+        </Show>
+        <label class="block space-y-1">
+          <span class="text-sm font-medium text-foreground">Nota</span>
+          <Input value={note()} onInput={setNote} maxLength={200} placeholder="Ej. vino 7–12, todavía sin huella" />
+        </label>
+        <div class="flex justify-end gap-2">
+          <Button type="button" variant="ghost" onClick={() => props.onClose()}>
+            Cancelar
+          </Button>
+          <Button type="submit" disabled={!valid() || save.isPending}>
+            {save.isPending ? 'Guardando…' : 'Guardar'}
+          </Button>
+        </div>
+      </form>
+    </Modal>
   )
 }
 
@@ -312,6 +439,14 @@ function EmployeeForm(props: { initial: AttendanceEmployee; onClose: () => void 
   const [days, setDays] = createSignal<number[]>(props.initial.shift?.days ?? [1, 2, 3, 4, 5])
   const [tolerance, setTolerance] = createSignal(String(props.initial.shift?.tolerance_min ?? 10))
   const [others, setOthers] = createSignal<ShiftWindow[]>(props.initial.shift?.other ?? [])
+  // Flexibility: the shop shifts (by preset key) they may also work.
+  const [flex, setFlex] = createSignal<('manana' | 'tarde')[]>(
+    (props.initial.alternates ?? []).flatMap((a) => {
+      const n = nombreTurno(a)
+      return n === 'Mañana' ? ['manana' as const] : n === 'Tarde' ? ['tarde' as const] : []
+    }),
+  )
+  const toggleFlex = (k: 'manana' | 'tarde', on: boolean) => setFlex(on ? [...flex().filter((x) => x !== k), k] : flex().filter((x) => x !== k))
   const [active, setActive] = createSignal(props.initial.active)
 
   const valid = createMemo(
@@ -363,6 +498,7 @@ function EmployeeForm(props: { initial: AttendanceEmployee; onClose: () => void 
                 .map((w) => ({ ...w, days: [...w.days].sort() })),
             }
           : null,
+        alternates: hasShift() ? flex().map((k) => ({ ...SHIFT_PRESETS[k], tolerance_min: Math.max(0, Number(tolerance()) || 0) })) : [],
         active: active(),
       }),
     onSuccess: () => {
@@ -495,6 +631,15 @@ function EmployeeForm(props: { initial: AttendanceEmployee; onClose: () => void 
               <Plus class="mr-1.5 h-4 w-4" />
               Horario distinto para otros días (ej. sábado)
             </Button>
+
+            <div class="space-y-1 border-t border-border pt-3">
+              <span class="text-xs font-medium text-foreground">Turno flexible: también puede venir en</span>
+              <div class="flex flex-wrap gap-4">
+                <Checkbox checked={flex().includes('manana')} onChange={(on) => toggleFlex('manana', on)} label="Mañana" />
+                <Checkbox checked={flex().includes('tarde')} onChange={(on) => toggleFlex('tarde', on)} label="Tarde" />
+              </div>
+              <p class="text-xs text-muted-foreground">Cada día se mide contra el turno más cercano a su hora de entrada.</p>
+            </div>
           </div>
         </Show>
 
