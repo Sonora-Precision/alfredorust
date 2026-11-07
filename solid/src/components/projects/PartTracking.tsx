@@ -388,7 +388,7 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
                         projectId={props.projectId}
                         material={c.material}
                         status={c.material_status}
-                        canEdit={props.canUploadFiles}
+                        canEdit={props.canEdit && !cancelled()}
                         cut={cutOf().get(c.id)}
                       />
                       <PartMachines
