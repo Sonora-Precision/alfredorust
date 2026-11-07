@@ -762,7 +762,13 @@ function resolve(path: string): unknown {
 
 // --- asistencia (time clock) -------------------------------------------------
 
-const DEMO_SHIFT = { start: '14:00', end: '22:00', days: [1, 2, 3, 4, 5], tolerance_min: 10 }
+const DEMO_SHIFT = {
+  start: '14:00',
+  end: '22:00',
+  days: [1, 2, 3, 4, 5],
+  tolerance_min: 10,
+  other: [{ days: [6], start: '12:00', end: '17:00' }],
+}
 const DEMO_ATTENDANCE_EMPLOYEES = [
   { employee_no: '0002', name: 'Daniel Rivera', user_id: null, shift: null, active: true },
   { employee_no: '0004', name: 'José Márquez', user_id: null, shift: DEMO_SHIFT, active: true },

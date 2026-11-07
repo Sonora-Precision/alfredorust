@@ -2056,17 +2056,44 @@ pub struct AttendanceEvent {
     pub created_at: DateTime,
 }
 
-/// The work schedule of an employee: a fixed daily window on some weekdays.
+/// A daily window on some weekdays.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ShiftWindow {
+    /// ISO weekdays: 1 = Monday … 7 = Sunday.
+    pub days: Vec<u8>,
+    /// "HH:MM", shop time.
+    pub start: String,
+    /// "HH:MM", shop time; after `start` (overnight shifts are not supported).
+    pub end: String,
+}
+
+/// The work schedule of an employee: a main daily window on some weekdays, plus other windows
+/// for days with a different schedule (e.g. Saturday 12:00–17:00 for the afternoon shift).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AttendanceShift {
     /// "HH:MM", shop time.
     pub start: String,
     /// "HH:MM", shop time; after `start` (overnight shifts are not supported).
     pub end: String,
-    /// ISO weekdays that are worked: 1 = Monday … 7 = Sunday.
+    /// ISO weekdays that are worked with the main window: 1 = Monday … 7 = Sunday.
     pub days: Vec<u8>,
     /// Minutes after `start` that still count as on time.
     pub tolerance_min: i32,
+    /// Days with another window; a day is in at most one window.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub other: Vec<ShiftWindow>,
+}
+
+impl AttendanceShift {
+    /// (start, end) of that ISO weekday, or None if it is not worked.
+    pub fn window(&self, weekday: u8) -> Option<(&str, &str)> {
+        if let Some(w) = self.other.iter().find(|w| w.days.contains(&weekday)) {
+            return Some((&w.start, &w.end));
+        }
+        self.days
+            .contains(&weekday)
+            .then_some((self.start.as_str(), self.end.as_str()))
+    }
 }
 
 /// Someone registered in the time clock, linked by their employee number.

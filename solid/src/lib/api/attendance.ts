@@ -2,6 +2,14 @@
 // weekly report. Admin-only on the server.
 import { apiGet, apiPost } from './client'
 
+export interface ShiftWindow {
+  /** 1 = Monday … 7 = Sunday */
+  days: number[]
+  /** "HH:MM", shop time */
+  start: string
+  end: string
+}
+
 export interface AttendanceShift {
   /** "HH:MM", shop time */
   start: string
@@ -9,6 +17,8 @@ export interface AttendanceShift {
   /** 1 = Monday … 7 = Sunday */
   days: number[]
   tolerance_min: number
+  /** Days with a different schedule, e.g. Saturday 12:00–17:00. */
+  other?: ShiftWindow[]
 }
 
 export interface AttendanceEmployee {

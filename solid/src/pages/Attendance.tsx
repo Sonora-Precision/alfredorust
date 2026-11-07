@@ -20,7 +20,9 @@ import { listUsers } from '../lib/api/admin'
 import {
   type AttendanceDay,
   type AttendanceEmployee,
+  type AttendanceShift,
   type AttendanceStatus,
+  type ShiftWindow,
   deleteAttendanceEmployee,
   getAttendanceReport,
   listAttendanceEmployees,
@@ -40,6 +42,12 @@ const STATUS: Record<AttendanceStatus, { label: string; class: string }> = {
 }
 
 const DAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
+
+// The shop's two shifts (Daniel, 2026-11-07).
+const SHIFT_PRESETS: Record<'manana' | 'tarde', AttendanceShift> = {
+  manana: { start: '07:00', end: '15:00', days: [1, 2, 3, 4, 5], tolerance_min: 10, other: [{ days: [6], start: '07:00', end: '12:00' }] },
+  tarde: { start: '14:00', end: '22:00', days: [1, 2, 3, 4, 5], tolerance_min: 10, other: [{ days: [6], start: '12:00', end: '17:00' }] },
+}
 
 const horas = (min: number): string => {
   const m = Math.round(min)
@@ -72,12 +80,15 @@ const rango = (from: string, to: string): string => {
   return `${f.toLocaleDateString('es-MX', opt)} – ${t.toLocaleDateString('es-MX', { ...opt, year: 'numeric' })}`
 }
 
-const turno = (e: AttendanceEmployee): string => {
-  const s = e.shift
-  if (!s) return 'Sin horario fijo'
-  const dias = s.days.length === 5 && s.days.every((d, i) => d === i + 1) ? 'L–V' : s.days.map((d) => DAYS[d - 1]).join(', ')
-  return `${s.start}–${s.end} · ${dias} · tolerancia ${s.tolerance_min} min`
-}
+const dias = (days: number[]): string =>
+  days.length === 5 && days.every((d, i) => d === i + 1) ? 'L–V' : days.map((d) => DAYS[d - 1]).join(', ')
+
+/** "L–V 14:00–22:00 · Sáb 12:00–17:00" */
+const ventanas = (s: AttendanceShift): string =>
+  [{ days: s.days, start: s.start, end: s.end }, ...(s.other ?? [])].map((w) => `${dias(w.days)} ${w.start}–${w.end}`).join(' · ')
+
+const turno = (e: AttendanceEmployee): string =>
+  e.shift ? `${ventanas(e.shift)} · tolerancia ${e.shift.tolerance_min} min` : 'Sin horario fijo'
 
 function DayCell(props: { day: AttendanceDay }): JSX.Element {
   const st = () => STATUS[props.day.status]
@@ -195,7 +206,7 @@ export default function Attendance(): JSX.Element {
                           <p class="font-medium text-foreground">{e.name}</p>
                           <p class="text-xs text-muted-foreground">
                             #{e.employee_no}
-                            {e.shift ? ` · ${e.shift.start}–${e.shift.end}` : ''}
+                            {e.shift ? ` · ${ventanas(e.shift)}` : ''}
                           </p>
                         </TableCell>
                         <For each={e.days}>{(d) => <DayCell day={d} />}</For>
@@ -232,7 +243,7 @@ export default function Attendance(): JSX.Element {
                 employee_no: '',
                 name: '',
                 user_id: null,
-                shift: { start: '14:00', end: '22:00', days: [1, 2, 3, 4, 5], tolerance_min: 10 },
+                shift: SHIFT_PRESETS.tarde,
                 active: true,
               })
             }
@@ -300,9 +311,40 @@ function EmployeeForm(props: { initial: AttendanceEmployee; onClose: () => void 
   const [end, setEnd] = createSignal(props.initial.shift?.end ?? '22:00')
   const [days, setDays] = createSignal<number[]>(props.initial.shift?.days ?? [1, 2, 3, 4, 5])
   const [tolerance, setTolerance] = createSignal(String(props.initial.shift?.tolerance_min ?? 10))
+  const [others, setOthers] = createSignal<ShiftWindow[]>(props.initial.shift?.other ?? [])
   const [active, setActive] = createSignal(props.initial.active)
 
-  const valid = createMemo(() => no().trim() !== '' && name().trim() !== '' && (!hasShift() || (days().length > 0 && start() < end())))
+  const valid = createMemo(
+    () =>
+      no().trim() !== '' &&
+      name().trim() !== '' &&
+      (!hasShift() || (days().length > 0 && start() < end() && others().every((w) => w.days.length > 0 && w.start < w.end))),
+  )
+
+  const applyPreset = (p: AttendanceShift) => {
+    setStart(p.start)
+    setEnd(p.end)
+    setDays(p.days)
+    setOthers(p.other ?? [])
+  }
+  /** A day belongs to one schedule only: picking it in one removes it from the others. */
+  const toggleMain = (d: number) => {
+    if (days().includes(d)) setDays(days().filter((x) => x !== d))
+    else {
+      setDays([...days(), d])
+      setOthers(others().map((w) => ({ ...w, days: w.days.filter((x) => x !== d) })))
+    }
+  }
+  const toggleOther = (i: number, d: number) => {
+    const w = others()[i]
+    if (w.days.includes(d)) {
+      setOthers(others().map((o, j) => (j === i ? { ...o, days: o.days.filter((x) => x !== d) } : o)))
+    } else {
+      setDays(days().filter((x) => x !== d))
+      setOthers(others().map((o, j) => (j === i ? { ...o, days: [...o.days, d] } : { ...o, days: o.days.filter((x) => x !== d) })))
+    }
+  }
+  const setOther = (i: number, patch: Partial<ShiftWindow>) => setOthers(others().map((o, j) => (j === i ? { ...o, ...patch } : o)))
 
   const save = createMutation(() => ({
     mutationFn: () =>
@@ -311,7 +353,15 @@ function EmployeeForm(props: { initial: AttendanceEmployee; onClose: () => void 
         name: name().trim(),
         user_id: userId() || null,
         shift: hasShift()
-          ? { start: start(), end: end(), days: [...days()].sort(), tolerance_min: Math.max(0, Number(tolerance()) || 0) }
+          ? {
+              start: start(),
+              end: end(),
+              days: [...days()].sort(),
+              tolerance_min: Math.max(0, Number(tolerance()) || 0),
+              other: others()
+                .filter((w) => w.days.length > 0)
+                .map((w) => ({ ...w, days: [...w.days].sort() })),
+            }
           : null,
         active: active(),
       }),
@@ -324,8 +374,7 @@ function EmployeeForm(props: { initial: AttendanceEmployee; onClose: () => void 
     onError: (err) => toast.error('No se pudo guardar', humanizeError(err, 'Revisa los datos')),
   }))
 
-  const toggleDay = (d: number) => setDays((cur) => (cur.includes(d) ? cur.filter((x) => x !== d) : [...cur, d]))
-  const chip = (on: boolean) =>
+  const chip =(on: boolean) =>
     `h-8 w-11 rounded-md border text-xs ${on ? 'border-primary bg-primary/15 text-foreground' : 'border-border text-muted-foreground hover:bg-muted'}`
 
   return (
@@ -357,6 +406,15 @@ function EmployeeForm(props: { initial: AttendanceEmployee; onClose: () => void 
         <Checkbox checked={hasShift()} onChange={setHasShift} label="Tiene horario fijo (cuenta retardos y faltas)" />
         <Show when={hasShift()}>
           <div class="space-y-3 rounded-lg border border-border p-3">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="text-xs text-muted-foreground">Turnos del taller:</span>
+              <Button type="button" variant="outline" onClick={() => applyPreset(SHIFT_PRESETS.manana)}>
+                Mañana
+              </Button>
+              <Button type="button" variant="outline" onClick={() => applyPreset(SHIFT_PRESETS.tarde)}>
+                Tarde
+              </Button>
+            </div>
             <div class="grid grid-cols-3 gap-2">
               <label class="space-y-1">
                 <span class="text-xs text-muted-foreground">Entrada</span>
@@ -376,7 +434,7 @@ function EmployeeForm(props: { initial: AttendanceEmployee; onClose: () => void 
               <div class="flex flex-wrap gap-1">
                 <For each={DAYS}>
                   {(label, i) => (
-                    <button type="button" class={chip(days().includes(i() + 1))} onClick={() => toggleDay(i() + 1)}>
+                    <button type="button" class={chip(days().includes(i() + 1))} onClick={() => toggleMain(i() + 1)}>
                       {label}
                     </button>
                   )}
@@ -386,6 +444,57 @@ function EmployeeForm(props: { initial: AttendanceEmployee; onClose: () => void 
             <Show when={start() >= end()}>
               <p class="text-xs text-red-600">La salida debe ser después de la entrada.</p>
             </Show>
+
+            <For each={others()}>
+              {(w, i) => (
+                <div class="space-y-2 border-t border-border pt-3">
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-medium text-foreground">Horario distinto</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      aria-label="Quitar este horario"
+                      onClick={() => setOthers(others().filter((_, j) => j !== i()))}
+                    >
+                      <Trash2 class="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <div class="flex flex-wrap gap-1">
+                    <For each={DAYS}>
+                      {(label, d) => (
+                        <button type="button" class={chip(w.days.includes(d() + 1))} onClick={() => toggleOther(i(), d() + 1)}>
+                          {label}
+                        </button>
+                      )}
+                    </For>
+                  </div>
+                  <div class="grid grid-cols-2 gap-2">
+                    <label class="space-y-1">
+                      <span class="text-xs text-muted-foreground">Entrada</span>
+                      <Input type="time" value={w.start} onInput={(v) => setOther(i(), { start: v })} />
+                    </label>
+                    <label class="space-y-1">
+                      <span class="text-xs text-muted-foreground">Salida</span>
+                      <Input type="time" value={w.end} onInput={(v) => setOther(i(), { end: v })} />
+                    </label>
+                  </div>
+                  <Show when={w.start >= w.end}>
+                    <p class="text-xs text-red-600">La salida debe ser después de la entrada.</p>
+                  </Show>
+                </div>
+              )}
+            </For>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setDays(days().filter((d) => d !== 6))
+                setOthers([...others().filter((w) => !w.days.includes(6)), { days: [6], start: '07:00', end: '12:00' }])
+              }}
+            >
+              <Plus class="mr-1.5 h-4 w-4" />
+              Horario distinto para otros días (ej. sábado)
+            </Button>
           </div>
         </Show>
 

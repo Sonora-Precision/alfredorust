@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use super::finance::helpers::require_admin_active;
 use super::project_backend::{iso, json_error};
 use crate::{
-    models::{AttendanceEmployee, AttendanceEvent, AttendanceShift},
+    models::{AttendanceEmployee, AttendanceEvent, AttendanceShift, ShiftWindow},
     session::SessionUser,
     state::{
         AppState, MAX_EVENTS_PER_INGEST, NewAttendanceEvent, delete_attendance_employee,
@@ -174,11 +174,21 @@ pub async fn api_attendance_last(
 // ---------- employees ----------
 
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct ShiftWindowData {
+    pub days: Vec<u8>,
+    pub start: String,
+    pub end: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct ShiftData {
     pub start: String,
     pub end: String,
     pub days: Vec<u8>,
     pub tolerance_min: i32,
+    /// Days with a different window, e.g. Saturday 12:00–17:00.
+    #[serde(default)]
+    pub other: Vec<ShiftWindowData>,
 }
 
 #[derive(Debug, Serialize)]
@@ -196,6 +206,15 @@ fn shift_data(s: &AttendanceShift) -> ShiftData {
         end: s.end.clone(),
         days: s.days.clone(),
         tolerance_min: s.tolerance_min,
+        other: s
+            .other
+            .iter()
+            .map(|w| ShiftWindowData {
+                days: w.days.clone(),
+                start: w.start.clone(),
+                end: w.end.clone(),
+            })
+            .collect(),
     }
 }
 
@@ -213,27 +232,52 @@ fn parse_hm(value: &str) -> Option<NaiveTime> {
     NaiveTime::parse_from_str(value.trim(), "%H:%M").ok()
 }
 
-fn validate_shift(s: ShiftData) -> Result<AttendanceShift, &'static str> {
-    let (Some(start), Some(end)) = (parse_hm(&s.start), parse_hm(&s.end)) else {
+/// Validated (days, start, end) of one window.
+fn validate_window(
+    start: &str,
+    end: &str,
+    days: Vec<u8>,
+) -> Result<(Vec<u8>, String, String), &'static str> {
+    let (Some(start), Some(end)) = (parse_hm(start), parse_hm(end)) else {
         return Err("start and end must be HH:MM");
     };
     if end <= start {
         return Err("end must be after start (overnight shifts are not supported)");
     }
-    let mut days = s.days;
+    let mut days = days;
     days.sort_unstable();
     days.dedup();
     if days.is_empty() || days.iter().any(|d| !(1..=7).contains(d)) {
         return Err("days must be 1 (Monday) to 7 (Sunday)");
     }
+    Ok((
+        days,
+        start.format("%H:%M").to_string(),
+        end.format("%H:%M").to_string(),
+    ))
+}
+
+fn validate_shift(s: ShiftData) -> Result<AttendanceShift, &'static str> {
+    let (days, start, end) = validate_window(&s.start, &s.end, s.days)?;
     if !(0..=240).contains(&s.tolerance_min) {
         return Err("tolerance_min must be 0-240");
     }
+    let mut seen = days.clone();
+    let mut other = Vec::with_capacity(s.other.len());
+    for w in s.other {
+        let (days, start, end) = validate_window(&w.start, &w.end, w.days)?;
+        if days.iter().any(|d| seen.contains(d)) {
+            return Err("a day can only be in one schedule");
+        }
+        seen.extend(&days);
+        other.push(ShiftWindow { days, start, end });
+    }
     Ok(AttendanceShift {
-        start: start.format("%H:%M").to_string(),
-        end: end.format("%H:%M").to_string(),
+        start,
+        end,
         days,
         tolerance_min: s.tolerance_min,
+        other,
     })
 }
 
@@ -481,18 +525,18 @@ fn day_data(
     };
     let weekday = date.weekday().number_from_monday() as u8;
     let mut late_min = 0;
-    let status = match shift {
+    let status = match shift.map(|s| (s, s.window(weekday))) {
         None => "sin_horario",
-        Some(s) if !s.days.contains(&weekday) => {
+        Some((_, None)) => {
             if checks.is_empty() {
                 "descanso"
             } else {
                 "extra"
             }
         }
-        Some(s) => {
-            let start = minute_of(&s.start);
-            let end_at = shop_midnight(date).timestamp_millis() + minute_of(&s.end) * 60_000;
+        Some((s, Some((win_start, win_end)))) => {
+            let start = minute_of(win_start);
+            let end_at = shop_midnight(date).timestamp_millis() + minute_of(win_end) * 60_000;
             match entry {
                 None if now.timestamp_millis() < end_at => "pendiente",
                 None => "falta",
@@ -694,6 +738,11 @@ mod tests {
             end: "22:00".into(),
             days: vec![1, 2, 3, 4, 5],
             tolerance_min: 10,
+            other: vec![ShiftWindow {
+                days: vec![6],
+                start: "12:00".into(),
+                end: "17:00".into(),
+            }],
         }
     }
 
@@ -731,9 +780,12 @@ mod tests {
             check("0004", "2026-11-10T22:00:00-07:00"),
             // Wed 11: absent. Thu 12: only the entry.
             check("0004", "2026-11-12T13:55:00-07:00"),
-            // Sat 14: came on a day off
-            check("0004", "2026-11-14T09:00:00-07:00"),
-            check("0004", "2026-11-14T13:00:00-07:00"),
+            // Sat 14: Saturday window 12:00-17:00, 20 min late
+            check("0004", "2026-11-14T12:20:00-07:00"),
+            check("0004", "2026-11-14T17:00:00-07:00"),
+            // Sun 15: came on a day off
+            check("0004", "2026-11-15T10:00:00-07:00"),
+            check("0004", "2026-11-15T11:00:00-07:00"),
             // no shift: only checks
             check("0002", "2026-11-09T08:00:00-07:00"),
             // not registered
@@ -752,8 +804,8 @@ mod tests {
                 "falta",
                 "incompleto",
                 "pendiente",
-                "extra",
-                "descanso"
+                "retardo",
+                "extra"
             ]
         );
         let mon = &jose.days[0];
@@ -768,13 +820,14 @@ mod tests {
             (Some("14:08"), Some("22:01"), 2, 473, 0)
         );
         assert_eq!((jose.days[1].late_min, jose.days[1].worked_min), (25, 455));
-        assert_eq!(jose.days[5].worked_min, 240);
+        assert_eq!((jose.days[5].late_min, jose.days[5].worked_min), (20, 280));
+        assert_eq!(jose.days[6].worked_min, 60);
         assert_eq!(
             jose.totals,
             Totals {
-                worked_min: 473 + 455 + 240,
-                late_min: 25,
-                late_days: 1,
+                worked_min: 473 + 455 + 280 + 60,
+                late_min: 25 + 20,
+                late_days: 2,
                 absences: 1,
                 incomplete: 1
             }
@@ -797,15 +850,39 @@ mod tests {
             end: "22:00".into(),
             days: vec![5, 1, 1],
             tolerance_min: 10,
+            other: vec![ShiftWindowData {
+                days: vec![6],
+                start: "7:00".into(),
+                end: "12:00".into(),
+            }],
         })
         .unwrap();
         assert_eq!(ok.days, vec![1, 5]);
+        assert_eq!(ok.window(6), Some(("07:00", "12:00")));
+        assert_eq!(ok.window(1), Some(("14:00", "22:00")));
+        assert_eq!(ok.window(7), None);
+        // the same day in two schedules
+        assert!(
+            validate_shift(ShiftData {
+                start: "14:00".into(),
+                end: "22:00".into(),
+                days: vec![1, 6],
+                tolerance_min: 0,
+                other: vec![ShiftWindowData {
+                    days: vec![6],
+                    start: "12:00".into(),
+                    end: "17:00".into(),
+                }],
+            })
+            .is_err()
+        );
         assert!(
             validate_shift(ShiftData {
                 start: "22:00".into(),
                 end: "06:00".into(),
                 days: vec![1],
-                tolerance_min: 0
+                tolerance_min: 0,
+                other: vec![],
             })
             .is_err()
         );
@@ -814,7 +891,8 @@ mod tests {
                 start: "8".into(),
                 end: "17:00".into(),
                 days: vec![1],
-                tolerance_min: 0
+                tolerance_min: 0,
+                other: vec![],
             })
             .is_err()
         );
@@ -823,7 +901,8 @@ mod tests {
                 start: "08:00".into(),
                 end: "17:00".into(),
                 days: vec![8],
-                tolerance_min: 0
+                tolerance_min: 0,
+                other: vec![],
             })
             .is_err()
         );
