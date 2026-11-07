@@ -86,6 +86,12 @@ pub async fn api_part_material_set(
                 part_thickness,
                 part_width,
                 part_length,
+                saw_kerf: match m.saw_kerf {
+                    Some(k) if !k.is_finite() || !(0.0..=1.0).contains(&k) => {
+                        return json_error(StatusCode::BAD_REQUEST, "el corte de sierra va en pulgadas, de 0 a 1");
+                    }
+                    other => other,
+                },
                 bar_to_order: clean_text(m.bar_to_order, 120),
                 customer_supplied: m.customer_supplied,
                 ordered: m.ordered,

@@ -1007,6 +1007,10 @@ pub struct PartMaterial {
     pub part_width: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub part_length: Option<f64>,
+    /// What the saw takes per piece, in inches (default 1/8"): the bar to order is
+    /// pieces × (cut length + kerf).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub saw_kerf: Option<f64>,
     /// Free text, as ordered: "1/2\" X .625\" X 80\"".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bar_to_order: Option<String>,

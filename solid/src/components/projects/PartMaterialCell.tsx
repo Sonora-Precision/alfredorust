@@ -80,6 +80,8 @@ export function PartMaterialCell(props: {
   status: MaterialStatus | null | undefined
   projectId: string
   canEdit: boolean
+  /** Pieces of the part, for the bar to order. */
+  pieces?: number
   /** Its row in the cut list (place in the saw queue, cut done). */
   cut?: CutListItem
 }): JSX.Element {
@@ -124,6 +126,7 @@ export function PartMaterialCell(props: {
           partName={props.partName}
           projectId={props.projectId}
           material={m() ?? {}}
+          pieces={props.pieces}
           onClose={() => setOpen(false)}
         />
       </Show>
@@ -183,12 +186,13 @@ export function MaterialEditor(props: {
   partName: string
   projectId: string
   material: PartMaterial
+  /** Pieces of the part, for the bar to order. */
+  pieces?: number
   onClose: () => void
 }): JSX.Element {
   const qc = useQueryClient()
   const [material, setMaterial] = createSignal(props.material.material ?? '')
   const [shape, setShape] = createSignal(props.material.shape ?? 'solera')
-  const [bar, setBar] = createSignal(props.material.bar_to_order ?? '')
   const [ordered, setOrdered] = createSignal(props.material.ordered ?? false)
   const [supplied, setSupplied] = createSignal(props.material.customer_supplied ?? false)
   const [notes, setNotes] = createSignal(props.material.notes ?? '')
@@ -220,7 +224,6 @@ export function MaterialEditor(props: {
       material: material().trim() || null,
       shape: shape().trim() || null,
       ...dims,
-      bar_to_order: bar().trim() || null,
       ordered: ordered(),
       customer_supplied: supplied(),
       notes: notes().trim() || null,
@@ -262,12 +265,9 @@ export function MaterialEditor(props: {
           material={props.material}
           round={round()}
           firstLabel={round() ? 'Diámetro' : 'Espesor'}
+          pieces={props.pieces ?? 1}
           ref={(api) => (sizer = api)}
         />
-        <label class="block space-y-1">
-          <span class="text-xs text-muted-foreground">Barra a pedir</span>
-          <input class={field} placeholder={round() ? 'Ø1.25" x 144"' : '0.125" x 1.75" x 175"'} value={bar()} onInput={(e) => setBar(e.currentTarget.value)} />
-        </label>
         <div class="flex flex-wrap gap-4">
           <label class="inline-flex items-center gap-2">
             <input type="checkbox" checked={ordered()} onChange={(e) => setOrdered(e.currentTarget.checked)} />

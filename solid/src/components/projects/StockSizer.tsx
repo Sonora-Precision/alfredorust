@@ -15,21 +15,31 @@ export const STOCK_STEP = 0.25
 const inch = (v: number | null | undefined) => (v == null ? '' : String(+v.toFixed(4)).replace(/^0\./, '.'))
 
 /** The stock suggested for one part dimension, in inches. */
+/** What the saw takes per piece unless the part says otherwise. */
+export const DEFAULT_KERF = 0.125
+
+/** Bar length to order: every piece takes its cut length plus what the saw takes. */
+export function barLength(pieces: number, cut: number, kerf: number): number {
+  return Math.max(0, Math.ceil(pieces)) * (cut + kerf)
+}
+
 export function suggestStock(part: number): number {
   return Math.ceil((part + STOCK_ALLOWANCE) / STOCK_STEP - 1e-6) * STOCK_STEP
 }
 
 export type SizerValue = Pick<
   PartMaterial,
-  'thickness' | 'width' | 'length' | 'part_thickness' | 'part_width' | 'part_length'
+  'thickness' | 'width' | 'length' | 'part_thickness' | 'part_width' | 'part_length' | 'saw_kerf' | 'bar_to_order'
 >
 
 export interface SizerApi {
-  /** The six measures in inches, or the name of the first invalid field. */
+  /** The measures in inches with the saw cut and bar to order, or the name of the first invalid field. */
   read: () => SizerValue | string
   dirty: () => boolean
   /** Length per piece being typed (inches), for the "to order" preview. */
   cutLength: () => number | null
+  /** Saw cut per piece being typed (inches). */
+  kerf: () => number
   /** After a save: show what was saved, in inches. */
   saved: () => void
 }
@@ -41,6 +51,8 @@ export function StockSizer(props: {
   /** "Diámetro" / "Entre caras" / "Espesor". */
   firstLabel: string
   disabled?: boolean
+  /** Pieces of the part: the bar to order is pieces × (length + saw cut). */
+  pieces: number
   ref: (api: SizerApi) => void
 }): JSX.Element {
   const m = () => props.material
@@ -53,6 +65,8 @@ export function StockSizer(props: {
   const [sl, setSl] = createSignal(inch(m().length))
   // A stock field follows the suggestion until it is typed in (or was already saved).
   const [touched, setTouched] = createSignal({ t: m().thickness != null, w: m().width != null, l: m().length != null })
+  const [kerf, setKerf] = createSignal(inch(m().saw_kerf ?? DEFAULT_KERF))
+  const [bar, setBar] = createSignal(m().bar_to_order ?? '')
 
   const partIn = (v: string) => parseLength(v, unit())
   const stockIn = (v: string) => parseInches(v)
@@ -81,6 +95,21 @@ export function StockSizer(props: {
     follow('l', pl())
   }
 
+  const kerfIn = () => parseInches(kerf()) ?? 0
+  /** "1.25\" × 3\" × 31.125\"": the stock section by pieces × (length + saw cut). */
+  const autoBar = () => {
+    const t = stockIn(st())
+    const w = props.round ? null : stockIn(sw())
+    const l = stockIn(sl())
+    const k = kerfIn()
+    if (t == null || l == null || [t, l, k, w ?? 0].some(Number.isNaN)) return ''
+    const section = props.round ? `Ø${inch(t)}"` : `${inch(t)}" × ${w == null ? '?' : inch(w)}"`
+    return `${section} × ${inch(+barLength(props.pieces, l, k).toFixed(3))}"`
+  }
+  // The bar follows the calculation until typed in; a saved bar that differs stays as typed.
+  const [barTouched, setBarTouched] = createSignal(!!m().bar_to_order && m().bar_to_order !== autoBar())
+  const barValue = () => (barTouched() ? bar() : autoBar())
+
   const same = (a: number | null, b: number | null | undefined) => (a ?? null) === (b ?? null)
   props.ref({
     read: () => {
@@ -91,11 +120,21 @@ export function StockSizer(props: {
         [`${props.firstLabel} del stock`, stockIn(st())],
         ['Ancho del stock', props.round ? null : stockIn(sw())],
         ['Largo por pieza', stockIn(sl())],
+        ['Corte de sierra', parseInches(kerf())],
       ]
       const bad = vals.find(([, v]) => v != null && Number.isNaN(v))
       if (bad) return bad[0]
-      const [a, b, c, d, e, f] = vals.map(([, v]) => v)
-      return { part_thickness: a, part_width: b, part_length: c, thickness: d, width: e, length: f }
+      const [a, b, c, d, e, f, k] = vals.map(([, v]) => v)
+      return {
+        part_thickness: a,
+        part_width: b,
+        part_length: c,
+        thickness: d,
+        width: e,
+        length: f,
+        saw_kerf: k ?? DEFAULT_KERF,
+        bar_to_order: barValue().trim() || null,
+      }
     },
     dirty: () =>
       !same(partIn(pt()), m().part_thickness) ||
@@ -103,7 +142,10 @@ export function StockSizer(props: {
       !same(partIn(pl()), m().part_length) ||
       !same(stockIn(st()), m().thickness) ||
       (!props.round && !same(stockIn(sw()), m().width)) ||
-      !same(stockIn(sl()), m().length),
+      !same(stockIn(sl()), m().length) ||
+      kerfIn() !== (m().saw_kerf ?? DEFAULT_KERF) ||
+      (barTouched() && (bar().trim() || null) !== (m().bar_to_order ?? null)),
+    kerf: kerfIn,
     cutLength: () => {
       const x = stockIn(sl())
       return x == null || Number.isNaN(x) ? null : x
@@ -186,6 +228,38 @@ export function StockSizer(props: {
       <p class="text-[11px] text-muted-foreground">
         Sugerido: la pieza + 1/32" redondeado al siguiente 1/4". Puedes cambiarlo.
       </p>
+      <div class="grid grid-cols-3 gap-2 pt-1">
+        <label class="space-y-1">
+          <span class="text-xs text-muted-foreground">Corte de sierra (in)</span>
+          <input class={field} placeholder=".125" disabled={props.disabled} value={kerf()} onInput={(e) => setKerf(e.currentTarget.value)} />
+        </label>
+        <label class="col-span-2 space-y-1">
+          <span class="flex items-center justify-between text-xs text-muted-foreground">
+            Barra a pedir
+            <Show when={barTouched() && autoBar() && autoBar() !== bar() && !props.disabled}>
+              <button type="button" class="text-sky-600 hover:underline" onClick={() => setBarTouched(false)}>
+                Calcular: {autoBar()}
+              </button>
+            </Show>
+          </span>
+          <input
+            class={field}
+            placeholder={props.round ? 'Ø1.25" × 31.125"' : '1.25" × 3" × 31.125"'}
+            disabled={props.disabled}
+            value={barValue()}
+            onInput={(e) => {
+              setBar(e.currentTarget.value)
+              setBarTouched(true)
+            }}
+          />
+        </label>
+      </div>
+      <Show when={stockIn(sl()) != null && !Number.isNaN(stockIn(sl())!)}>
+        <p class="tnum text-[11px] text-muted-foreground">
+          {Math.ceil(props.pieces)} {Math.ceil(props.pieces) === 1 ? 'pza' : 'pzas'} × ({inch(stockIn(sl()))}" + {inch(kerfIn())}" de sierra) ={' '}
+          <b class="text-foreground">{inch(+barLength(props.pieces, stockIn(sl())!, kerfIn()).toFixed(3))}"</b> de largo
+        </p>
+      </Show>
     </div>
   )
 }
