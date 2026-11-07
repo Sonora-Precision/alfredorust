@@ -1132,6 +1132,10 @@ export interface PartMaterial {
   width?: number | null
   /** Cut length per piece. */
   length?: number | null
+  /** Finished part size in inches; the stock above is suggested from it. */
+  part_thickness?: number | null
+  part_width?: number | null
+  part_length?: number | null
   bar_to_order?: string | null
   customer_supplied?: boolean
   ordered?: boolean

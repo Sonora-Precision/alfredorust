@@ -116,6 +116,21 @@ async fn material_receipt_matches_and_assigns_bars() {
     assert_eq!(c288["material"]["shape"], "solera");
     assert_eq!(c288["material_status"], "pedido");
 
+    // The finished part size is kept next to the stock it is cut from (19 × 38 × 120 mm).
+    let mut with_part = material(0.1875, 1.5, 5.0);
+    with_part["part_thickness"] = serde_json::json!(0.748);
+    with_part["part_width"] = serde_json::json!(1.4961);
+    with_part["part_length"] = serde_json::json!(4.7244);
+    let (status, body) = post(format!("/api/admin/project_concepts/{}/material", p289.to_hex()), jose.clone(), with_part).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let list = concepts(jose.clone()).await;
+    let c289 = list.as_array().unwrap().iter().find(|c| c["name"] == "CG-15289-A").unwrap().clone();
+    assert_eq!(c289["material"]["part_thickness"], 0.748);
+    assert_eq!(c289["material"]["thickness"], 0.1875);
+    with_part = serde_json::json!({ "material": "Aluminio 6061", "part_width": -2 });
+    let (status, _) = post(format!("/api/admin/project_concepts/{}/material", p289.to_hex()), jose.clone(), with_part).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
     // A CFDI of another company is never read.
     state
         .cfdis
@@ -255,6 +270,19 @@ async fn material_receipt_matches_and_assigns_bars() {
     assert_eq!(status, StatusCode::CREATED, "body: {body}");
     let (status, _) = post(queue.clone(), jose.clone(), serde_json::json!({})).await;
     assert_eq!(status, StatusCode::CONFLICT);
+    // Material only ordered (CG-15296-A): not in the shop yet, so it cannot go to cut.
+    let (status, body) =
+        post(format!("/api/production/cut_list/{}/queue", p296.to_hex()), jose.clone(), serde_json::json!({})).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "body: {body}");
+    assert!(body.contains("taller"), "{body}");
+    // Nor by dropping it on the saw in the plant.
+    let (status, body) = post(
+        format!("/api/production/machines/{}/queue", saw.to_hex()),
+        jose.clone(),
+        serde_json::json!({ "concept_id": p296.to_hex() }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "body: {body}");
     let no_material = create_project_concept(&state, &company, &project, None, "CG-99999", 5.0, None, None, None, None, None, 9)
         .await
         .unwrap();
@@ -302,6 +330,15 @@ async fn material_receipt_matches_and_assigns_bars() {
 
     // On the saw itself: CG-15289-A goes to cut, runs and "Terminar trabajo" ticks its
     // "Material habilitado"; a "Material" ✔ alone already reads as received.
+    // Confirmed in the shop by hand (no bar assigned): only then it may go to cut.
+    let (status, _) =
+        post(format!("/api/production/cut_list/{}/queue", p289.to_hex()), jose.clone(), serde_json::json!({})).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "not in the shop yet");
+    assert!(
+        alfredodev::state::mark_step_by_name(&state, &company, &p289, "Material", alfredodev::models::StepState::Done, "jose")
+            .await
+            .unwrap()
+    );
     let (status, _) =
         post(format!("/api/production/cut_list/{}/queue", p289.to_hex()), jose.clone(), serde_json::json!({})).await;
     assert_eq!(status, StatusCode::CREATED);
