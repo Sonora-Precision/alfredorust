@@ -8,6 +8,7 @@ import {
   Clock,
   Factory,
   FileText,
+  Fingerprint,
   Home,
   Landmark,
   Lightbulb,
@@ -104,6 +105,8 @@ export const NAV: NavEntry[] = [
   { id: 'cotizaciones', label: 'Cotizaciones', icon: FileText, href: '/cotizaciones', can: admin },
   // They say who was at which machine and when: admins only.
   { id: 'reportes-taller', label: 'Reportes del taller', icon: ClipboardList, href: '/produccion/reportes', can: admin },
+  // Time clock: who came and when, so admins only (Daniel, 2026-11-07).
+  { id: 'asistencia', label: 'Asistencia', icon: Fingerprint, href: '/asistencia', can: admin },
   { id: 'tiempo', label: 'Tiempo', icon: Clock, href: '/tiempo', can: adminOr('view_timeline') },
   {
     id: 'finanzas',

@@ -2032,3 +2032,58 @@ pub struct Suggestion {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<DateTime>,
 }
+
+/// ---------- ATTENDANCE (time clock, automatic) ----------
+
+/// One check at the shop's time clock (Hikvision fingerprint terminal), pushed by the agent on
+/// the shop PC. Only recognized checks are sent. The terminal does not say "in" or "out": the
+/// report takes the first check of the day as the entry and the last one as the exit.
+/// Idempotent by (`company_id`, `device`, `serial_no`, `at`): the serial restarts when the
+/// terminal is reset, so the time is part of the key.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AttendanceEvent {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub company_id: ObjectId,
+    /// Terminal serial number, e.g. "GL5045172".
+    pub device: String,
+    pub serial_no: i64,
+    /// Employee number in the terminal, e.g. "0002".
+    pub employee_no: String,
+    pub at: DateTime,
+    /// "huella", "tarjeta", "pin", "rostro" or "otro".
+    pub method: String,
+    pub created_at: DateTime,
+}
+
+/// The work schedule of an employee: a fixed daily window on some weekdays.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AttendanceShift {
+    /// "HH:MM", shop time.
+    pub start: String,
+    /// "HH:MM", shop time; after `start` (overnight shifts are not supported).
+    pub end: String,
+    /// ISO weekdays that are worked: 1 = Monday … 7 = Sunday.
+    pub days: Vec<u8>,
+    /// Minutes after `start` that still count as on time.
+    pub tolerance_min: i32,
+}
+
+/// Someone registered in the time clock, linked by their employee number.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AttendanceEmployee {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub company_id: ObjectId,
+    pub employee_no: String,
+    pub name: String,
+    /// Their platform user, when they have one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<ObjectId>,
+    /// None = no fixed schedule: checks are recorded but there is no lateness or absence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shift: Option<AttendanceShift>,
+    #[serde(default = "default_true")]
+    pub active: bool,
+    pub updated_at: DateTime,
+}

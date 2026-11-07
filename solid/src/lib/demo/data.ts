@@ -760,8 +760,57 @@ function resolve(path: string): unknown {
   return null
 }
 
+// --- asistencia (time clock) -------------------------------------------------
+
+const DEMO_SHIFT = { start: '14:00', end: '22:00', days: [1, 2, 3, 4, 5], tolerance_min: 10 }
+const DEMO_ATTENDANCE_EMPLOYEES = [
+  { employee_no: '0002', name: 'Daniel Rivera', user_id: null, shift: null, active: true },
+  { employee_no: '0004', name: 'José Márquez', user_id: null, shift: DEMO_SHIFT, active: true },
+  { employee_no: '0005', name: 'Carlos Dávila', user_id: null, shift: DEMO_SHIFT, active: true },
+]
+
+/** A plausible week for the demo: afternoon shift with one late day and one absence. */
+function buildAttendanceReport(from: string): unknown {
+  const start = new Date(`${from}T12:00:00`)
+  const dates = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(start)
+    d.setDate(d.getDate() + i)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  })
+  const day = (date: string, entry: string | null, exit: string | null, status: string, late = 0) => {
+    const mins = (s: string) => Number(s.slice(0, 2)) * 60 + Number(s.slice(3))
+    return { date, checks: [entry, exit].filter(Boolean), entry, exit, worked_min: entry && exit ? mins(exit) - mins(entry) : 0, late_min: late, status }
+  }
+  const shiftWeek = (late: number, absent: number) =>
+    dates.map((d, i) =>
+      i >= 5 ? day(d, null, null, 'descanso') : i === absent ? day(d, null, null, 'falta') : i === late ? day(d, '14:22', '22:01', 'retardo', 22) : day(d, '13:56', '22:03', 'ok'),
+    )
+  const totals = (days: { worked_min: number; late_min: number; status: string }[]) => ({
+    worked_min: days.reduce((s, d) => s + d.worked_min, 0),
+    late_min: days.reduce((s, d) => s + d.late_min, 0),
+    late_days: days.filter((d) => d.status === 'retardo').length,
+    absences: days.filter((d) => d.status === 'falta').length,
+    incomplete: 0,
+  })
+  const jose = shiftWeek(1, -1)
+  const carlos = shiftWeek(-1, 3)
+  const daniel = dates.map((d, i) => (i < 5 ? day(d, '08:40', '19:15', 'sin_horario') : day(d, null, null, 'sin_horario')))
+  return {
+    from: dates[0],
+    to: dates[6],
+    employees: [
+      { employee_no: '0002', name: 'Daniel Rivera', shift: null, days: daniel, totals: totals(daniel) },
+      { employee_no: '0004', name: 'José Márquez', shift: DEMO_SHIFT, days: jose, totals: totals(jose) },
+      { employee_no: '0005', name: 'Carlos Dávila', shift: DEMO_SHIFT, days: carlos, totals: totals(carlos) },
+    ],
+    unknown: [],
+  }
+}
+
 export async function demoGet<T>(path: string, params?: Record<string, string | number>): Promise<T> {
   const p = path.split('?')[0]
+  if (p === '/api/admin/attendance/employees') return DEMO_ATTENDANCE_EMPLOYEES as T
+  if (p === '/api/admin/attendance/report') return buildAttendanceReport(String(params?.from ?? '')) as T
   // Timeline needs the requested range (mode/from/to) to generate matching buckets.
   if (p === '/api/tiempo' && params) {
     return buildTimelineRange(

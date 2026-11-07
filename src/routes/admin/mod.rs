@@ -1,4 +1,5 @@
 pub mod account;
+pub mod attendance;
 pub mod cfdi_download;
 pub mod cfdis;
 pub mod companies;
@@ -24,6 +25,10 @@ pub mod users;
 pub mod users_api;
 
 pub use account::*;
+pub use attendance::{
+    api_attendance_employee_delete, api_attendance_employee_save, api_attendance_employees,
+    api_attendance_ingest, api_attendance_last, api_attendance_report,
+};
 pub use cfdi_download::{
     company_cfdi_archived_count, company_cfdi_cron_status, company_cfdi_download,
     company_cfdi_download_api, company_cfdi_job_status, company_cfdi_jobs_list,
