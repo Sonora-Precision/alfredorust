@@ -1011,6 +1011,10 @@ pub struct PartMaterial {
     /// pieces × (cut length + kerf).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub saw_kerf: Option<f64>,
+    /// Bought as whole sheets and nested (G10 comes 12 × 24 in a given thickness): the
+    /// blanks are laid out on the sheet and cut in the shop (Daniel, 2026-11-06).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sheet: Option<SheetSpec>,
     /// Free text, as ordered: "1/2\" X .625\" X 80\"".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bar_to_order: Option<String>,
@@ -1020,6 +1024,20 @@ pub struct PartMaterial {
     pub ordered: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
+}
+
+/// A whole sheet the blanks of a part are nested on, in inches; `kerf` is what the cut
+/// takes (band saw, jigsaw, water jet, laser) and `margin` the unused edge.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct SheetSpec {
+    pub width: f64,
+    pub length: f64,
+    #[serde(default)]
+    pub kerf: f64,
+    #[serde(default)]
+    pub margin: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub process: Option<String>,
 }
 
 /// How a part is quoted (add-part-quoting): the blank weight from SolidWorks when Daniel

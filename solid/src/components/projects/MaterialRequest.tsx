@@ -11,6 +11,8 @@ import { toast } from '../ui/Toast'
 import { folioOf } from '../production/WorkOrderSearch'
 import { PartName } from '../production/PartName'
 import { MaterialNames } from './MaterialNames'
+import { NestingView, colorOf } from './NestingView'
+import { type NestResult, type NestSheet, isGuillotine, nest } from '../../lib/nesting'
 import { MATERIAL_STATUS } from './PartMaterialCell'
 import { DEFAULT_KERF, SHAPES, type SizerApi, StockSizer, barLength } from './StockSizer'
 import { humanizeError } from '../../lib/api/client'
@@ -51,6 +53,11 @@ interface Group {
   stock: string
   /** Plates: the supplier cuts them, so the group is pieces of one size. */
   cutToSize: boolean
+  /** Whole sheets the blanks of every part in the group are nested on together. */
+  sheet?: NestSheet
+  layout?: NestResult
+  /** Straight cuts only (band saw, jigsaw). */
+  guillotine?: boolean
   lines: Line[]
   total: number
 }
@@ -62,7 +69,9 @@ export function requestText(projectTitle: string, groups: Group[], date = new Da
   // Plates: it cuts them, so it gets how many of each size.
   groups.forEach((g, i) => {
     out.push(
-      g.cutToSize
+      g.sheet
+        ? `${i + 1}. *${g.stock}* - ${g.total} ${g.total === 1 ? 'pz' : 'pzs'}`
+        :       g.cutToSize
         ? `${i + 1}. *${g.stock}* - ${g.total} ${g.total === 1 ? 'pz' : 'pzs'}`
         : `${i + 1}. *${g.stock} × ${inch(+g.total.toFixed(3))}"*`,
     )
@@ -94,6 +103,26 @@ export function MaterialRequest(props: {
     const map = new Map<string, Group>()
     for (const l of lines()) {
       const plate = isPlate(l.material)
+      const sh = plate ? l.material.sheet : null
+      if (sh) {
+        // Whole sheets: every part of the same material, thickness and sheet shares them.
+        const stock = ['Placa', l.material.material, `${inch(l.material.thickness)}" x ${inch(sh.width)}" x ${inch(sh.length)}"`]
+          .filter(Boolean)
+          .join(' ')
+        const guillotine = isGuillotine(sh.process)
+        const key = `s|${stock.toLowerCase()}|${sh.kerf}|${sh.margin}|${guillotine}`
+        const g = map.get(key) ?? {
+          stock,
+          cutToSize: true,
+          sheet: { width: sh.width, length: sh.length, kerf: sh.kerf, margin: sh.margin },
+          guillotine,
+          lines: [],
+          total: 0,
+        }
+        g.lines.push(l)
+        map.set(key, g)
+        continue
+      }
       const label = stockLabel(l.material) || 'Material sin asignar'
       // Plates read as the shop asks for them: "Corte de placa Aluminio 6061 1" x 4" x 6"".
       const stock = plate
@@ -106,6 +135,15 @@ export function MaterialRequest(props: {
       g.lines.push(l)
       g.total += l.total
       map.set(key, g)
+    }
+    for (const g of map.values()) {
+      if (!g.sheet) continue
+      g.layout = nest(
+        g.lines.map((l) => ({ id: l.concept.id, label: l.concept.name, width: l.material.width ?? 0, length: l.material.length ?? 0, quantity: l.pieces })),
+        g.sheet,
+        { guillotine: g.guillotine },
+      )
+      g.total = g.layout.sheets.length
     }
     return [...map.values()]
   })
@@ -129,7 +167,7 @@ export function MaterialRequest(props: {
             ...l.material,
             ordered: true,
             bar_to_order:
-              (g.cutToSize ? `${g.stock} - ${l.total} pzs` : `${g.stock} · ${inch(+l.total.toFixed(3))}"`).slice(0, 120),
+              (g.sheet ? `${g.stock} - ${g.total} pzs (nesting)` : g.cutToSize ? `${g.stock} - ${l.total} pzs` : `${g.stock} · ${inch(+l.total.toFixed(3))}"`).slice(0, 120),
           })
     },
     onSuccess: () => {
@@ -210,6 +248,9 @@ export function MaterialRequest(props: {
           fallback={<p class="mt-3 text-sm text-muted-foreground">No hay material por pedir: captura el stock y el largo de corte de cada parte.</p>}
         >
           <pre class="mt-3 whitespace-pre-wrap rounded-lg bg-muted/50 p-3 font-sans text-sm text-foreground">{text()}</pre>
+          <For each={groups().filter((g) => g.layout)}>
+            {(g) => <SheetLayouts group={g} />}
+          </For>
         </Show>
       </div>
     </div>
@@ -294,7 +335,7 @@ function PartStockRow(props: {
         <Show when={preview() != null && preview()! > 0}>
           <span class="tnum ml-auto text-sm text-foreground">
             A pedir:{' '}
-            <b>{shape() === 'placa' ? `${Math.ceil(props.concept.quantity)} pzas cortadas` : `${inch(+preview()!.toFixed(3))}"`}</b>
+            <b>{shape() === 'placa' ? `${Math.ceil(props.concept.quantity)} pzas ${m().sheet ? 'en placa completa' : 'cortadas'}` : `${inch(+preview()!.toFixed(3))}"`}</b>
           </span>
         </Show>
       </div>
@@ -335,6 +376,48 @@ function PartStockRow(props: {
           </div>
         </Show>
       </form>
+    </div>
+  )
+}
+
+/** The layout of a group of whole sheets: which part is which color, every sheet to scale. */
+function SheetLayouts(props: { group: Group }): JSX.Element {
+  const ids = () => props.group.lines.map((l) => l.concept.id)
+  const layout = () => props.group.layout!
+  return (
+    <div class="mt-4 space-y-2 border-t border-border pt-3">
+      <p class="text-sm font-semibold text-foreground">
+        Acomodo · {props.group.stock}
+        <span class="font-normal text-muted-foreground">
+          {' '}
+          · {layout().sheets.length} {layout().sheets.length === 1 ? 'placa' : 'placas'} · aprovechamiento {Math.round(layout().usage * 100)}%
+        </span>
+      </p>
+      <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+        <For each={props.group.lines}>
+          {(l) => (
+            <span class="inline-flex items-center gap-1.5">
+              <span class="h-3 w-3 rounded-sm" style={{ background: colorOf(ids(), l.concept.id) }} />
+              {l.concept.name} · {inch(l.material.width)}" × {inch(l.material.length)}" · {Math.ceil(l.pieces)} pzs
+            </span>
+          )}
+        </For>
+      </div>
+      <Show when={layout().tooBig.length}>
+        <p class="text-xs text-destructive">No caben en la placa: {layout().tooBig.map((t) => t.label).join(', ')}</p>
+      </Show>
+      <div class="grid gap-3 sm:grid-cols-2">
+        <For each={layout().sheets}>
+          {(s, i) => (
+            <NestingView
+              sheet={props.group.sheet!}
+              placements={s}
+              ids={ids()}
+              title={`Placa ${i() + 1} de ${layout().sheets.length} · ${s.length} pzs`}
+            />
+          )}
+        </For>
+      </div>
     </div>
   )
 }
