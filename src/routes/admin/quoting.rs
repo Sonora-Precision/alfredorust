@@ -379,3 +379,36 @@ pub async fn api_material_prices_from_cfdis(
         .collect();
     Json(serde_json::json!({ "materials": materials, "lines": lines, "updated": updated })).into_response()
 }
+
+#[derive(Debug, Deserialize)]
+pub struct UnitPricePayload {
+    pub unit_price: Option<f64>,
+}
+
+/// The sale price per piece of a part, set while costing it from Seguimiento (Daniel,
+/// 2026-11-07). Admin only: it is money.
+pub async fn api_part_unit_price_set(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(payload): Json<UnitPricePayload>,
+) -> Response {
+    if !session_user.is_admin() {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let company_id = require_active_company(&session_user);
+    let id = match parse_oid(&id) {
+        Ok(id) => id,
+        Err(resp) => return resp,
+    };
+    if payload.unit_price.is_some_and(|p| !p.is_finite() || p < 0.0 || p > 100_000_000.0) {
+        return json_error(StatusCode::BAD_REQUEST, "el precio debe ser 0 o mayor");
+    }
+    if !matches!(get_project_concept_by_id_for_company(&state, &id, &company_id).await, Ok(Some(_))) {
+        return json_error(StatusCode::NOT_FOUND, "part not found");
+    }
+    match set_concept_unit_price(&state, &id, &company_id, payload.unit_price).await {
+        Ok(()) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Err(_) => json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not save the price"),
+    }
+}
