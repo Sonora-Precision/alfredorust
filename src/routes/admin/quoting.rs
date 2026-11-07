@@ -289,3 +289,93 @@ pub async fn api_project_quote_apply(
     }
     Json(serde_json::json!({ "applied": applied, "skipped": skipped })).into_response()
 }
+
+// --- prices from the supplier invoices downloaded from the SAT --------------------------
+
+#[derive(Deserialize)]
+pub struct CfdiPricesPayload {
+    /// false: only show what would be learned; true: save it.
+    #[serde(default)]
+    pub apply: bool,
+}
+
+#[derive(Serialize)]
+pub struct CfdiPriceLineData {
+    pub material: String,
+    pub supplier: String,
+    pub folio: Option<String>,
+    pub date: String,
+    pub amount: f64,
+    pub kg: f64,
+    pub price_per_kg: f64,
+    pub kg_source: String,
+}
+
+#[derive(Serialize)]
+pub struct CfdiMaterialData {
+    pub material: String,
+    /// Price of its newest invoice.
+    pub price_per_kg: f64,
+    pub date: String,
+    pub supplier: String,
+    pub folio: Option<String>,
+    /// Lowest and highest $/kg over all its invoices, and how many lines.
+    pub min: f64,
+    pub max: f64,
+    pub lines: usize,
+}
+
+/// Reads the material lines of every supplier invoice (Daniel, 2026-11-07): shows the price
+/// each material would take, and with `apply` saves the history and the prices. Admin only.
+pub async fn api_material_prices_from_cfdis(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<CfdiPricesPayload>,
+) -> Response {
+    if !session_user.is_admin() {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let company_id = require_active_company(&session_user);
+    let result = if payload.apply {
+        crate::state::import_cfdi_prices(&state, &company_id, *session_user.user_id()).await.map(|(p, n)| (p, Some(n)))
+    } else {
+        crate::state::read_cfdi_prices(&state, &company_id).await.map(|p| (p, None))
+    };
+    let (points, updated) = match result {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("[material prices] reading invoices failed: {e:#}");
+            return json_error(StatusCode::INTERNAL_SERVER_ERROR, "no se pudieron leer las facturas");
+        }
+    };
+    let materials: Vec<CfdiMaterialData> = crate::state::newest_invoice_prices(&points)
+        .into_iter()
+        .map(|(material, price, at, supplier, folio)| {
+            let all: Vec<f64> = points.iter().filter(|p| same_name(&p.material, &material)).map(|p| p.price_per_kg).collect();
+            CfdiMaterialData {
+                min: all.iter().cloned().fold(f64::INFINITY, f64::min),
+                max: all.iter().cloned().fold(0.0, f64::max),
+                lines: all.len(),
+                material,
+                price_per_kg: price,
+                date: iso(at),
+                supplier,
+                folio,
+            }
+        })
+        .collect();
+    let lines: Vec<CfdiPriceLineData> = points
+        .into_iter()
+        .map(|p| CfdiPriceLineData {
+            material: p.material,
+            supplier: p.supplier,
+            folio: p.folio,
+            date: iso(p.at),
+            amount: p.amount,
+            kg: p.kg,
+            price_per_kg: p.price_per_kg,
+            kg_source: p.kg_source,
+        })
+        .collect();
+    Json(serde_json::json!({ "materials": materials, "lines": lines, "updated": updated })).into_response()
+}

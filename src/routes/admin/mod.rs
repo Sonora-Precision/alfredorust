@@ -62,6 +62,7 @@ pub use quotes::{
     api_quote_part_names, api_quote_references, api_quote_suggest, api_quote_to_project, api_quotes_index,
 };
 pub use quoting::{
+    api_material_prices_from_cfdis,
     api_material_price_set, api_material_prices_index, api_part_quote_set, api_project_quote, api_project_quote_apply,
 };
 pub use part_files::{

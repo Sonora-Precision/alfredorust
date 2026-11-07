@@ -1206,7 +1206,12 @@ pub struct MaterialPricePoint {
     pub id: Option<ObjectId>,
     pub company_id: ObjectId,
     pub material: String,
-    pub receipt_id: ObjectId,
+    /// The receipt it was captured on, or…
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub receipt_id: Option<ObjectId>,
+    /// …the supplier CFDI (downloaded from the SAT) it was read from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cfdi_uuid: Option<String>,
     pub line: i32,
     pub supplier: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]

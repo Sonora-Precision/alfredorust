@@ -51,3 +51,32 @@ export const setPartQuote = (conceptId: string, quote: { weight_kg: number | nul
   apiPost<void>(`/api/admin/project_concepts/${conceptId}/quote`, quote)
 export const applySuggestedPrices = (projectId: string, conceptIds: string[]) =>
   apiPost<{ applied: number; skipped: string[] }>(`/api/admin/projects/${projectId}/quote/apply`, { concept_ids: conceptIds })
+
+/** What the supplier invoices downloaded from the SAT say each material costs. */
+export interface CfdiPrices {
+  materials: {
+    material: string
+    price_per_kg: number
+    date: string
+    supplier: string
+    folio: string | null
+    min: number
+    max: number
+    lines: number
+  }[]
+  lines: {
+    material: string
+    supplier: string
+    folio: string | null
+    date: string
+    amount: number
+    kg: number
+    price_per_kg: number
+    kg_source: string
+  }[]
+  /** Materials that took a new price (only when saved). */
+  updated: number | null
+}
+
+export const pricesFromInvoices = (apply: boolean) =>
+  apiPost<CfdiPrices>('/api/admin/material_prices/from_cfdis', { apply })
