@@ -208,7 +208,7 @@ pub async fn get_quote_settings(state: &AppState, company_id: &ObjectId) -> Resu
         .quote_settings
         .find_one(doc! { "company_id": company_id })
         .await?
-        .unwrap_or_else(|| QuoteSettings { company_id: *company_id, iva_rate: 0.16, retention_rate: 0.0125, ..Default::default() }))
+        .unwrap_or_else(|| QuoteSettings { company_id: *company_id, ..Default::default() }))
 }
 
 pub async fn save_quote_settings(state: &AppState, mut settings: QuoteSettings) -> Result<()> {
@@ -283,7 +283,7 @@ mod tests {
             lines: lines
                 .iter()
                 .enumerate()
-                .map(|(i, (q, p))| QuoteItem { item: i as i32 + 1, quantity: *q, description: "P".into(), unit_price: *p, concept_id: None, material: None, weight_kg: None, multiplier: None, drawing_id: None, drawing_name: None })
+                .map(|(i, (q, p))| QuoteItem { item: i as i32 + 1, quantity: *q, description: "P".into(), unit_price: *p, concept_id: None, material: None, weight_kg: None, multiplier: None, drawing_id: None, drawing_name: None, programming_h: None, setup_h: None, cycle_min: None })
                 .collect(),
             sent_at: None,
             created_by: ObjectId::new(),

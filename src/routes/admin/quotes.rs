@@ -26,7 +26,7 @@ use crate::{
         get_initial_concept_status, get_project_by_id_for_company, get_quote, get_quote_settings, insert_quote,
         last_revision, link_folio_to_project, list_client_quote_defaults, list_material_prices, list_project_concepts,
         list_project_quotes, list_quotes, mark_quote_sent, next_folio_base, quote_totals, save_client_quote_defaults,
-        save_quote_settings, set_concept_unit_price, set_part_material, set_part_quote, suggest_line, get_quote_file,
+        save_quote_settings, set_concept_unit_price, set_part_material, set_part_quote, suggest_line, get_quote_file, time_price, TimePrice,
         read_quote_file, save_quote_file, replace_draft_quote, save_part_drawing, get_project_concept_by_id_for_company,
     },
 };
@@ -62,6 +62,16 @@ pub async fn api_quote_settings_save(
     let company_id = admin_company!(session_user);
     if !(0.0..1.0).contains(&payload.iva_rate) || !(0.0..1.0).contains(&payload.retention_rate) {
         return json_error(StatusCode::BAD_REQUEST, "las tasas van como fracción: 0.16 y 0.0125");
+    }
+    let rates = [
+        payload.machining_rate_mxn,
+        payload.machining_rate_usd,
+        payload.engineering_rate_mxn,
+        payload.engineering_rate_usd,
+        payload.usd_mxn,
+    ];
+    if rates.iter().any(|r| !r.is_finite() || *r <= 0.0) {
+        return json_error(StatusCode::BAD_REQUEST, "las tarifas por hora y el tipo de cambio deben ser mayores a 0");
     }
     if payload.logo_data_url.as_ref().is_some_and(|l| !l.starts_with("data:image/") || l.len() > 400_000) {
         return json_error(StatusCode::BAD_REQUEST, "el logo debe ser una imagen de menos de 300 KB");
@@ -183,6 +193,13 @@ pub struct QuoteLinePayload {
     /// A drawing uploaded with POST /api/admin/quote_files.
     #[serde(default)]
     pub drawing_id: Option<String>,
+    /// Estimated time: programming (h, once per part number), setup (h), cycle (min/pc).
+    #[serde(default)]
+    pub programming_h: Option<f64>,
+    #[serde(default)]
+    pub setup_h: Option<f64>,
+    #[serde(default)]
+    pub cycle_min: Option<f64>,
     #[serde(default)]
     pub concept_id: Option<String>,
     #[serde(default)]
@@ -347,6 +364,9 @@ async fn lines_from_parts(state: &AppState, company_id: &ObjectId, project_id: &
             multiplier: c.quote.as_ref().and_then(|q| q.multiplier),
             drawing_id: None,
             drawing_name: None,
+            programming_h: None,
+            setup_h: None,
+            cycle_min: None,
         })
         .collect())
 }
@@ -402,9 +422,13 @@ async fn lines_from_payload(
             None => None,
         };
         let (drawing_id, drawing_name) = drawing.unzip();
+        let time = |v: Option<f64>| v.filter(|x| x.is_finite() && *x > 0.0);
         out.push(QuoteItem {
             drawing_id,
             drawing_name,
+            programming_h: time(l.programming_h),
+            setup_h: time(l.setup_h),
+            cycle_min: time(l.cycle_min),
             item: i as i32 + 1,
             quantity: l.quantity,
             description,
@@ -623,25 +647,46 @@ pub struct SuggestLinePayload {
     pub weight_kg: Option<f64>,
     #[serde(default)]
     pub multiplier: Option<f64>,
+    /// For the time-based price: pieces, programming (h), setup (h) and cycle (min/pc).
+    #[serde(default)]
+    pub quantity: Option<f64>,
+    #[serde(default)]
+    pub programming_h: Option<f64>,
+    #[serde(default)]
+    pub setup_h: Option<f64>,
+    #[serde(default)]
+    pub cycle_min: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct SuggestPayload {
     pub lines: Vec<SuggestLinePayload>,
+    /// "MXN" (default) or "USD": the rates and the material are given in it.
+    #[serde(default)]
+    pub currency: Option<String>,
 }
 
 #[derive(Serialize)]
 pub struct SuggestedLine {
     pub weight_kg: Option<f64>,
     pub weight_source: Option<&'static str>,
+    /// Pesos per kg, as invoiced.
     pub price_per_kg: Option<f64>,
+    /// Material of one piece in the quote's currency (pesos ÷ the exchange rate for USD).
     pub material_cost: Option<f64>,
     pub multiplier: f64,
+    /// Material × multiplier, minus the material when the client supplies it.
     pub suggested_unit_price: Option<f64>,
+    /// Material + time at the company's rates, minus the material when the client supplies it.
+    pub time: Option<TimePrice>,
+    pub customer_supplied: bool,
+    pub currency: String,
     pub missing: Vec<&'static str>,
 }
 
-/// Daniel's method for lines without a part: blank weight × $/kg × multiplier.
+/// Daniel's methods for a quote line: blank weight × $/kg × multiplier, and next to it the
+/// time-based price (Daniel, 2026-11-07). When the client supplies the material, both are
+/// the same minus the material.
 pub async fn api_quote_suggest(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -651,24 +696,50 @@ pub async fn api_quote_suggest(
     let Ok(prices) = list_material_prices(&state, &company_id).await else {
         return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load the prices");
     };
+    let Ok(settings) = get_quote_settings(&state, &company_id).await else {
+        return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load the settings");
+    };
+    let usd = p.currency.as_deref() == Some("USD");
+    let (machining, engineering) = if usd {
+        (settings.machining_rate_usd, settings.engineering_rate_usd)
+    } else {
+        (settings.machining_rate_mxn, settings.engineering_rate_mxn)
+    };
+    let fx = if usd && settings.usd_mxn > 0.0 { settings.usd_mxn } else { 1.0 };
     let out: Vec<SuggestedLine> = p
         .lines
         .into_iter()
         .take(200)
         .map(|l| {
             let material = clean_material(l.material);
+            let supplied = material.as_ref().is_some_and(|m| m.customer_supplied);
             let quote = PartQuote {
                 weight_kg: l.weight_kg.filter(|w| w.is_finite() && *w > 0.0),
                 multiplier: l.multiplier.filter(|m| m.is_finite() && *m > 0.0),
             };
             let s = suggest_line(material.as_ref(), &quote, &prices);
+            let cost = s.material_cost.map(|c| c / fx);
+            let by_material = cost.map(|c| (c * s.multiplier - if supplied { c } else { 0.0 } - 1e-9).ceil());
+            // The client's material is not charged; the time is.
+            let time = time_price(
+                if supplied { None } else { cost },
+                l.quantity.unwrap_or(1.0),
+                l.programming_h,
+                l.setup_h,
+                l.cycle_min,
+                machining,
+                engineering,
+            );
             SuggestedLine {
                 weight_kg: s.weight_kg,
                 weight_source: s.weight_source,
                 price_per_kg: s.price_per_kg,
-                material_cost: s.material_cost,
+                material_cost: cost.map(|c| (c * 100.0).round() / 100.0),
                 multiplier: s.multiplier,
-                suggested_unit_price: s.suggested_unit_price,
+                suggested_unit_price: by_material,
+                time,
+                customer_supplied: supplied,
+                currency: if usd { "USD".into() } else { "MXN".into() },
                 missing: s.missing,
             }
         })
@@ -944,8 +1015,10 @@ pub async fn api_quote_to_project(
     };
     let mut lines = q.lines.clone();
     for (i, line) in lines.iter_mut().enumerate() {
+        // The quoted time becomes the part's estimated hours (programming + setup + cycles).
+        let hours = time_price(None, line.quantity, line.programming_h, line.setup_h, line.cycle_min, 0.0, 0.0).map(|t| t.hours);
         let concept_id = match create_project_concept(
-            &state, &company_id, &project_id, None, &line.description, line.quantity, None, None, None, None, None, i as i32 + 1,
+            &state, &company_id, &project_id, None, &line.description, line.quantity, None, None, hours, None, None, i as i32 + 1,
         )
         .await
         {

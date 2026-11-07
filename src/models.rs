@@ -1058,7 +1058,7 @@ pub struct PartQuote {
 }
 
 /// Company data printed on quotes (add-quote-document), once per company.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QuoteSettings {
     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
     pub id: Option<ObjectId>,
@@ -1083,6 +1083,59 @@ pub struct QuoteSettings {
     /// Small image as a data URL ("data:image/jpeg;base64,…").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub logo_data_url: Option<String>,
+    /// Hourly rates for the time-based suggested price (Daniel, 2026-11-07): machining
+    /// (setup included) and programming / engineering, by the quote's currency.
+    #[serde(default = "default_machining_mxn")]
+    pub machining_rate_mxn: f64,
+    #[serde(default = "default_machining_usd")]
+    pub machining_rate_usd: f64,
+    #[serde(default = "default_engineering_mxn")]
+    pub engineering_rate_mxn: f64,
+    #[serde(default = "default_engineering_usd")]
+    pub engineering_rate_usd: f64,
+    /// Pesos per dollar, fixed by Daniel: material is priced in pesos and converted for
+    /// quotes in dollars.
+    #[serde(default = "default_usd_mxn")]
+    pub usd_mxn: f64,
+}
+
+impl Default for QuoteSettings {
+    fn default() -> Self {
+        Self {
+            id: None,
+            company_id: ObjectId::default(),
+            company_name: String::new(),
+            address1: String::new(),
+            address2: String::new(),
+            phone: String::new(),
+            email: String::new(),
+            web: String::new(),
+            iva_rate: default_iva_rate(),
+            retention_rate: default_retention_rate(),
+            logo_data_url: None,
+            machining_rate_mxn: default_machining_mxn(),
+            machining_rate_usd: default_machining_usd(),
+            engineering_rate_mxn: default_engineering_mxn(),
+            engineering_rate_usd: default_engineering_usd(),
+            usd_mxn: default_usd_mxn(),
+        }
+    }
+}
+
+fn default_machining_mxn() -> f64 {
+    1600.0
+}
+fn default_machining_usd() -> f64 {
+    100.0
+}
+fn default_engineering_mxn() -> f64 {
+    1000.0
+}
+fn default_engineering_usd() -> f64 {
+    50.0
+}
+fn default_usd_mxn() -> f64 {
+    20.0
 }
 
 fn default_iva_rate() -> f64 {
@@ -1207,6 +1260,15 @@ pub struct QuoteItem {
     pub drawing_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub drawing_name: Option<String>,
+    /// Estimated time (Daniel, 2026-11-07): programming / engineering once per part number,
+    /// setup once per order, and the cycle per piece. They give the time-based suggested
+    /// price and become the part's estimated hours in the project.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub programming_h: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub setup_h: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cycle_min: Option<f64>,
 }
 
 /// Price per kg of a material for the company (MXN before tax). Admin only.

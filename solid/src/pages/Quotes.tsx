@@ -6,6 +6,7 @@ import { createQuery } from '@tanstack/solid-query'
 import { Plus } from 'lucide-solid'
 import { type JSX, For, Show, createMemo, createSignal } from 'solid-js'
 
+import { QuoteRates } from '../components/quotes/QuoteRates'
 import { Button } from '../components/ui/Button'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Spinner } from '../components/ui/Spinner'
@@ -19,6 +20,7 @@ export default function Quotes(): JSX.Element {
   const quotes = createQuery(() => ({ queryKey: ['quotes'], queryFn: quotesApi.listQuotes }))
   const [filter, setFilter] = createSignal<Filter>('pendientes')
   const [text, setText] = createSignal('')
+  const [showRates, setShowRates] = createSignal(false)
 
   // Latest revision of each folio, newest first.
   const latest = createMemo(() => {
@@ -50,6 +52,9 @@ export default function Quotes(): JSX.Element {
         breadcrumb={['Cotizaciones']}
         actions={
           <div class="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => setShowRates(!showRates())}>
+              Tarifas
+            </Button>
             <A href="/cotizaciones/materiales">
               <Button variant="outline">Precios de material</Button>
             </A>
@@ -61,6 +66,9 @@ export default function Quotes(): JSX.Element {
           </div>
         }
       />
+      <Show when={showRates()}>
+        <QuoteRates />
+      </Show>
       <p class="text-sm text-muted-foreground">
         Cotiza aquí antes de que exista el proyecto. Cuando el cliente la apruebe o mande su orden de compra, ábrela y toca
         "Convertir en proyecto": se crea en Pedidos con sus números de parte y precios.

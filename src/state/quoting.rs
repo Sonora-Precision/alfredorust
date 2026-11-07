@@ -135,6 +135,51 @@ pub fn suggest_line(material: Option<&PartMaterial>, quote: &PartQuote, prices: 
     }
 }
 
+/// Time-based price of one piece (Daniel, 2026-11-07), in the quote's currency: material +
+/// cycle × machining + (setup × machining + programming × engineering) ÷ quantity.
+/// Programming is charged once per part number and setup once per order, so both are
+/// spread over the pieces.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct TimePrice {
+    pub material: f64,
+    pub cycle: f64,
+    pub setup: f64,
+    pub programming: f64,
+    pub unit_price: f64,
+    /// Hours of the whole line: programming + setup + cycle × quantity.
+    pub hours: f64,
+}
+
+pub fn time_price(
+    material_per_piece: Option<f64>,
+    quantity: f64,
+    programming_h: Option<f64>,
+    setup_h: Option<f64>,
+    cycle_min: Option<f64>,
+    machining_rate: f64,
+    engineering_rate: f64,
+) -> Option<TimePrice> {
+    let pos = |v: Option<f64>| v.filter(|x| x.is_finite() && *x > 0.0);
+    let (prog, setup, cycle) = (pos(programming_h), pos(setup_h), pos(cycle_min));
+    if prog.is_none() && setup.is_none() && cycle.is_none() {
+        return None;
+    }
+    let qty = if quantity.is_finite() && quantity > 0.0 { quantity } else { 1.0 };
+    let round = |v: f64| (v * 100.0).round() / 100.0;
+    let material = material_per_piece.unwrap_or(0.0);
+    let cycle_cost = cycle.unwrap_or(0.0) / 60.0 * machining_rate;
+    let setup_cost = setup.unwrap_or(0.0) * machining_rate / qty;
+    let programming_cost = prog.unwrap_or(0.0) * engineering_rate / qty;
+    Some(TimePrice {
+        material: round(material),
+        cycle: round(cycle_cost),
+        setup: round(setup_cost),
+        programming: round(programming_cost),
+        unit_price: (material + cycle_cost + setup_cost + programming_cost - 1e-9).ceil(),
+        hours: round(prog.unwrap_or(0.0) + setup.unwrap_or(0.0) + cycle.unwrap_or(0.0) * qty / 60.0),
+    })
+}
+
 pub async fn list_material_prices(state: &AppState, company_id: &ObjectId) -> Result<Vec<MaterialPrice>> {
     Ok(state
         .material_prices
@@ -591,6 +636,19 @@ pub async fn import_cfdi_prices(state: &AppState, company_id: &ObjectId, by: Obj
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn time_price_spreads_programming_and_setup() {
+        // Daniel's example: 20 pcs, $50 material, 12 min cycle, 1.5 h setup, 2 h programming
+        // at $1,600 / $1,000 an hour → 50 + 320 + 120 + 100 = $590 a piece.
+        let t = time_price(Some(50.0), 20.0, Some(2.0), Some(1.5), Some(12.0), 1600.0, 1000.0).unwrap();
+        assert_eq!((t.material, t.cycle, t.setup, t.programming, t.unit_price), (50.0, 320.0, 120.0, 100.0, 590.0));
+        assert_eq!(t.hours, 7.5);
+        // One piece carries all of it; no times, no time price.
+        let one = time_price(None, 1.0, Some(2.0), None, None, 1600.0, 1000.0).unwrap();
+        assert_eq!(one.unit_price, 2000.0);
+        assert!(time_price(Some(50.0), 20.0, None, Some(0.0), None, 1600.0, 1000.0).is_none());
+    }
 
     fn price(material: &str, p: f64) -> MaterialPrice {
         MaterialPrice {

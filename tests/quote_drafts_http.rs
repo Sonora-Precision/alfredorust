@@ -95,13 +95,33 @@ async fn quote_draft_with_drawings_becomes_a_project() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
+    // Time-based price at the company's rates (defaults: $1,600 / $1,000 an hour, $100 / $50
+    // USD, 20 pesos a dollar): 20 pcs, 0.5 kg at $100/kg = $50, 12 min, 1.5 h setup, 2 h CAM.
+    alfredodev::state::set_material_price(&state, company.clone(), "Aluminio 6061", Some(100.0), None, admin_id).await.unwrap();
+    let block = |supplied: bool| serde_json::json!({ "material": "Aluminio 6061", "customer_supplied": supplied });
+    let line = |supplied: bool| serde_json::json!({ "material": block(supplied), "weight_kg": 0.5, "quantity": 20,
+        "programming_h": 2, "setup_h": 1.5, "cycle_min": 12 });
+    let (status, body) = post("/api/admin/quotes/suggest".into(), serde_json::json!({ "lines": [line(false), line(true)] })).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let s = json(&body);
+    assert_eq!((s[0]["suggested_unit_price"].as_f64(), s[0]["time"]["unit_price"].as_f64()), (Some(175.0), Some(590.0)));
+    // The client's material: both prices without it.
+    assert_eq!((s[1]["suggested_unit_price"].as_f64(), s[1]["time"]["unit_price"].as_f64()), (Some(125.0), Some(540.0)));
+    // In dollars: material $50 / 20 = 2.50; 12 min × $100 + (1.5 × 100 + 2 × 50) ÷ 20 = 20 + 12.5.
+    let (_, body) = post("/api/admin/quotes/suggest".into(), serde_json::json!({ "currency": "USD", "lines": [line(false)] })).await;
+    let s = json(&body);
+    assert_eq!((s[0]["material_cost"].as_f64(), s[0]["time"]["unit_price"].as_f64()), (Some(2.5), Some(35.0)));
+    // Rates must be positive.
+    let (status, _) = post("/api/admin/quote_settings".into(), serde_json::json!({ "iva_rate": 0.16, "retention_rate": 0.0125, "machining_rate_mxn": 0 })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
     // Measures and the first price go in; it stays a draft with the same folio.
     let alu = serde_json::json!({ "material": "Aluminio 6061", "shape": "solera", "thickness": 1.0, "width": 2.0, "length": 2.5,
         "part_thickness": 0.748, "part_width": 1.969, "part_length": 2.362, "saw_kerf": 0.125 });
     let (status, body) = post(
         format!("/api/admin/quotes/{id}/update"),
         serde_json::json!({ "contact_id": client.to_hex(), "draft": true, "lines": [
-            { "quantity": 20, "description": "PA-1001", "drawing_id": drawing_id, "material": alu, "unit_price": 350 },
+            { "quantity": 20, "description": "PA-1001", "drawing_id": drawing_id, "material": alu, "unit_price": 350, "programming_h": 2, "setup_h": 1.5, "cycle_min": 12 },
             { "quantity": 4, "description": "PA-1002" },
         ] }),
     )
@@ -115,7 +135,7 @@ async fn quote_draft_with_drawings_becomes_a_project() {
     let (status, body) = post(
         format!("/api/admin/quotes/{id}/update"),
         serde_json::json!({ "contact_id": client.to_hex(), "lines": [
-            { "quantity": 20, "description": "PA-1001", "drawing_id": drawing_id, "material": alu, "unit_price": 350 },
+            { "quantity": 20, "description": "PA-1001", "drawing_id": drawing_id, "material": alu, "unit_price": 350, "programming_h": 2, "setup_h": 1.5, "cycle_min": 12 },
             { "quantity": 4, "description": "PA-1002", "unit_price": 900 },
         ] }),
     )
@@ -136,4 +156,6 @@ async fn quote_draft_with_drawings_becomes_a_project() {
     assert_eq!(files.len(), 1);
     assert_eq!((files[0].concept_id, files[0].original_filename.as_str()), (parts[0].id.unwrap(), "PA-1001 Rev A.pdf"));
     assert_eq!(parts[0].material.as_ref().and_then(|m| m.part_length), Some(2.362));
+    // The quoted time is the part's estimate: 2 + 1.5 + 20 × 12 min = 7.5 h.
+    assert_eq!((parts[0].estimated_hours, parts[1].estimated_hours), (Some(7.5), None));
 }

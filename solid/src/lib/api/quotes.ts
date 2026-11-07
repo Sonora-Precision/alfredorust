@@ -14,6 +14,10 @@ export interface QuoteItem {
   /** The line's PDF drawing (a quote file), copied to the part on "Convertir en proyecto". */
   drawing_id?: string | null
   drawing_name?: string | null
+  /** Estimated time: programming (h, once per part number), setup (h), cycle (min/pc). */
+  programming_h?: number | null
+  setup_h?: number | null
+  cycle_min?: number | null
 }
 
 export interface QuoteView {
@@ -64,6 +68,13 @@ export interface QuoteSettings {
   iva_rate: number
   retention_rate: number
   logo_data_url?: string | null
+  /** Hourly rates by the quote's currency (machining includes setup). */
+  machining_rate_mxn: number
+  machining_rate_usd: number
+  engineering_rate_mxn: number
+  engineering_rate_usd: number
+  /** Pesos per dollar, fixed: material (in pesos) is converted for quotes in dollars. */
+  usd_mxn: number
 }
 
 export interface QuoteDocument extends QuoteView {
@@ -90,6 +101,9 @@ export interface QuoteLinePayload {
   weight_kg?: number | null
   multiplier?: number | null
   drawing_id?: string | null
+  programming_h?: number | null
+  setup_h?: number | null
+  cycle_min?: number | null
 }
 
 export interface QuoteCreatePayload {
@@ -119,7 +133,30 @@ export interface SuggestedLine {
   material_cost: number | null
   multiplier: number
   suggested_unit_price: number | null
+  /** Material + time at the company's rates (per piece, in the quote's currency). */
+  time: TimePrice | null
+  customer_supplied: boolean
+  currency: 'MXN' | 'USD'
   missing: string[]
+}
+
+export interface TimePrice {
+  material: number
+  cycle: number
+  setup: number
+  programming: number
+  unit_price: number
+  hours: number
+}
+
+export interface SuggestInput {
+  material?: PartMaterial | null
+  weight_kg?: number | null
+  multiplier?: number | null
+  quantity?: number | null
+  programming_h?: number | null
+  setup_h?: number | null
+  cycle_min?: number | null
 }
 
 export const listQuotes = () => apiGet<QuoteView[]>('/api/admin/quotes')
@@ -138,8 +175,10 @@ export const uploadQuoteDrawing = (file: File) => {
   return apiPostForm<QuoteFile>('/api/admin/quote_files', form)
 }
 export const quoteDrawingUrl = (id: string) => `/api/admin/quote_files/${id}`
-export const suggestLines = (lines: { material?: PartMaterial | null; weight_kg?: number | null; multiplier?: number | null }[]) =>
-  apiPost<SuggestedLine[]>('/api/admin/quotes/suggest', { lines })
+export const suggestLines = (lines: SuggestInput[], currency: 'MXN' | 'USD' = 'MXN') =>
+  apiPost<SuggestedLine[]>('/api/admin/quotes/suggest', { lines, currency })
+export const getQuoteSettings = () => apiGet<QuoteSettings>('/api/admin/quote_settings')
+export const saveQuoteSettings = (s: QuoteSettings) => apiPost<void>('/api/admin/quote_settings', s)
 export const quoteToProject = (id: string, title?: string | null) =>
   apiPost<{ project_id: string; title: string }>(`/api/admin/quotes/${id}/project`, { title: title || null })
 export const listProjectQuotes = (projectId: string) => apiGet<QuoteView[]>(`/api/admin/projects/${projectId}/quotes`)

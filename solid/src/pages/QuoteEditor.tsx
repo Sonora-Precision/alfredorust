@@ -43,10 +43,15 @@ interface Line {
   /** The PDF drawing of the part (a quote file), shown while the measures are taken. */
   drawingId: string | null
   drawingName: string | null
+  /** Estimated time: programming (h, once per part number), setup (h, once per order) and
+   * cycle (min per piece), for the time-based price (Daniel, 2026-11-07). */
+  prog: string
+  setup: string
+  cycle: string
 }
 
 const emptyLine = (): Line => ({
-  description: '', quantity: '1', mat: null, weight: '', multiplier: '', price: '', drawingId: null, drawingName: null,
+  description: '', quantity: '1', mat: null, weight: '', multiplier: '', price: '', drawingId: null, drawingName: null, prog: '', setup: '', cycle: '',
 })
 const num = (s: string) => {
   const t = s.trim()
@@ -121,6 +126,9 @@ export default function QuoteEditor(): JSX.Element {
         price: l.unit_price > 0 ? String(l.unit_price) : '',
         drawingId: l.drawing_id ?? null,
         drawingName: l.drawing_name ?? null,
+        prog: str(l.programming_h),
+        setup: str(l.setup_h),
+        cycle: str(l.cycle_min),
       })),
     )
   })
@@ -141,11 +149,19 @@ export default function QuoteEditor(): JSX.Element {
 
   // Suggested price per line, recomputed by the server when the material data changes.
   const suggestInput = createMemo(() =>
-    lines.map((l) => ({ material: materialOf(l), weight_kg: num(l.weight), multiplier: num(l.multiplier) })),
+    lines.map((l) => ({
+      material: materialOf(l),
+      weight_kg: num(l.weight),
+      multiplier: num(l.multiplier),
+      quantity: num(l.quantity),
+      programming_h: num(l.prog),
+      setup_h: num(l.setup),
+      cycle_min: num(l.cycle),
+    })),
   )
   const suggestions = createQuery(() => ({
-    queryKey: ['quote-suggest', JSON.stringify(suggestInput())],
-    queryFn: () => quotesApi.suggestLines(suggestInput()),
+    queryKey: ['quote-suggest', currency(), JSON.stringify(suggestInput())],
+    queryFn: () => quotesApi.suggestLines(suggestInput(), currency()),
     placeholderData: (prev: quotesApi.SuggestedLine[] | undefined) => prev,
     staleTime: 30_000,
   }))
@@ -179,6 +195,15 @@ export default function QuoteEditor(): JSX.Element {
   }
   const materialTotal = createMemo(() => stockGroups().reduce<number | null>((s, g) => (s == null || groupCost(g) == null ? null : s + groupCost(g)!), 0))
   const [editing, setEditing] = createSignal<number | null>(null)
+
+  // When a line's material comes from the client, the note says so (once; it can be unticked).
+  const CLIENT_MATERIAL = 'Material proporcionado por el cliente.'
+  const anySupplied = createMemo(() => lines.some((l) => l.mat?.customer_supplied))
+  createEffect((before: boolean) => {
+    const now = anySupplied()
+    if (now && !before && !notes().includes(CLIENT_MATERIAL) && notes().length < 3) setNotes([...notes(), CLIENT_MATERIAL])
+    return now
+  }, true)
   const priceOf = (m: string) => prices.data?.find((p) => matKey(p.material) === matKey(m))
 
   // Daniel, 2026-11-06: remember each part, and what it was sold or quoted for, as a reference.
@@ -232,6 +257,9 @@ export default function QuoteEditor(): JSX.Element {
             weight_kg: num(l.weight),
             multiplier: num(l.multiplier),
             drawing_id: l.drawingId,
+            programming_h: num(l.prog),
+            setup_h: num(l.setup),
+            cycle_min: num(l.cycle),
           })),
       }
       return draftOf() ? quotesApi.updateDraftQuote(draftOf()!, payload) : quotesApi.createQuote(payload)
@@ -374,11 +402,11 @@ export default function QuoteEditor(): JSX.Element {
           <div class="flex flex-wrap items-baseline justify-between gap-2">
             <p class="text-sm font-semibold text-foreground">Partidas</p>
             <p class="text-xs text-muted-foreground">
-              Sugerido = peso del tocho (o el de SolidWorks) × $/kg × multiplicador (3.5 si lo dejas vacío). Medidas en pulgadas.
+              Sugerido Mat. = material × multiplicador (3.5 si lo dejas vacío). Sugerido Tiempo = material + ciclo × tarifa de maquinado + (preparación × maquinado + programación × ingeniería) ÷ cantidad. Medidas en pulgadas.
             </p>
           </div>
           <div class="overflow-x-auto">
-            <table class="w-full min-w-[1100px] text-sm">
+            <table class="w-full min-w-[1320px] text-sm">
               <thead class="text-left text-xs text-muted-foreground">
                 <tr>
                   <th class="w-6 py-1">#</th>
@@ -386,6 +414,9 @@ export default function QuoteEditor(): JSX.Element {
                   <th class="w-20 py-1">Plano</th>
                   <th class="w-16 py-1">Cant.</th>
                   <th class="w-72 py-1">Material y tocho</th>
+                  <th class="w-16 py-1" title="Programación / ingeniería, una vez por número de parte">Prog. h</th>
+                  <th class="w-16 py-1" title="Preparación de la máquina, una vez por pedido">Prep. h</th>
+                  <th class="w-16 py-1" title="Ciclo de máquina por pieza">Ciclo min</th>
                   <th class="w-20 py-1">Peso SW kg</th>
                   <th class="w-14 py-1">×</th>
                   <th class="w-28 py-1 text-right">Sugerido</th>
@@ -444,25 +475,22 @@ export default function QuoteEditor(): JSX.Element {
                           </button>
                         </td>
                         <td class="py-1.5 pr-1">
+                          <input class={`${cell} text-right`} inputmode="decimal" aria-label="Programación en horas" value={l.prog} onInput={(e) => set(i(), 'prog', e.currentTarget.value)} />
+                        </td>
+                        <td class="py-1.5 pr-1">
+                          <input class={`${cell} text-right`} inputmode="decimal" aria-label="Preparación en horas" value={l.setup} onInput={(e) => set(i(), 'setup', e.currentTarget.value)} />
+                        </td>
+                        <td class="py-1.5 pr-1">
+                          <input class={`${cell} text-right`} inputmode="decimal" aria-label="Ciclo en minutos por pieza" value={l.cycle} onInput={(e) => set(i(), 'cycle', e.currentTarget.value)} />
+                        </td>
+                        <td class="py-1.5 pr-1">
                           <input class={`${cell} text-right`} inputmode="decimal" value={l.weight} onInput={(e) => set(i(), 'weight', e.currentTarget.value)} />
                         </td>
                         <td class="py-1.5 pr-1">
                           <input class={`${cell} text-right`} inputmode="decimal" placeholder="3.5" value={l.multiplier} onInput={(e) => set(i(), 'multiplier', e.currentTarget.value)} />
                         </td>
                         <td class="py-1.5 pr-1 text-right">
-                          <Show
-                            when={s()?.suggested_unit_price != null}
-                            fallback={<span class="text-xs text-muted-foreground">{s()?.missing.length ? `Falta ${s()!.missing.join(', ')}` : '—'}</span>}
-                          >
-                            <button
-                              type="button"
-                              class="tabular-nums text-sky-600 hover:underline"
-                              title={`Peso ${s()!.weight_kg?.toFixed(3)} kg × $${s()!.price_per_kg}/kg × ${s()!.multiplier}. Toca para usarlo.`}
-                              onClick={() => set(i(), 'price', String(s()!.suggested_unit_price))}
-                            >
-                              {money(s()!.suggested_unit_price!)}
-                            </button>
-                          </Show>
+                          <Suggested s={s()} onUse={(p) => set(i(), 'price', String(p))} />
                         </td>
                         <td class="py-1.5 pr-1">
                           <input class={`${cell} text-right`} inputmode="decimal" value={l.price} onInput={(e) => set(i(), 'price', e.currentTarget.value)} />
@@ -560,7 +588,7 @@ export default function QuoteEditor(): JSX.Element {
               <tfoot>
                 <tr class="border-t-2 border-border">
                   <td colspan={3} class="py-1.5 text-right text-xs text-muted-foreground">Material de la cotización</td>
-                  <td class="py-1.5 text-right font-semibold tabular-nums">{materialTotal() == null ? '—' : money(materialTotal()!)}</td>
+                  <td class="py-1.5 text-right font-semibold tabular-nums">{materialTotal() == null ? '—' : `${money(materialTotal()!)}${currency() === 'USD' ? ' USD' : ''}`}</td>
                 </tr>
               </tfoot>
             </table>
@@ -649,6 +677,52 @@ export default function QuoteEditor(): JSX.Element {
           {create.isPending ? 'Guardando…' : revOf() ? 'Generar revisión' : 'Generar cotización'}
         </Button>
       </div>
+    </div>
+  )
+}
+
+/** The two suggested prices of a line: by material (× multiplier) and by time at the company's
+ * rates; tap one to use it. Both leave out the material when the client supplies it. */
+function Suggested(props: { s: quotesApi.SuggestedLine | undefined; onUse: (price: number) => void }): JSX.Element {
+  const cur = () => (props.s?.currency === 'USD' ? ' USD' : '')
+  const less = () => (props.s?.customer_supplied ? ' − material del cliente' : '')
+  const byMaterial = () => props.s?.suggested_unit_price ?? null
+  const t = () => props.s?.time ?? null
+  return (
+    <div class="space-y-0.5 text-xs">
+      <Show
+        when={byMaterial() != null}
+        fallback={<p class="text-muted-foreground">{props.s?.missing.length ? `Falta ${props.s.missing.join(', ')}` : '—'}</p>}
+      >
+        <button
+          type="button"
+          class="block w-full text-right tabular-nums text-sky-600 hover:underline"
+          title={`Material ${money(props.s!.material_cost ?? 0)}${cur()} (${props.s!.weight_kg?.toFixed(3)} kg × $${props.s!.price_per_kg}/kg) × ${props.s!.multiplier}${less()}. Toca para usarlo.`}
+          onClick={() => props.onUse(byMaterial()!)}
+        >
+          <span class="text-muted-foreground">Mat. </span>
+          {money(byMaterial()!)}
+        </button>
+      </Show>
+      <Show when={t()}>
+        {(tp) => (
+          <button
+            type="button"
+            class="block w-full text-right font-medium tabular-nums text-emerald-700 hover:underline dark:text-emerald-300"
+            title={[
+              `Material ${money(tp().material)}`,
+              `Ciclo ${money(tp().cycle)}`,
+              `Preparación ${money(tp().setup)}`,
+              `Programación ${money(tp().programming)}`,
+              `= ${money(tp().unit_price)}${cur()} por pieza · ${tp().hours} h en total. Toca para usarlo.`,
+            ].join('\n')}
+            onClick={() => props.onUse(tp().unit_price)}
+          >
+            <span class="font-normal text-muted-foreground">Tiempo </span>
+            {money(tp().unit_price)}
+          </button>
+        )}
+      </Show>
     </div>
   )
 }
