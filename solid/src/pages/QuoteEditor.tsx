@@ -383,6 +383,7 @@ export default function QuoteEditor(): JSX.Element {
                 <tr>
                   <th class="w-6 py-1">#</th>
                   <th class="py-1">No. de parte / descripción</th>
+                  <th class="w-20 py-1">Plano</th>
                   <th class="w-16 py-1">Cant.</th>
                   <th class="w-72 py-1">Material y tocho</th>
                   <th class="w-20 py-1">Peso SW kg</th>
@@ -408,37 +409,15 @@ export default function QuoteEditor(): JSX.Element {
                             onInput={(e) => set(i(), 'description', e.currentTarget.value)}
                           />
                           <PastPrices refs={references.data?.[i()] ?? []} onUse={(p) => set(i(), 'price', String(p))} />
-                          <div class="mt-0.5 flex items-center gap-2 text-[11px]">
-                            <Show when={l.drawingId}>
-                              {(id) => (
-                                <a
-                                  href={quotesApi.quoteDrawingUrl(id())}
-                                  target="_blank"
-                                  rel="noopener"
-                                  class="inline-flex min-w-0 items-center gap-1 text-sky-600 hover:underline"
-                                  title="Abrir el plano"
-                                >
-                                  <FileText class="h-3 w-3 shrink-0" />
-                                  <span class="truncate">{l.drawingName ?? 'Plano'}</span>
-                                </a>
-                              )}
-                            </Show>
-                            <label class="cursor-pointer text-muted-foreground hover:text-foreground">
-                              <Paperclip class="inline h-3 w-3" />{' '}
-                              {uploading() === i() ? 'Subiendo…' : l.drawingId ? 'Cambiar' : 'Plano (PDF)'}
-                              <input
-                                type="file"
-                                accept="application/pdf,.pdf"
-                                class="hidden"
-                                disabled={uploading() != null}
-                                onChange={(e) => {
-                                  const f = e.currentTarget.files?.[0]
-                                  e.currentTarget.value = ''
-                                  if (f) void attach(i(), f)
-                                }}
-                              />
-                            </label>
-                          </div>
+                        </td>
+                        <td class="py-1.5 pr-1">
+                          <DrawingButton
+                            id={l.drawingId}
+                            name={l.drawingName}
+                            busy={uploading() === i()}
+                            disabled={uploading() != null}
+                            onFile={(f) => void attach(i(), f)}
+                          />
                         </td>
                         <td class="py-1.5 pr-1">
                           <input class={`${cell} text-right`} inputmode="decimal" value={l.quantity} onInput={(e) => set(i(), 'quantity', e.currentTarget.value)} />
@@ -517,7 +496,15 @@ export default function QuoteEditor(): JSX.Element {
                 pieces={num(l().quantity) ?? 1}
                 onClose={() => setEditing(null)}
                 onSave={(m) => setLines(editing()!, 'mat', m)}
-                aside={<QuoteDrawingPanel id={l().drawingId} name={l().drawingName} part={l().description.trim()} />}
+                aside={
+                  <QuoteDrawingPanel
+                    id={l().drawingId}
+                    name={l().drawingName}
+                    part={l().description.trim()}
+                    busy={uploading() === editing()}
+                    onFile={(f) => void attach(editing()!, f)}
+                  />
+                }
               />
             )}
           </Show>
@@ -666,8 +653,73 @@ export default function QuoteEditor(): JSX.Element {
   )
 }
 
+/** A link-looking control that picks one PDF. */
+function PdfPicker(props: { busy: boolean; disabled?: boolean; label: string; onFile: (f: File) => void; class: string }): JSX.Element {
+  return (
+    <label class={`cursor-pointer ${props.class} ${props.disabled ? 'pointer-events-none opacity-50' : ''}`}>
+      <Paperclip class="inline h-3.5 w-3.5" /> {props.busy ? 'Subiendo…' : props.label}
+      <input
+        type="file"
+        accept="application/pdf,.pdf"
+        class="hidden"
+        disabled={props.busy || props.disabled}
+        onChange={(e) => {
+          const f = e.currentTarget.files?.[0]
+          e.currentTarget.value = ''
+          if (f) props.onFile(f)
+        }}
+      />
+    </label>
+  )
+}
+
+/** The "Plano" column of a line: upload the drawing, or open the one it has. */
+function DrawingButton(props: {
+  id: string | null
+  name: string | null
+  busy: boolean
+  disabled: boolean
+  onFile: (f: File) => void
+}): JSX.Element {
+  return (
+    <Show
+      when={props.id}
+      fallback={
+        <PdfPicker
+          busy={props.busy}
+          disabled={props.disabled}
+          label="Plano"
+          onFile={props.onFile}
+          class="inline-flex h-8 items-center gap-1 rounded border border-dashed border-border px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+        />
+      }
+    >
+      {(id) => (
+        <div class="space-y-0.5">
+          <a
+            href={quotesApi.quoteDrawingUrl(id())}
+            target="_blank"
+            rel="noopener"
+            title={props.name ?? 'Abrir el plano'}
+            class="inline-flex h-8 items-center gap-1 rounded border border-emerald-500/40 bg-emerald-500/10 px-2 text-xs text-emerald-700 hover:underline dark:text-emerald-300"
+          >
+            <FileText class="h-3.5 w-3.5" /> Ver
+          </a>
+          <PdfPicker busy={props.busy} disabled={props.disabled} label="Cambiar" onFile={props.onFile} class="block text-[11px] text-muted-foreground hover:text-foreground" />
+        </div>
+      )}
+    </Show>
+  )
+}
+
 /** The drawing of a quote line beside the material form, to take the measures from it. */
-function QuoteDrawingPanel(props: { id: string | null; name: string | null; part: string }): JSX.Element {
+function QuoteDrawingPanel(props: {
+  id: string | null
+  name: string | null
+  part: string
+  busy: boolean
+  onFile: (f: File) => void
+}): JSX.Element {
   return (
     <div class="flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
       <div class="flex items-center justify-between gap-2 border-b border-border px-4 py-2 text-sm">
@@ -675,19 +727,30 @@ function QuoteDrawingPanel(props: { id: string | null; name: string | null; part
           <FileText class="h-4 w-4 shrink-0" />
           <span class="truncate">Plano{props.name || props.part ? ` · ${props.name ?? props.part}` : ''}</span>
         </span>
-        <Show when={props.id}>
-          {(id) => (
-            <a href={quotesApi.quoteDrawingUrl(id())} target="_blank" rel="noopener" class="shrink-0 text-xs text-sky-600 hover:underline">
-              Abrir en otra pestaña
-            </a>
-          )}
-        </Show>
+        <span class="flex shrink-0 items-center gap-3 text-xs">
+          <PdfPicker busy={props.busy} label={props.id ? 'Cambiar plano' : 'Subir plano'} onFile={props.onFile} class="text-sky-600 hover:underline" />
+          <Show when={props.id}>
+            {(id) => (
+              <a href={quotesApi.quoteDrawingUrl(id())} target="_blank" rel="noopener" class="text-sky-600 hover:underline">
+                Abrir en otra pestaña
+              </a>
+            )}
+          </Show>
+        </span>
       </div>
       <Show
         when={props.id}
         fallback={
           <div class="grid flex-1 place-items-center p-6 text-center text-sm text-muted-foreground">
-            Esta partida no tiene plano. Súbelo con "Plano (PDF)" junto al número de parte.
+            <div class="space-y-3">
+              <p>Esta partida todavía no tiene plano.</p>
+              <PdfPicker
+                busy={props.busy}
+                label="Subir plano (PDF)"
+                onFile={props.onFile}
+                class="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+              />
+            </div>
           </div>
         }
       >
