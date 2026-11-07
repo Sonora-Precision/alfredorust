@@ -10,6 +10,7 @@ import { Button } from '../ui/Button'
 import { toast } from '../ui/Toast'
 import { folioOf } from '../production/WorkOrderSearch'
 import { PartName } from '../production/PartName'
+import { MaterialNames } from './MaterialNames'
 import { MATERIAL_STATUS } from './PartMaterialCell'
 import { DEFAULT_KERF, SHAPES, type SizerApi, StockSizer, barLength } from './StockSizer'
 import { humanizeError } from '../../lib/api/client'
@@ -19,7 +20,6 @@ import type { PartMaterial, ProjectConcept } from '../../lib/api/types'
 /** What the saw takes per piece of a part (its own, or 1/8"). */
 export const kerfOf = (m: PartMaterial) => m.saw_kerf ?? DEFAULT_KERF
 
-const MATERIALS = ['Aluminio 6061', 'Aluminio 7075', '1018', '1045', '4140', 'Inoxidable 304', 'Delrin', 'Delrin negro', 'Delrin blanco', 'G10', 'Nylamid', 'Latón']
 
 const inch = (v: number | null | undefined) => (v == null ? '' : String(+v.toFixed(4)).replace(/^0\./, '.'))
 const isRound = (shape?: string | null) => ['redondo', 'hexagonal'].includes((shape ?? '').toLowerCase())
@@ -146,9 +146,7 @@ export function MaterialRequest(props: {
         Pon las medidas de cada número de parte y ajusta el stock sugerido. La barra a pedir es piezas × (largo + corte de
         sierra, 1/8" si no lo cambias).
       </p>
-      <datalist id="stock-materials">
-        <For each={MATERIALS}>{(n) => <option value={n} />}</For>
-      </datalist>
+      <MaterialNames id="stock-materials" extra={props.concepts.map((c) => c.material?.material)} />
       <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <span>
           En la solicitud: <b class="text-foreground">{lines().length}</b> de {props.concepts.filter(pending).length} partes con stock por pedir
