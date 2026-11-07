@@ -952,6 +952,15 @@ mod tests {
     }
 
     #[test]
+    fn manual_serial_is_per_employee() {
+        let at = t("2026-11-07T07:00:00-07:00");
+        let a = crate::state::manual_serial("0004", at);
+        assert_eq!(a, crate::state::manual_serial("0004", at));
+        assert_ne!(a, crate::state::manual_serial("0005", at));
+        assert!(a >= 0);
+    }
+
+    #[test]
     fn flexible_shift_and_manual_checks() {
         let mut jose = employee("0004", Some(tarde()));
         jose.alternates = vec![manana()];

@@ -94,6 +94,19 @@ pub async fn list_attendance_employees(
 /// The terminal name used for checks typed by an admin.
 pub const MANUAL_DEVICE: &str = "manual";
 
+/// Stable, non-negative serial for a manual check of `employee_no` at `at` (FNV-1a).
+pub fn manual_serial(employee_no: &str, at: DateTime) -> i64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in employee_no
+        .bytes()
+        .chain(at.timestamp_millis().to_le_bytes())
+    {
+        h ^= u64::from(b);
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    (h >> 1) as i64
+}
+
 /// Adds a check typed by an admin (forgotten check, no fingerprint yet...). Returns its id.
 pub async fn insert_manual_attendance_event(
     state: &AppState,
@@ -107,8 +120,9 @@ pub async fn insert_manual_attendance_event(
         id: None,
         company_id: *company_id,
         device: MANUAL_DEVICE.to_string(),
-        // unique per instant; two manual checks at the same minute would be the same check
-        serial_no: at.timestamp_millis(),
+        // The unique key is (device, serial, time): derive the serial from the employee so two
+        // people can have a manual check at the same time, while the same person can't twice.
+        serial_no: manual_serial(employee_no, at),
         employee_no: employee_no.to_string(),
         at,
         method: "manual".to_string(),
