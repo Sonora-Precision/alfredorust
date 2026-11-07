@@ -159,6 +159,10 @@ pub fn material_of(text: &str) -> Option<String> {
     if t.contains("mic 6") || t.contains("mic6") || t.contains("mic-6") {
         return Some("Aluminio MIC 6".into());
     }
+    // Ground tooling plate without its brand: priced apart from plain aluminum.
+    if alu && t.contains("rectificad") {
+        return Some("Aluminio rectificado".into());
+    }
     for alloy in ["6061", "7075", "6063", "5052", "2024"] {
         if t.contains(alloy) {
             return Some(format!("Aluminio {alloy}"));
