@@ -72,12 +72,20 @@ pub async fn api_part_material_set(
                 (Ok(t), Ok(w), Ok(l)) => (t, w, l),
                 (Err(r), _, _) | (_, Err(r), _) | (_, _, Err(r)) => return r,
             };
+            let (part_thickness, part_width, part_length) =
+                match (clean_dim(m.part_thickness), clean_dim(m.part_width), clean_dim(m.part_length)) {
+                    (Ok(t), Ok(w), Ok(l)) => (t, w, l),
+                    (Err(r), _, _) | (_, Err(r), _) | (_, _, Err(r)) => return r,
+                };
             Some(PartMaterial {
                 material: clean_text(m.material, 60),
                 shape: clean_text(m.shape, 30).map(|s| s.to_lowercase()),
                 thickness,
                 width,
                 length,
+                part_thickness,
+                part_width,
+                part_length,
                 bar_to_order: clean_text(m.bar_to_order, 120),
                 customer_supplied: m.customer_supplied,
                 ordered: m.ordered,
@@ -473,7 +481,7 @@ pub async fn api_material_receipt_show(
             .collect()
     } else {
         HashMap::new()
-    };
+    };
     let mut ordered: Vec<&ProjectConcept> = parts.values().collect();
     ordered.sort_by_key(|c| c.work_order_number.unwrap_or(i64::MAX));
 
@@ -651,7 +659,25 @@ pub struct CutListItemData {
 }
 
 /// The band saw of the company: the active machine whose name says "sierra".
-async fn find_saw(state: &AppState, company_id: &ObjectId) -> Option<ObjectId> {
+pub(crate) const NOT_IN_SHOP: &str =
+    "el material todavía no está en el taller: asígnale una barra recibida o marca el paso Material";
+
+/// Only what is already in the shop goes to the saw (Daniel, 2026-11-06): a received bar
+/// assigned or the "Material" step ✔, also for material the customer supplies.
+pub(crate) async fn material_in_shop(state: &AppState, company_id: &ObjectId, concept: &ProjectConcept) -> bool {
+    let Some(id) = concept.id else { return false };
+    let received = crate::state::parts_with_received_material(state, company_id, &[id])
+        .await
+        .map(|s| s.contains(&id))
+        .unwrap_or(false);
+    let mut in_shop = concept.clone();
+    if let Some(m) = in_shop.material.as_mut() {
+        m.customer_supplied = false;
+    }
+    matches!(material_status(&in_shop, received), Some("recibido" | "cortado"))
+}
+
+pub(crate) async fn find_saw(state: &AppState, company_id: &ObjectId) -> Option<ObjectId> {
     crate::state::list_resources(state, company_id)
         .await
         .ok()?
@@ -698,6 +724,9 @@ pub async fn api_cut_queue(
     let Some(length) = concept.material.as_ref().and_then(|m| m.length) else {
         return json_error(StatusCode::BAD_REQUEST, "captura primero el material y el largo de corte de la parte");
     };
+    if !material_in_shop(&state, &company_id, &concept).await {
+        return json_error(StatusCode::BAD_REQUEST, NOT_IN_SHOP);
+    }
     let Some(saw) = find_saw(&state, &company_id).await else {
         return json_error(StatusCode::BAD_REQUEST, "no hay una máquina \"Sierra\" dada de alta");
     };

@@ -10,6 +10,7 @@ import { Drawer } from '../ui/Drawer'
 import { toast } from '../ui/Toast'
 import { humanizeError } from '../../lib/api/client'
 import { queuePartToSaw, setPartMaterial } from '../../lib/api/material'
+import { type SizerApi, StockSizer } from './StockSizer'
 import type { CutListItem, MaterialStatus, PartMaterial } from '../../lib/api/types'
 import { useAuth } from '../../lib/auth/AuthContext'
 
@@ -115,7 +116,7 @@ export function PartMaterialCell(props: {
         )}
       </Show>
       <Show when={m()?.length != null && props.cut && !props.cut.cut_done}>
-        <SendToSaw conceptId={props.conceptId} partName={props.partName} position={props.cut?.saw_position ?? null} />
+        <SendToSaw conceptId={props.conceptId} partName={props.partName} position={props.cut?.saw_position ?? null} status={props.status} />
       </Show>
       <Show when={open()}>
         <MaterialEditor
@@ -131,7 +132,14 @@ export function PartMaterialCell(props: {
 }
 
 /** "Pasar a corte": into the Sierra cinta queue; once there, its place in it. */
-export function SendToSaw(props: { conceptId: string; partName: string; position: number | null }): JSX.Element {
+export function SendToSaw(props: {
+  conceptId: string
+  partName: string
+  position: number | null
+  /** Only material already in the shop goes to the saw (Daniel, 2026-11-06). */
+  status: MaterialStatus | null | undefined
+}): JSX.Element {
+  const inShop = () => props.status === 'recibido' || props.status === 'cortado' || props.status === 'surtido_por_cliente'
   const auth = useAuth()
   const qc = useQueryClient()
   const canSend = () =>
@@ -151,6 +159,10 @@ export function SendToSaw(props: { conceptId: string; partName: string; position
       fallback={<p class="mt-0.5 text-xs text-sky-700 dark:text-sky-300">✂ En fila de la sierra · #{props.position}</p>}
     >
       <Show when={canSend()}>
+        <Show
+          when={inShop()}
+          fallback={<p class="mt-0.5 text-xs text-muted-foreground">✂ A corte cuando el material esté en el taller</p>}
+        >
         <button
           type="button"
           class="mt-0.5 inline-flex items-center gap-1 text-xs font-medium text-sky-600 hover:underline disabled:opacity-50"
@@ -160,6 +172,7 @@ export function SendToSaw(props: { conceptId: string; partName: string; position
           <Scissors class="h-3.5 w-3.5" />
           {send.isPending ? 'Enviando…' : 'Pasar a corte'}
         </button>
+        </Show>
       </Show>
     </Show>
   )
@@ -175,15 +188,12 @@ export function MaterialEditor(props: {
   const qc = useQueryClient()
   const [material, setMaterial] = createSignal(props.material.material ?? '')
   const [shape, setShape] = createSignal(props.material.shape ?? 'solera')
-  const [t, setT] = createSignal(num(props.material.thickness))
-  const [w, setW] = createSignal(num(props.material.width))
-  const [l, setL] = createSignal(num(props.material.length))
   const [bar, setBar] = createSignal(props.material.bar_to_order ?? '')
   const [ordered, setOrdered] = createSignal(props.material.ordered ?? false)
   const [supplied, setSupplied] = createSignal(props.material.customer_supplied ?? false)
   const [notes, setNotes] = createSignal(props.material.notes ?? '')
-  // Measures may be typed in mm; they are saved in inches.
-  const [unit, setUnit] = createSignal<LengthUnit>('in')
+  // Part size (mm or in) and the stock suggested from it, in inches.
+  let sizer: SizerApi | undefined
 
   const save = createMutation(() => ({
     mutationFn: (m: PartMaterial | null) => setPartMaterial(props.conceptId, m),
@@ -201,17 +211,15 @@ export function MaterialEditor(props: {
   const round = () => shape() === 'redondo'
 
   const submit = () => {
-    const dims = [t(), round() ? '' : w(), l()].map((v) => parseLength(v, unit()))
-    if (dims.some((d) => Number.isNaN(d))) {
-      toast.error('Medida inválida', unit() === 'mm' ? 'Usa milímetros: 50.8 o 12' : 'Usa pulgadas: 1 1/4, 1/8 o .625')
+    const dims = sizer?.read()
+    if (!dims || typeof dims === 'string') {
+      toast.error('Medida inválida', `${dims ?? ''}: usa 2.5, 1 1/4, .625 o 63.5 en mm`)
       return
     }
     save.mutate({
       material: material().trim() || null,
       shape: shape().trim() || null,
-      thickness: dims[0],
-      width: dims[1],
-      length: dims[2],
+      ...dims,
       bar_to_order: bar().trim() || null,
       ordered: ordered(),
       customer_supplied: supplied(),
@@ -250,32 +258,12 @@ export function MaterialEditor(props: {
             </select>
           </label>
         </div>
-        <UnitToggle
-          unit={unit()}
-          onChange={(u) => {
-            const from = unit()
-            setT((v) => convertField(v, from, u))
-            setW((v) => convertField(v, from, u))
-            setL((v) => convertField(v, from, u))
-            setUnit(u)
-          }}
+        <StockSizer
+          material={props.material}
+          round={round()}
+          firstLabel={round() ? 'Diámetro' : 'Espesor'}
+          ref={(api) => (sizer = api)}
         />
-        <div class={`grid gap-2 ${round() ? 'grid-cols-2' : 'grid-cols-3'}`}>
-          <label class="space-y-1">
-            <span class="text-xs text-muted-foreground">{round() ? 'Diámetro' : 'Espesor'}</span>
-            <input class={field} placeholder={round() ? '1 1/4' : '1/8'} value={t()} onInput={(e) => setT(e.currentTarget.value)} />
-          </label>
-          <Show when={!round()}>
-            <label class="space-y-1">
-              <span class="text-xs text-muted-foreground">Ancho</span>
-              <input class={field} placeholder="1.75" value={w()} onInput={(e) => setW(e.currentTarget.value)} />
-            </label>
-          </Show>
-          <label class="space-y-1">
-            <span class="text-xs text-muted-foreground">Largo de corte</span>
-            <input class={field} placeholder="5" value={l()} onInput={(e) => setL(e.currentTarget.value)} />
-          </label>
-        </div>
         <label class="block space-y-1">
           <span class="text-xs text-muted-foreground">Barra a pedir</span>
           <input class={field} placeholder={round() ? 'Ø1.25" x 144"' : '0.125" x 1.75" x 175"'} value={bar()} onInput={(e) => setBar(e.currentTarget.value)} />

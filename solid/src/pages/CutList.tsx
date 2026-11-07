@@ -121,7 +121,7 @@ export default function CutList(): JSX.Element {
                   {i.needed} pz
                 </p>
                 <Show when={!i.cut_done}>
-                  <SendToSaw conceptId={i.concept_id} partName={i.part} position={i.saw_position} />
+                  <SendToSaw conceptId={i.concept_id} partName={i.part} position={i.saw_position} status={i.status} />
                 </Show>
               </div>
 

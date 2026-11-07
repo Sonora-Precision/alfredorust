@@ -614,8 +614,15 @@ pub async fn api_machine_queue_add(
         .find_one(doc! { "_id": concept_id, "company_id": company_id })
         .await
     {
-        Ok(Some(_)) => {}
         Ok(None) => return json_error(StatusCode::BAD_REQUEST, "order not found"),
+        Ok(Some(concept)) => {
+            // The saw only cuts material already in the shop (Daniel, 2026-11-06).
+            if super::material::find_saw(&state, &company_id).await == Some(resource_id)
+                && !super::material::material_in_shop(&state, &company_id, &concept).await
+            {
+                return json_error(StatusCode::BAD_REQUEST, super::material::NOT_IN_SHOP);
+            }
+        }
         Err(_) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load order"),
     }
     match add_machine_queue_entry(

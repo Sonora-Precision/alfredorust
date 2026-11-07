@@ -999,6 +999,14 @@ pub struct PartMaterial {
     pub width: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub length: Option<f64>,
+    /// Finished part size in inches (typed in mm or in), from which the stock above is
+    /// suggested and then edited (Daniel, 2026-11-06: 19 × 50 × 60 mm → 1" × 2" × 2.5").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub part_thickness: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub part_width: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub part_length: Option<f64>,
     /// Free text, as ordered: "1/2\" X .625\" X 80\"".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bar_to_order: Option<String>,
