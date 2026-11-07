@@ -63,9 +63,9 @@ export function NestingView(props: {
                   <text
                     x={r.x + r.w / 2}
                     y={r.y + r.h / 2}
-                    font-size={Math.min(0.5, size / 3)}
+                    font-size={String(Math.min(0.5, size / 3))}
                     text-anchor="middle"
-                    dominant-baseline="middle"
+                    dy="0.35em"
                     fill="currentColor"
                     class="text-foreground"
                   >
