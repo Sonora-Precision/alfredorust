@@ -270,6 +270,7 @@ export function MaterialEditor(props: {
           round={round()}
           firstLabel={round() ? 'Diámetro' : 'Espesor'}
           pieces={props.pieces ?? 1}
+          cutToSize={shape() === 'placa'}
           ref={(api) => (sizer = api)}
         />
         <div class="flex flex-wrap gap-4">

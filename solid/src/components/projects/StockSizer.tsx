@@ -56,6 +56,8 @@ export function StockSizer(props: {
   disabled?: boolean
   /** Pieces of the part: the bar to order is pieces × (length + saw cut). */
   pieces: number
+  /** Plates come cut to size from the supplier: ordered as pieces, without saw cut. */
+  cutToSize?: boolean
   ref: (api: SizerApi) => void
 }): JSX.Element {
   const m = () => props.material
@@ -106,6 +108,10 @@ export function StockSizer(props: {
     const l = stockIn(sl())
     const k = kerfIn()
     if (t == null || l == null || [t, l, k, w ?? 0].some(Number.isNaN)) return ''
+    if (props.cutToSize) {
+      const n = Math.max(0, Math.ceil(props.pieces))
+      return `${n} ${n === 1 ? 'pza' : 'pzas'} de ${inch(t)}" × ${w == null ? '?' : inch(w)}" × ${inch(l)}"`
+    }
     const section = props.round ? `Ø${inch(t)}"` : `${inch(t)}" × ${w == null ? '?' : inch(w)}"`
     return `${section} × ${inch(+barLength(props.pieces, l, k).toFixed(3))}"`
   }
@@ -232,13 +238,15 @@ export function StockSizer(props: {
         Sugerido: la pieza + 1/32" redondeado al siguiente 1/4". Puedes cambiarlo.
       </p>
       <div class="grid grid-cols-3 gap-2 pt-1">
-        <label class="space-y-1">
-          <span class="text-xs text-muted-foreground">Corte de sierra (in)</span>
-          <input class={field} placeholder=".125" disabled={props.disabled} value={kerf()} onInput={(e) => setKerf(e.currentTarget.value)} />
-        </label>
-        <label class="col-span-2 space-y-1">
+        <Show when={!props.cutToSize}>
+          <label class="space-y-1">
+            <span class="text-xs text-muted-foreground">Corte de sierra (in)</span>
+            <input class={field} placeholder=".125" disabled={props.disabled} value={kerf()} onInput={(e) => setKerf(e.currentTarget.value)} />
+          </label>
+        </Show>
+        <label class={`${props.cutToSize ? 'col-span-3' : 'col-span-2'} space-y-1`}>
           <span class="flex items-center justify-between text-xs text-muted-foreground">
-            Barra a pedir
+            {props.cutToSize ? 'Placas a pedir (cortadas a la medida)' : 'Barra a pedir'}
             <Show when={barTouched() && autoBar() && autoBar() !== bar() && !props.disabled}>
               <button type="button" class="text-sky-600 hover:underline" onClick={() => setBarTouched(false)}>
                 Calcular: {autoBar()}
@@ -257,7 +265,7 @@ export function StockSizer(props: {
           />
         </label>
       </div>
-      <Show when={stockIn(sl()) != null && !Number.isNaN(stockIn(sl())!)}>
+      <Show when={!props.cutToSize && stockIn(sl()) != null && !Number.isNaN(stockIn(sl())!)}>
         <p class="tnum text-[11px] text-muted-foreground">
           {Math.ceil(props.pieces)} {Math.ceil(props.pieces) === 1 ? 'pza' : 'pzas'} × ({inch(stockIn(sl()))}" + {inch(kerfIn())}" de sierra) ={' '}
           <b class="text-foreground">{inch(+barLength(props.pieces, stockIn(sl())!, kerfIn()).toFixed(3))}"</b> de largo
