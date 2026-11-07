@@ -63,7 +63,7 @@ export function requestText(projectTitle: string, groups: Group[], date = new Da
   groups.forEach((g, i) => {
     out.push(
       g.cutToSize
-        ? `${i + 1}. *${g.stock}* — ${g.total} ${g.total === 1 ? 'pza cortada' : 'pzas cortadas'} a la medida`
+        ? `${i + 1}. *${g.stock}* - ${g.total} ${g.total === 1 ? 'pz' : 'pzs'}`
         : `${i + 1}. *${g.stock} × ${inch(+g.total.toFixed(3))}"*`,
     )
   })
@@ -95,7 +95,12 @@ export function MaterialRequest(props: {
     for (const l of lines()) {
       const plate = isPlate(l.material)
       const label = stockLabel(l.material) || 'Material sin asignar'
-      const stock = plate ? `${label} × ${inch(l.material.length)}"` : label
+      // Plates read as the shop asks for them: "Corte de placa Aluminio 6061 1" x 4" x 6"".
+      const stock = plate
+        ? ['Corte de placa', l.material.material, [l.material.thickness, l.material.width, l.material.length].map((d) => `${inch(d)}"`).join(' x ')]
+            .filter(Boolean)
+            .join(' ')
+        : label
       const key = `${plate ? 'p' : 'b'}|${stock.toLowerCase()}`
       const g = map.get(key) ?? { stock, cutToSize: plate, lines: [], total: 0 }
       g.lines.push(l)
@@ -125,7 +130,7 @@ export function MaterialRequest(props: {
             ordered: true,
             bar_to_order:
               l.material.bar_to_order ??
-              (g.cutToSize ? `${l.total} pzas de ${g.stock}` : `${g.stock} · ${inch(+l.total.toFixed(3))}"`).slice(0, 120),
+              (g.cutToSize ? `${g.stock} - ${l.total} pzs` : `${g.stock} · ${inch(+l.total.toFixed(3))}"`).slice(0, 120),
           })
     },
     onSuccess: () => {

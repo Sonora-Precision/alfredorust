@@ -110,7 +110,7 @@ export function StockSizer(props: {
     if (t == null || l == null || [t, l, k, w ?? 0].some(Number.isNaN)) return ''
     if (props.cutToSize) {
       const n = Math.max(0, Math.ceil(props.pieces))
-      return `${n} ${n === 1 ? 'pza' : 'pzas'} de ${inch(t)}" × ${w == null ? '?' : inch(w)}" × ${inch(l)}"`
+      return `Corte de placa ${inch(t)}" x ${w == null ? '?' : inch(w)}" x ${inch(l)}" - ${n} ${n === 1 ? 'pz' : 'pzs'}`
     }
     const section = props.round ? `Ø${inch(t)}"` : `${inch(t)}" × ${w == null ? '?' : inch(w)}"`
     return `${section} × ${inch(+barLength(props.pieces, l, k).toFixed(3))}"`
