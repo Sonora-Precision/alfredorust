@@ -9,7 +9,7 @@ import { type JSX, For, Show, createMemo, createSignal } from 'solid-js'
 import { Button } from '../ui/Button'
 import { toast } from '../ui/Toast'
 import { folioOf } from '../production/WorkOrderSearch'
-import { MATERIAL_STATUS, parseInches } from './PartMaterialCell'
+import { type LengthUnit, MATERIAL_STATUS, UnitToggle, convertField, parseLength } from './PartMaterialCell'
 import { humanizeError } from '../../lib/api/client'
 import { setPartMaterial } from '../../lib/api/material'
 import type { PartMaterial, ProjectConcept } from '../../lib/api/types'
@@ -207,28 +207,45 @@ function PartStockRow(props: {
   const [t, setT] = createSignal(inch(m().thickness))
   const [w, setW] = createSignal(inch(m().width))
   const [l, setL] = createSignal(inch(m().length))
+  // Measures may be typed in mm; they are always saved in inches.
+  const [unit, setUnit] = createSignal<LengthUnit>('in')
   const round = () => isRound(shape())
+  const inches = (v: string) => parseLength(v, unit())
+  const changeUnit = (u: LengthUnit) => {
+    const from = unit()
+    setT((v) => convertField(v, from, u))
+    setW((v) => convertField(v, from, u))
+    setL((v) => convertField(v, from, u))
+    setUnit(u)
+  }
 
   const dirty = () =>
     material() !== (m().material ?? '') ||
     shape() !== (m().shape ?? 'redondo') ||
-    t() !== inch(m().thickness) ||
-    (!round() && w() !== inch(m().width)) ||
-    l() !== inch(m().length)
+    inches(t()) !== (m().thickness ?? null) ||
+    (!round() && inches(w()) !== (m().width ?? null)) ||
+    inches(l()) !== (m().length ?? null)
+  /** '= 2" ' next to a field typed in mm. */
+  const asInches = (v: string) => {
+    const x = unit() === 'mm' ? inches(v) : null
+    return x == null || Number.isNaN(x) ? '' : `= ${inch(x)}"`
+  }
 
   const save = createMutation(() => ({
     mutationFn: (pm: PartMaterial) => setPartMaterial(props.concept.id, pm),
     onSuccess: () => {
       toast.success('Stock guardado', props.concept.name)
+      // Saved in inches: show it as saved.
+      if (unit() === 'mm') changeUnit('in')
       void qc.invalidateQueries({ queryKey: ['project-concepts', props.projectId] })
       void qc.invalidateQueries({ queryKey: ['cut-list'] })
     },
     onError: (err) => toast.error('No se pudo guardar', humanizeError(err, 'Revisa las medidas')),
   }))
   const submit = () => {
-    const [th, wi, le] = [t(), round() ? '' : w(), l()].map(parseInches)
+    const [th, wi, le] = [t(), round() ? '' : w(), l()].map(inches)
     if ([th, wi, le].some((d) => Number.isNaN(d))) {
-      toast.error('Medida inválida', 'Usa pulgadas: 2.5, 1 1/4 o .625')
+      toast.error('Medida inválida', unit() === 'mm' ? 'Usa milímetros: 63.5 o 12' : 'Usa pulgadas: 2.5, 1 1/4 o .625')
       return
     }
     // Keep what else the part has (ordered, notes…); the stock changed, so it is ordered again.
@@ -245,7 +262,7 @@ function PartStockRow(props: {
   }
 
   const preview = () => {
-    const le = parseInches(l())
+    const le = inches(l())
     if (le == null || Number.isNaN(le)) return null
     return lengthToOrder(props.concept.quantity, le)
   }
@@ -268,6 +285,9 @@ function PartStockRow(props: {
         <span class="tnum text-xs text-muted-foreground">{props.concept.quantity} pzas</span>
         <Show when={props.concept.material_status}>
           {(s) => <span class={`rounded px-1.5 py-px text-[11px] font-medium ${MATERIAL_STATUS[s()].class}`}>{MATERIAL_STATUS[s()].label}</span>}
+        </Show>
+        <Show when={props.canEdit}>
+          <UnitToggle unit={unit()} onChange={changeUnit} />
         </Show>
         <Show when={preview() != null && preview()! > 0}>
           <span class="tnum ml-auto text-sm text-foreground">
@@ -294,17 +314,17 @@ function PartStockRow(props: {
           </select>
         </label>
         <label class="space-y-1">
-          <span class="text-xs text-muted-foreground">{round() ? (shape() === 'hexagonal' ? 'Entre caras' : 'Diámetro') : 'Espesor'}</span>
+          <span class="text-xs text-muted-foreground">{round() ? (shape() === 'hexagonal' ? 'Entre caras' : 'Diámetro') : 'Espesor'} <span class="tnum">{asInches(t())}</span></span>
           <input class={field} placeholder={round() ? '2.5' : '1/2'} disabled={!props.canEdit} value={t()} onInput={(e) => setT(e.currentTarget.value)} />
         </label>
         <Show when={!round()}>
           <label class="space-y-1">
-            <span class="text-xs text-muted-foreground">Ancho</span>
+            <span class="text-xs text-muted-foreground">Ancho <span class="tnum">{asInches(w())}</span></span>
             <input class={field} placeholder="1.75" disabled={!props.canEdit} value={w()} onInput={(e) => setW(e.currentTarget.value)} />
           </label>
         </Show>
         <label class="space-y-1">
-          <span class="text-xs text-muted-foreground">Largo por pieza</span>
+          <span class="text-xs text-muted-foreground">Largo por pieza <span class="tnum">{asInches(l())}</span></span>
           <input class={field} placeholder="1.5" disabled={!props.canEdit} value={l()} onInput={(e) => setL(e.currentTarget.value)} />
         </label>
         <Show when={props.canEdit && dirty()}>
