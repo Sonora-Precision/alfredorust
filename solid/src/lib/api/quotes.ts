@@ -1,4 +1,4 @@
-import { apiGet, apiPost } from './client'
+import { apiGet, apiPost, apiPostForm } from './client'
 import type { PartMaterial } from './types'
 
 export interface QuoteItem {
@@ -11,6 +11,9 @@ export interface QuoteItem {
   material?: PartMaterial | null
   weight_kg?: number | null
   multiplier?: number | null
+  /** The line's PDF drawing (a quote file), copied to the part on "Convertir en proyecto". */
+  drawing_id?: string | null
+  drawing_name?: string | null
 }
 
 export interface QuoteView {
@@ -47,6 +50,8 @@ export interface QuoteView {
   net: number
   sent_at: string | null
   created_at: string
+  /** Still being filled (no prices yet); edited in place until it is generated. */
+  draft?: boolean
 }
 
 export interface QuoteSettings {
@@ -84,6 +89,7 @@ export interface QuoteLinePayload {
   material?: PartMaterial | null
   weight_kg?: number | null
   multiplier?: number | null
+  drawing_id?: string | null
 }
 
 export interface QuoteCreatePayload {
@@ -102,6 +108,8 @@ export interface QuoteCreatePayload {
   advance_pct?: number
   notes?: string[]
   lines?: QuoteLinePayload[]
+  /** Save as a draft: lines may lack a price. */
+  draft?: boolean
 }
 
 export interface SuggestedLine {
@@ -116,6 +124,20 @@ export interface SuggestedLine {
 
 export const listQuotes = () => apiGet<QuoteView[]>('/api/admin/quotes')
 export const createQuote = (payload: QuoteCreatePayload) => apiPost<QuoteView>('/api/admin/quotes', payload)
+/** Rewrites a draft; with `draft: false` it becomes the quote. */
+export const updateDraftQuote = (id: string, payload: QuoteCreatePayload) => apiPost<QuoteView>(`/api/admin/quotes/${id}/update`, payload)
+export interface QuoteFile {
+  id: string
+  filename: string
+  size_bytes: number
+  url: string
+}
+export const uploadQuoteDrawing = (file: File) => {
+  const form = new FormData()
+  form.append('file', file)
+  return apiPostForm<QuoteFile>('/api/admin/quote_files', form)
+}
+export const quoteDrawingUrl = (id: string) => `/api/admin/quote_files/${id}`
 export const suggestLines = (lines: { material?: PartMaterial | null; weight_kg?: number | null; multiplier?: number | null }[]) =>
   apiPost<SuggestedLine[]>('/api/admin/quotes/suggest', { lines })
 export const quoteToProject = (id: string, title?: string | null) =>

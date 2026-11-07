@@ -106,6 +106,21 @@ const ROUTES = [
   ["POST", "/api/admin/resource_usages/grid", "Guardar rejilla horaria de usos"],
   ["GET", "/api/admin/resource_usages/{id}/allocations", "Asignaciones de un uso"],
   ["POST", "/api/admin/resource_usages/{id}/allocations", "Guardar asignaciones de un uso"],
+
+  // Cotizaciones (antes del proyecto). Los planos se suben con sp_upload_quote_drawing.
+  ["GET", "/api/admin/quotes", "Listar cotizaciones (cada revisión; draft=true son borradores)"],
+  ["GET", "/api/admin/quotes/{id}", "Ver cotización con totales y datos de la empresa"],
+  ["POST", "/api/admin/quotes", "Crear cotización ({contact_id, attention?, draft?, lines:[{quantity, description, unit_price?, drawing_id?, material?, weight_kg?, multiplier?}]}); draft=true permite partidas sin precio"],
+  ["POST", "/api/admin/quotes/{id}/update", "Reescribir un borrador (mismo cuerpo que crear, completo); draft=false lo genera (todas con precio)"],
+  ["POST", "/api/admin/quotes/{id}/sent", "Marcar cotización como enviada"],
+  ["POST", "/api/admin/quotes/{id}/revise", "Nueva revisión de una cotización generada"],
+  ["POST", "/api/admin/quotes/{id}/project", "Convertir cotización aprobada en proyecto (partes, precios, material y planos)"],
+  ["POST", "/api/admin/quotes/suggest", "Precio sugerido por partida ({lines:[{material, weight_kg?, multiplier?}]}): peso, $/kg, costo de material"],
+  ["POST", "/api/admin/quotes/references", "Precios anteriores por número de parte ({names:[...]})"],
+  ["GET", "/api/admin/quotes/part_names", "Números de parte que ya tuvieron precio"],
+  ["GET", "/api/admin/material_prices", "Precios por kg de material"],
+  ["GET", "/api/admin/client_quote_defaults", "Valores de cotización por cliente"],
+  ["GET", "/api/admin/quote_settings", "Datos de la empresa para cotizaciones"],
 ].map(([method, path, desc]) => ({ method, path, desc, re: toRegex(path) }));
 
 // Se hacen sólo desde la web: borrados masivos, borrar empresa, tokens, TOTP,
@@ -211,22 +226,22 @@ function request(url, { method, headers, body }) {
   });
 }
 
-async function call(method, path, { company, query, body } = {}) {
+async function call(method, path, { company, query, body, raw } = {}) {
   const { base, host } = target(path, company);
   const url = new URL(path, base);
   for (const [k, v] of Object.entries(query || {})) {
     if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, String(v));
   }
-  const payload = body !== undefined ? JSON.stringify(body) : undefined;
+  // `raw` = { contentType, data: Buffer } for uploads; otherwise a JSON body.
+  const payload = raw ? raw.data : body !== undefined ? JSON.stringify(body) : undefined;
+  const contentType = raw ? raw.contentType : "application/json";
   const res = await request(url, {
     method,
     headers: {
       Authorization: `Bearer ${readToken()}`,
       Accept: "application/json",
       ...(host ? { Host: host } : {}),
-      ...(payload !== undefined
-        ? { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) }
-        : {}),
+      ...(payload !== undefined ? { "Content-Type": contentType, "Content-Length": Buffer.byteLength(payload) } : {}),
     },
     body: payload,
   });
@@ -383,6 +398,54 @@ server.registerTool(
         );
       }
       return ok(format((await call("POST", path, { company, body: body ?? {} })) || "OK"));
+    } catch (e) {
+      return fail(e);
+    }
+  }
+);
+
+server.registerTool(
+  "sp_upload_quote_drawing",
+  {
+    title: "Subir plano de cotización",
+    description:
+      "Sube un PDF local (el plano de una partida) a POST /api/admin/quote_files y regresa su id para usarlo como " +
+      "`drawing_id` en las partidas de una cotización; al convertirla en proyecto pasa a la parte. " +
+      "REGLA: igual que sp_write, primero sin confirm (vista previa) y confirm=true sólo con el sí del usuario.",
+    inputSchema: {
+      file_path: z.string().describe("Ruta absoluta del PDF en esta computadora"),
+      company: companyArg,
+      confirm: z.boolean().optional().describe("true sólo después de que el usuario aprobó en el chat"),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+  },
+  async ({ file_path, company, confirm }) => {
+    try {
+      const { readFileSync, statSync } = await import("node:fs");
+      const { basename } = await import("node:path");
+      const size = statSync(file_path).size;
+      if (size > 40 * 1024 * 1024) throw new Error("El plano pasa de 40 MB.");
+      const data = readFileSync(file_path);
+      if (!data.subarray(0, 1024).includes("%PDF-")) throw new Error("El archivo no es un PDF.");
+      const name = basename(file_path);
+      if (confirm !== true) {
+        return ok(
+          `VISTA PREVIA — no se envió nada.\nEmpresa: ${hostFor(company)}\nAcción: subir plano de cotización\n` +
+            `Archivo: ${name} (${(size / 1024).toFixed(0)} KB)\n\nPide confirmación al usuario y vuelve a llamar con confirm=true.`
+        );
+      }
+      const boundary = `----spmcp${Date.now().toString(16)}`;
+      const safe = name.replace(/["\r\n]/g, "_");
+      const body = Buffer.concat([
+        Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${safe}"\r\nContent-Type: application/pdf\r\n\r\n`),
+        data,
+        Buffer.from(`\r\n--${boundary}--\r\n`),
+      ]);
+      const res = await call("POST", "/api/admin/quote_files", {
+        company,
+        raw: { contentType: `multipart/form-data; boundary=${boundary}`, data: body },
+      });
+      return ok(format(res));
     } catch (e) {
       return fail(e);
     }

@@ -197,6 +197,8 @@ export function MaterialEditor(props: {
   /** A quote line keeps the material itself (it goes to the part when the quote becomes a
    * project) instead of saving it to a part; nothing is ordered yet. */
   onSave?: (m: PartMaterial | null) => void
+  /** Beside the form (a quote line shows its drawing here); a part shows its own. */
+  aside?: JSX.Element
 }): JSX.Element {
   const qc = useQueryClient()
   const [material, setMaterial] = createSignal(props.material.material ?? '')
@@ -255,7 +257,7 @@ export function MaterialEditor(props: {
       open
       onOpenChange={(o) => !o && props.onClose()}
       title={`Material · ${props.partName}`}
-      aside={props.conceptId ? <PartDrawingPanel conceptId={props.conceptId} part={props.partName} /> : undefined}
+      aside={props.aside ?? (props.conceptId ? <PartDrawingPanel conceptId={props.conceptId} part={props.partName} /> : undefined)}
       subtitle="Medidas del tocho por pieza; en mm se guardan en pulgadas"
     >
       <form

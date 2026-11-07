@@ -99,7 +99,10 @@ export default function Quotes(): JSX.Element {
                 {(q) => (
                   <tr class="border-t border-border">
                     <td class="px-3 py-2">
-                      <A href={`/cotizaciones/${q.id}`} class="font-semibold tabular-nums text-sky-600 hover:underline">
+                      <A
+                        href={q.draft ? `/cotizaciones/nueva?draft=${q.id}` : `/cotizaciones/${q.id}`}
+                        class="font-semibold tabular-nums text-sky-600 hover:underline"
+                      >
                         {q.folio}
                       </A>
                     </td>
@@ -118,9 +121,21 @@ export default function Quotes(): JSX.Element {
                       <Show
                         when={q.project_id}
                         fallback={
-                          <span class={`rounded px-1.5 text-[11px] ${q.sent_at ? 'bg-sky-500/15 text-sky-700 dark:text-sky-300' : 'bg-muted text-muted-foreground'}`}>
-                            {q.sent_at ? 'Enviada' : 'Borrador'}
-                          </span>
+                          <Show
+                            when={!q.draft}
+                            fallback={
+                              <A
+                                href={`/cotizaciones/nueva?draft=${q.id}`}
+                                class="rounded bg-amber-500/15 px-1.5 text-[11px] text-amber-700 hover:underline dark:text-amber-300"
+                              >
+                                Borrador · {q.lines.filter((l) => !(l.unit_price > 0)).length} sin precio
+                              </A>
+                            }
+                          >
+                            <span class={`rounded px-1.5 text-[11px] ${q.sent_at ? 'bg-sky-500/15 text-sky-700 dark:text-sky-300' : 'bg-muted text-muted-foreground'}`}>
+                              {q.sent_at ? 'Enviada' : 'Sin enviar'}
+                            </span>
+                          </Show>
                         }
                       >
                         <A href={`/projects/${q.project_id}`} class="rounded bg-emerald-500/15 px-1.5 text-[11px] text-emerald-700 hover:underline dark:text-emerald-300">

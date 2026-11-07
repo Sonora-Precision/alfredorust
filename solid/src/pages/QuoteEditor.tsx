@@ -3,9 +3,12 @@
 // values fill the terms), writes the lines (part number, quantity, material and blank) and
 // gets the suggested price by his method: blank weight × $/kg × multiplier (3.5 unless set).
 // The price stays his. "?rev=<id>" opens a quote to make its next revision. Admin only.
+// "?draft=<id>" fills a draft made from the client's request (part numbers, quantities and
+// drawings, no prices yet; Daniel, 2026-11-07): each "Guardar borrador" rewrites it, and
+// "Generar cotización" turns it into the quote once every line has its price.
 import { A, useNavigate, useSearchParams } from '@solidjs/router'
 import { createMutation, createQuery, useQueryClient } from '@tanstack/solid-query'
-import { ArrowLeft, Plus, Trash2 } from 'lucide-solid'
+import { ArrowLeft, FileText, Paperclip, Plus, Trash2 } from 'lucide-solid'
 import { type JSX, For, Show, createEffect, createMemo, createSignal } from 'solid-js'
 import { createStore, produce } from 'solid-js/store'
 
@@ -37,9 +40,14 @@ interface Line {
   weight: string
   multiplier: string
   price: string
+  /** The PDF drawing of the part (a quote file), shown while the measures are taken. */
+  drawingId: string | null
+  drawingName: string | null
 }
 
-const emptyLine = (): Line => ({ description: '', quantity: '1', mat: null, weight: '', multiplier: '', price: '' })
+const emptyLine = (): Line => ({
+  description: '', quantity: '1', mat: null, weight: '', multiplier: '', price: '', drawingId: null, drawingName: null,
+})
 const num = (s: string) => {
   const t = s.trim()
   if (t === '') return null
@@ -53,16 +61,18 @@ const materialOf = (l: Line): PartMaterial | null => (l.mat ? { ...l.mat, ordere
 export default function QuoteEditor(): JSX.Element {
   const qc = useQueryClient()
   const navigate = useNavigate()
-  const [search] = useSearchParams<{ rev?: string }>()
+  const [search, setSearch] = useSearchParams<{ rev?: string; draft?: string }>()
   const revOf = () => search.rev || null
+  /** The draft being filled ("?draft=<id>"), saved in place until it is generated. */
+  const draftOf = () => search.draft || null
 
   const contacts = createQuery(() => ({ queryKey: ['contacts'], queryFn: financeApi.listContacts }))
   const clients = createQuery(() => ({ queryKey: ['client-quote-defaults'], queryFn: quotesApi.listClientQuoteDefaults }))
   const prices = createQuery(() => ({ queryKey: ['material-prices'], queryFn: quotingApi.listMaterialPrices }))
   const previous = createQuery(() => ({
-    queryKey: ['quote', revOf()],
-    queryFn: () => quotesApi.getQuote(revOf()!),
-    enabled: !!revOf(),
+    queryKey: ['quote', revOf() ?? draftOf()],
+    queryFn: () => quotesApi.getQuote((revOf() ?? draftOf())!),
+    enabled: !!(revOf() ?? draftOf()),
   }))
 
   const sortedContacts = createMemo(() =>
@@ -108,7 +118,9 @@ export default function QuoteEditor(): JSX.Element {
         mat: l.material ?? null,
         weight: str(l.weight_kg),
         multiplier: str(l.multiplier),
-        price: String(l.unit_price),
+        price: l.unit_price > 0 ? String(l.unit_price) : '',
+        drawingId: l.drawing_id ?? null,
+        drawingName: l.drawing_name ?? null,
       })),
     )
   })
@@ -192,9 +204,10 @@ export default function QuoteEditor(): JSX.Element {
   const set = (i: number, key: keyof Line, value: string) => setLines(i, key, value)
 
   const create = createMutation(() => ({
-    mutationFn: () => {
+    mutationFn: (draft: boolean) => {
       const person = client()?.people.find((p) => p.name === attention())
-      return quotesApi.createQuote({
+      const payload: quotesApi.QuoteCreatePayload = {
+        draft,
         contact_id: contactId() || null,
         revision_of: revOf(),
         attention: attention().trim() || null,
@@ -218,24 +231,51 @@ export default function QuoteEditor(): JSX.Element {
             material: materialOf(l),
             weight_kg: num(l.weight),
             multiplier: num(l.multiplier),
+            drawing_id: l.drawingId,
           })),
-      })
+      }
+      return draftOf() ? quotesApi.updateDraftQuote(draftOf()!, payload) : quotesApi.createQuote(payload)
     },
     onSuccess: (q) => {
-      toast.success(`Cotización ${q.folio}`)
       void qc.invalidateQueries({ queryKey: ['quotes'] })
+      void qc.invalidateQueries({ queryKey: ['quote', q.id] })
+      if (q.draft) {
+        toast.success(`Borrador ${q.folio} guardado`, 'Puedes seguir llenándolo aquí o desde Cotizaciones')
+        // Further saves rewrite this draft.
+        if (draftOf() !== q.id) setSearch({ draft: q.id, rev: undefined }, { replace: true })
+        return
+      }
+      toast.success(`Cotización ${q.folio}`)
       navigate(`/cotizaciones/${q.id}`)
     },
-    onError: (err) => toast.error('No se pudo crear la cotización', humanizeError(err, 'Revisa los datos')),
+    onError: (err) => toast.error('No se pudo guardar la cotización', humanizeError(err, 'Revisa los datos')),
   }))
-  const submit = () => {
+  const submit = (draft: boolean) => {
     const filled = lines.filter((l) => l.description.trim())
     if (!contactId()) return toast.error('Falta el cliente', 'Escoge a quién va la cotización')
     if (filled.length === 0) return toast.error('Sin partidas', 'Escribe al menos un número de parte')
-    if (filled.some((l) => !(num(l.quantity)! > 0) || num(l.price) == null)) {
-      return toast.error('Faltan datos', 'Cada partida necesita cantidad y precio unitario')
+    if (filled.some((l) => !(num(l.quantity)! > 0))) return toast.error('Faltan datos', 'Cada partida necesita su cantidad')
+    if (!draft && filled.some((l) => !(num(l.price)! > 0))) {
+      return toast.error('Faltan precios', 'Ponle precio a cada partida, o guárdala como borrador')
     }
-    create.mutate()
+    create.mutate(draft)
+  }
+  const missingPrices = () => lines.filter((l) => l.description.trim() && !(num(l.price)! > 0)).length
+
+  // The drawing of a line: uploaded once, it goes to the part when the quote becomes a project.
+  const [uploading, setUploading] = createSignal<number | null>(null)
+  const attach = async (i: number, file: File) => {
+    setUploading(i)
+    try {
+      const f = await quotesApi.uploadQuoteDrawing(file)
+      setLines(i, { drawingId: f.id, drawingName: f.filename })
+      // A line without a part number takes it from the drawing's name ("PA-1001 Rev A.pdf").
+      if (!lines[i]!.description.trim()) setLines(i, 'description', f.filename.replace(/\.pdf$/i, ''))
+    } catch (err) {
+      toast.error('No se pudo subir el plano', humanizeError(err, 'Debe ser un PDF'))
+    } finally {
+      setUploading(null)
+    }
   }
 
   const field = 'h-9 w-full rounded-lg border border-border bg-background px-2 text-sm text-foreground'
@@ -247,7 +287,13 @@ export default function QuoteEditor(): JSX.Element {
         <ArrowLeft class="h-4 w-4" /> Cotizaciones
       </A>
       <PageHeader
-        title={revOf() ? `Nueva revisión de ${previous.data?.folio ?? '…'}` : 'Nueva cotización'}
+        title={
+          revOf()
+            ? `Nueva revisión de ${previous.data?.folio ?? '…'}`
+            : draftOf()
+              ? `Borrador ${previous.data?.folio ?? '…'}`
+              : 'Nueva cotización'
+        }
         breadcrumb={['Cotizaciones']}
       />
 
@@ -362,6 +408,37 @@ export default function QuoteEditor(): JSX.Element {
                             onInput={(e) => set(i(), 'description', e.currentTarget.value)}
                           />
                           <PastPrices refs={references.data?.[i()] ?? []} onUse={(p) => set(i(), 'price', String(p))} />
+                          <div class="mt-0.5 flex items-center gap-2 text-[11px]">
+                            <Show when={l.drawingId}>
+                              {(id) => (
+                                <a
+                                  href={quotesApi.quoteDrawingUrl(id())}
+                                  target="_blank"
+                                  rel="noopener"
+                                  class="inline-flex min-w-0 items-center gap-1 text-sky-600 hover:underline"
+                                  title="Abrir el plano"
+                                >
+                                  <FileText class="h-3 w-3 shrink-0" />
+                                  <span class="truncate">{l.drawingName ?? 'Plano'}</span>
+                                </a>
+                              )}
+                            </Show>
+                            <label class="cursor-pointer text-muted-foreground hover:text-foreground">
+                              <Paperclip class="inline h-3 w-3" />{' '}
+                              {uploading() === i() ? 'Subiendo…' : l.drawingId ? 'Cambiar' : 'Plano (PDF)'}
+                              <input
+                                type="file"
+                                accept="application/pdf,.pdf"
+                                class="hidden"
+                                disabled={uploading() != null}
+                                onChange={(e) => {
+                                  const f = e.currentTarget.files?.[0]
+                                  e.currentTarget.value = ''
+                                  if (f) void attach(i(), f)
+                                }}
+                              />
+                            </label>
+                          </div>
                         </td>
                         <td class="py-1.5 pr-1">
                           <input class={`${cell} text-right`} inputmode="decimal" value={l.quantity} onInput={(e) => set(i(), 'quantity', e.currentTarget.value)} />
@@ -440,6 +517,7 @@ export default function QuoteEditor(): JSX.Element {
                 pieces={num(l().quantity) ?? 1}
                 onClose={() => setEditing(null)}
                 onSave={(m) => setLines(editing()!, 'mat', m)}
+                aside={<QuoteDrawingPanel id={l().drawingId} name={l().drawingName} part={l().description.trim()} />}
               />
             )}
           </Show>
@@ -572,10 +650,49 @@ export default function QuoteEditor(): JSX.Element {
         <Button variant="ghost" onClick={() => navigate('/cotizaciones')}>
           Cancelar
         </Button>
-        <Button disabled={create.isPending} onClick={submit}>
-          {create.isPending ? 'Generando…' : revOf() ? 'Generar revisión' : 'Generar cotización'}
+        <Show when={!revOf()}>
+          <Button variant="outline" disabled={create.isPending} onClick={() => submit(true)}>
+            Guardar borrador
+            <Show when={missingPrices() > 0}>
+              <span class="ml-1 text-xs text-muted-foreground">({missingPrices()} sin precio)</span>
+            </Show>
+          </Button>
+        </Show>
+        <Button disabled={create.isPending} onClick={() => submit(false)}>
+          {create.isPending ? 'Guardando…' : revOf() ? 'Generar revisión' : 'Generar cotización'}
         </Button>
       </div>
+    </div>
+  )
+}
+
+/** The drawing of a quote line beside the material form, to take the measures from it. */
+function QuoteDrawingPanel(props: { id: string | null; name: string | null; part: string }): JSX.Element {
+  return (
+    <div class="flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
+      <div class="flex items-center justify-between gap-2 border-b border-border px-4 py-2 text-sm">
+        <span class="inline-flex min-w-0 items-center gap-2 font-semibold text-foreground">
+          <FileText class="h-4 w-4 shrink-0" />
+          <span class="truncate">Plano{props.name || props.part ? ` · ${props.name ?? props.part}` : ''}</span>
+        </span>
+        <Show when={props.id}>
+          {(id) => (
+            <a href={quotesApi.quoteDrawingUrl(id())} target="_blank" rel="noopener" class="shrink-0 text-xs text-sky-600 hover:underline">
+              Abrir en otra pestaña
+            </a>
+          )}
+        </Show>
+      </div>
+      <Show
+        when={props.id}
+        fallback={
+          <div class="grid flex-1 place-items-center p-6 text-center text-sm text-muted-foreground">
+            Esta partida no tiene plano. Súbelo con "Plano (PDF)" junto al número de parte.
+          </div>
+        }
+      >
+        {(id) => <iframe src={`${quotesApi.quoteDrawingUrl(id())}#navpanes=0&view=Fit`} title={`Plano de ${props.part}`} class="h-full w-full flex-1 bg-white" />}
+      </Show>
     </div>
   )
 }

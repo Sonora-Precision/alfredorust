@@ -9,7 +9,7 @@ use crate::models::{
     Account, ApiToken, Category, Company, ConceptStatus, Contact, Forecast, MachineRun,
     PlannedEntry, ProcessOperation, Project, ProjectConcept, RecurringPlan, Resource, ResourceLog,
     ResourceUsage, ResourceUsageAllocation, SatConfig, ServiceOrder, Session, Transaction, User,
-    UserCompany, WorkOrderEvent, MachineQueueEntry, MachineState, MaterialPrice, MaterialPricePoint, MaterialReceipt, PartComment, PartFile, Suggestion, PlantLayout, Quote, QuoteSettings, ClientQuoteDefaults,
+    UserCompany, WorkOrderEvent, MachineQueueEntry, MachineState, MaterialPrice, MaterialPricePoint, MaterialReceipt, PartComment, PartFile, Suggestion, PlantLayout, Quote, QuoteFile, QuoteSettings, ClientQuoteDefaults,
     ShopDailyReport,
 };
 use bson::Document;
@@ -141,6 +141,7 @@ pub struct AppState {
     pub quote_settings: Collection<QuoteSettings>,
     pub client_quote_defaults: Collection<ClientQuoteDefaults>,
     pub part_files: Collection<PartFile>,
+    pub quote_files: Collection<QuoteFile>,
 }
 
 pub async fn init_state() -> Result<AppState> {
@@ -392,6 +393,7 @@ pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppStat
         quote_settings: db.collection::<QuoteSettings>("quote_settings"),
         client_quote_defaults: db.collection::<ClientQuoteDefaults>("client_quote_defaults"),
         part_files: db.collection::<PartFile>("part_files"),
+        quote_files: db.collection::<QuoteFile>("quote_files"),
     };
 
     let interrupted = fail_interrupted_cfdi_jobs(&state).await?;

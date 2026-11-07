@@ -164,14 +164,17 @@ pub async fn api_part_file_download(
         Ok(b) => b,
         Err(_) => return json_error(StatusCode::NOT_FOUND, "drawing file missing"),
     };
+    pdf_inline(bytes, &file.original_filename)
+}
+
+/// A PDF shown in the browser (inline) under its original name; also used for quote drawings.
+pub fn pdf_inline(bytes: Vec<u8>, filename: &str) -> Response {
     // ASCII fallback plus the UTF-8 name, so "Ñ" or accents survive.
-    let ascii: String = file
-        .original_filename
+    let ascii: String = filename
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() || ".-_ ".contains(c) { c } else { '_' })
         .collect();
-    let encoded: String = file
-        .original_filename
+    let encoded: String = filename
         .bytes()
         .map(|b| {
             if b.is_ascii_alphanumeric() || b".-_".contains(&b) {

@@ -26,7 +26,8 @@ use crate::{
         get_initial_concept_status, get_project_by_id_for_company, get_quote, get_quote_settings, insert_quote,
         last_revision, link_folio_to_project, list_client_quote_defaults, list_material_prices, list_project_concepts,
         list_project_quotes, list_quotes, mark_quote_sent, next_folio_base, quote_totals, save_client_quote_defaults,
-        save_quote_settings, set_concept_unit_price, set_part_material, set_part_quote, suggest_line,
+        save_quote_settings, set_concept_unit_price, set_part_material, set_part_quote, suggest_line, get_quote_file,
+        read_quote_file, save_quote_file, replace_draft_quote, save_part_drawing, get_project_concept_by_id_for_company,
     },
 };
 
@@ -176,7 +177,12 @@ pub async fn api_client_quote_defaults_save(
 pub struct QuoteLinePayload {
     pub quantity: f64,
     pub description: String,
+    /// 0 while a draft has no price yet.
+    #[serde(default)]
     pub unit_price: f64,
+    /// A drawing uploaded with POST /api/admin/quote_files.
+    #[serde(default)]
+    pub drawing_id: Option<String>,
     #[serde(default)]
     pub concept_id: Option<String>,
     #[serde(default)]
@@ -225,6 +231,9 @@ pub struct QuoteCreatePayload {
     /// Lines written by hand; else (from a project) the parts with a quoted price.
     #[serde(default)]
     pub lines: Option<Vec<QuoteLinePayload>>,
+    /// Save as a draft: lines may lack a price, and it is edited in place.
+    #[serde(default)]
+    pub draft: bool,
 }
 
 #[derive(Serialize)]
@@ -262,6 +271,7 @@ pub struct QuoteData {
     pub net: f64,
     pub sent_at: Option<String>,
     pub created_at: String,
+    pub draft: bool,
 }
 
 async fn quote_data(state: &AppState, q: Quote) -> Option<QuoteData> {
@@ -307,6 +317,7 @@ async fn quote_data(state: &AppState, q: Quote) -> Option<QuoteData> {
         net: t.net,
         sent_at: q.sent_at.map(iso),
         created_at: iso(q.created_at),
+        draft: q.draft,
     })
 }
 
@@ -334,6 +345,8 @@ async fn lines_from_parts(state: &AppState, company_id: &ObjectId, project_id: &
             material: c.material,
             weight_kg: c.quote.as_ref().and_then(|q| q.weight_kg),
             multiplier: c.quote.as_ref().and_then(|q| q.multiplier),
+            drawing_id: None,
+            drawing_name: None,
         })
         .collect())
 }
@@ -358,17 +371,40 @@ fn clean_material(m: Option<PartMaterial>) -> Option<PartMaterial> {
     (m != PartMaterial::default()).then_some(m)
 }
 
-fn lines_from_payload(lines: Vec<QuoteLinePayload>) -> Result<Vec<QuoteItem>, Response> {
+async fn lines_from_payload(
+    state: &AppState,
+    company_id: &ObjectId,
+    lines: Vec<QuoteLinePayload>,
+    draft: bool,
+) -> Result<Vec<QuoteItem>, Response> {
     let mut out = Vec::new();
     for (i, l) in lines.into_iter().take(200).enumerate() {
         if !l.quantity.is_finite() || l.quantity <= 0.0 || !l.unit_price.is_finite() || l.unit_price < 0.0 {
             return Err(json_error(StatusCode::BAD_REQUEST, "cada partida necesita cantidad mayor a 0 y precio"));
         }
+        if !draft && l.unit_price <= 0.0 {
+            return Err(json_error(StatusCode::BAD_REQUEST, "cada partida necesita su precio unitario (o guárdala como borrador)"));
+        }
         let description: String = l.description.trim().chars().take(300).collect();
         if description.is_empty() {
             return Err(json_error(StatusCode::BAD_REQUEST, "cada partida necesita su número de parte o descripción"));
         }
+        // The drawing has to be one of this company's quote files.
+        let drawing = match l.drawing_id.as_deref().filter(|d| !d.is_empty()) {
+            Some(d) => {
+                let id = parse_oid(d)?;
+                match get_quote_file(state, company_id, &id).await {
+                    Ok(Some(f)) => Some((id.to_hex(), f.original_filename)),
+                    Ok(None) => return Err(json_error(StatusCode::BAD_REQUEST, "el plano de la partida no existe")),
+                    Err(_) => return Err(json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load the drawing")),
+                }
+            }
+            None => None,
+        };
+        let (drawing_id, drawing_name) = drawing.unzip();
         out.push(QuoteItem {
+            drawing_id,
+            drawing_name,
             item: i as i32 + 1,
             quantity: l.quantity,
             description,
@@ -439,7 +475,7 @@ async fn build_quote(
     }
     let project_id = project.and_then(|p| p.id).or(previous.as_ref().and_then(|q| q.project_id));
     let lines = match (p.lines, project_id) {
-        (Some(lines), _) => lines_from_payload(lines)?,
+        (Some(lines), _) => lines_from_payload(state, &company_id, lines, p.draft).await?,
         (None, Some(pid)) => lines_from_parts(state, &company_id, &pid)
             .await
             .map_err(|_| json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load the parts"))?,
@@ -500,6 +536,7 @@ async fn build_quote(
         sent_at: None,
         created_by: *session_user.user_id(),
         created_at: now,
+        draft: p.draft,
     })
 }
 
@@ -639,6 +676,115 @@ pub async fn api_quote_suggest(
     Json(out).into_response()
 }
 
+/// A draft is still being filled: it is not sent, revised or turned into a project.
+fn not_draft(q: &Quote) -> Result<(), Response> {
+    if q.draft {
+        return Err(json_error(StatusCode::CONFLICT, "es un borrador: ponle precios y genera la cotización primero"));
+    }
+    Ok(())
+}
+
+/// "Guardar borrador" / "Generar cotización" on a draft: the draft is rewritten with the
+/// form (same folio); with `draft: false` it becomes a quote, every line with its price.
+pub async fn api_quote_update(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(mut p): Json<QuoteCreatePayload>,
+) -> Response {
+    let (company_id, old) = match load_quote(&session_user, &state, &id).await {
+        Ok(v) => v,
+        Err(resp) => return resp,
+    };
+    if !old.draft {
+        return json_error(StatusCode::CONFLICT, "la cotización ya se generó: haz una nueva revisión");
+    }
+    p.revision_of = None;
+    p.folio_base = None;
+    let new = match build_quote(&state, &session_user, company_id, None, p).await {
+        Ok(q) => q,
+        Err(resp) => return resp,
+    };
+    let quote = Quote {
+        id: old.id,
+        folio_base: old.folio_base,
+        revision: old.revision,
+        project_id: old.project_id,
+        created_by: old.created_by,
+        created_at: old.created_at,
+        // A draft generated today carries today's date.
+        date: if new.draft { old.date } else { new.date },
+        ..new
+    };
+    match replace_draft_quote(&state, &quote).await {
+        Ok(true) => match quote_data(&state, quote).await {
+            Some(d) => Json(d).into_response(),
+            None => json_error(StatusCode::INTERNAL_SERVER_ERROR, "quote missing id"),
+        },
+        Ok(false) => json_error(StatusCode::CONFLICT, "la cotización ya se generó"),
+        Err(_) => json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not save the quote"),
+    }
+}
+
+#[derive(Serialize)]
+pub struct QuoteFileData {
+    pub id: String,
+    pub filename: String,
+    pub size_bytes: i64,
+    pub url: String,
+}
+
+/// Uploads the PDF drawing of a quote line (multipart field `file`). Admin only.
+pub async fn api_quote_file_upload(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    mut multipart: axum::extract::Multipart,
+) -> Response {
+    let company_id = admin_company!(session_user);
+    let mut upload = None;
+    while let Ok(Some(field)) = multipart.next_field().await {
+        if field.name() != Some("file") {
+            continue;
+        }
+        let filename = field.file_name().unwrap_or("plano.pdf").to_string();
+        match field.bytes().await {
+            Ok(bytes) => upload = Some((filename, bytes)),
+            Err(_) => return json_error(StatusCode::PAYLOAD_TOO_LARGE, "el plano excede el tamaño máximo (40 MB)"),
+        }
+        break;
+    }
+    let Some((filename, bytes)) = upload else {
+        return json_error(StatusCode::BAD_REQUEST, "falta el archivo del plano");
+    };
+    match save_quote_file(&state, &company_id, &filename, &bytes, *session_user.user_id()).await {
+        Ok(f) => {
+            let id = f.id.unwrap_or_default().to_hex();
+            (
+                StatusCode::CREATED,
+                Json(QuoteFileData { url: format!("/api/admin/quote_files/{id}"), id, filename: f.original_filename, size_bytes: f.size_bytes }),
+            )
+                .into_response()
+        }
+        Err(err) => json_error(StatusCode::BAD_REQUEST, &err.to_string()),
+    }
+}
+
+/// The drawing of a quote line, shown in the browser.
+pub async fn api_quote_file_download(session_user: SessionUser, State(state): State<Arc<AppState>>, Path(id): Path<String>) -> Response {
+    let company_id = admin_company!(session_user);
+    let id = match parse_oid(&id) {
+        Ok(id) => id,
+        Err(resp) => return resp,
+    };
+    let Ok(Some(file)) = get_quote_file(&state, &company_id, &id).await else {
+        return json_error(StatusCode::NOT_FOUND, "drawing not found");
+    };
+    match read_quote_file(&file).await {
+        Ok(bytes) => super::part_files::pdf_inline(bytes, &file.original_filename),
+        Err(_) => json_error(StatusCode::NOT_FOUND, "drawing file missing"),
+    }
+}
+
 async fn load_quote(session_user: &SessionUser, state: &AppState, id: &str) -> Result<(ObjectId, Quote), Response> {
     if !session_user.is_admin() {
         return Err(StatusCode::FORBIDDEN.into_response());
@@ -681,6 +827,9 @@ pub async fn api_quote_revise(session_user: SessionUser, State(state): State<Arc
         Ok(v) => v,
         Err(resp) => return resp,
     };
+    if let Err(resp) = not_draft(&q) {
+        return resp;
+    }
     let revision = match last_revision(&state, &company_id, &q.folio_base).await {
         Ok(r) => r + 1,
         Err(_) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not number the revision"),
@@ -706,6 +855,9 @@ pub async fn api_quote_sent(session_user: SessionUser, State(state): State<Arc<A
         Ok(v) => v,
         Err(resp) => return resp,
     };
+    if let Err(resp) = not_draft(&q) {
+        return resp;
+    }
     if mark_quote_sent(&state, &company_id, &q.id.unwrap_or_default()).await.is_err() {
         return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not mark the quote");
     }
@@ -742,6 +894,9 @@ pub async fn api_quote_to_project(
         Ok(v) => v,
         Err(resp) => return resp,
     };
+    if let Err(resp) = not_draft(&q) {
+        return resp;
+    }
     let p = payload.map(|Json(p)| p).unwrap_or_default();
     match folio_project(&state, &company_id, &q.folio_base).await {
         Ok(Some(existing)) => {
@@ -808,6 +963,15 @@ pub async fn api_quote_to_project(
             }
             if quote != PartQuote::default() {
                 set_part_quote(&state, &company_id, &concept_id, &quote).await?;
+            }
+            // The line's drawing becomes the part's drawing.
+            if let Some(file_id) = line.drawing_id.as_deref().and_then(|d| ObjectId::parse_str(d).ok()) {
+                if let Some(file) = get_quote_file(&state, &company_id, &file_id).await? {
+                    let bytes = read_quote_file(&file).await?;
+                    if let Some(concept) = get_project_concept_by_id_for_company(&state, &concept_id, &company_id).await? {
+                        save_part_drawing(&state, &concept, &file.original_filename, &bytes, *session_user.user_id()).await?;
+                    }
+                }
             }
             anyhow::Ok(())
         }

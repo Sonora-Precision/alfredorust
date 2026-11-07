@@ -715,6 +715,12 @@ async fn main() {
         .route("/api/admin/quotes/{id}/project", axum::routing::post(routes::api_quote_to_project))
         .route("/api/admin/quotes/{id}/revise", axum::routing::post(routes::api_quote_revise))
         .route("/api/admin/quotes/{id}/sent", axum::routing::post(routes::api_quote_sent))
+        .route("/api/admin/quotes/{id}/update", axum::routing::post(routes::api_quote_update))
+        .route(
+            "/api/admin/quote_files",
+            axum::routing::post(routes::api_quote_file_upload).layer(axum::extract::DefaultBodyLimit::max(45 * 1024 * 1024)),
+        )
+        .route("/api/admin/quote_files/{id}", get(routes::api_quote_file_download))
         .route("/api/admin/projects/{id}/quote", get(routes::api_project_quote))
         .route("/api/admin/projects/{id}/quote/apply", axum::routing::post(routes::api_project_quote_apply))
         .route("/api/admin/project_concepts/{id}/quote", axum::routing::post(routes::api_part_quote_set))

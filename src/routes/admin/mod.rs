@@ -60,6 +60,7 @@ pub use quotes::{
     api_client_quote_defaults_index, api_client_quote_defaults_save, api_project_quote_create, api_project_quotes_index,
     api_quote_create, api_quote_revise, api_quote_sent, api_quote_settings_save, api_quote_settings_show, api_quote_show,
     api_quote_part_names, api_quote_references, api_quote_suggest, api_quote_to_project, api_quotes_index,
+    api_quote_update, api_quote_file_upload, api_quote_file_download,
 };
 pub use quoting::{
     api_material_prices_from_cfdis,

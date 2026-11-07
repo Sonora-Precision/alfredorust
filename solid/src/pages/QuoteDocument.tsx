@@ -103,7 +103,13 @@ export default function QuoteDocument(): JSX.Element {
                   </A>
                 </Show>
               </div>
-              <div class="flex flex-wrap gap-2">
+              <Show when={d().draft}>
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="text-sm text-amber-700 dark:text-amber-300">Borrador: faltan precios antes de enviarla.</span>
+                  <Button onClick={() => navigate(`/cotizaciones/nueva?draft=${d().id}`)}>Seguir llenando</Button>
+                </div>
+              </Show>
+              <div class={`flex flex-wrap gap-2 ${d().draft ? 'hidden' : ''}`}>
                 <Show when={!d().project_id}>
                   <Button disabled={toProject.isPending} onClick={() => convert(d())}>
                     <FolderPlus class="h-4 w-4" /> {toProject.isPending ? 'Creando…' : 'Convertir en proyecto'}

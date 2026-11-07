@@ -1163,6 +1163,26 @@ pub struct Quote {
     pub sent_at: Option<DateTime>,
     pub created_by: ObjectId,
     pub created_at: DateTime,
+    /// Still being filled (Daniel, 2026-11-07): made from the client's request with part
+    /// numbers, quantities and drawings, prices still to put. It is edited in place and is
+    /// not sent, revised or turned into a project until it is generated.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub draft: bool,
+}
+
+/// A PDF drawing attached to a quote line, before there is a part (it is copied to the part
+/// when the quote becomes a project). Bytes live in the part file store under `quotes/`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuoteFile {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub company_id: ObjectId,
+    pub original_filename: String,
+    pub size_bytes: i64,
+    pub sha256: String,
+    pub storage_key: String,
+    pub uploaded_by: ObjectId,
+    pub uploaded_at: DateTime,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1182,6 +1202,11 @@ pub struct QuoteItem {
     pub weight_kg: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub multiplier: Option<f64>,
+    /// The line's drawing (a `QuoteFile`, as hex so the SPA reads it as text) and its name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drawing_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drawing_name: Option<String>,
 }
 
 /// Price per kg of a material for the company (MXN before tax). Admin only.
