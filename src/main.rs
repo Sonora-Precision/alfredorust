@@ -724,6 +724,12 @@ async fn main() {
         .route("/api/production/cut_list", get(routes::api_cut_list))
         .route("/api/production/cut_list/{id}/done", axum::routing::post(routes::api_cut_done))
         .route("/api/production/cut_list/{id}/queue", axum::routing::post(routes::api_cut_queue))
+        .route("/api/admin/projects/{id}/close", axum::routing::post(routes::api_project_close))
+        .route("/api/admin/projects/{id}/part_comments", axum::routing::get(routes::api_project_part_comments))
+        .route("/api/admin/project_concepts/{id}/comments", axum::routing::post(routes::api_part_comment_create))
+        .route("/api/admin/part_comments/{id}/delete", axum::routing::post(routes::api_part_comment_delete))
+        .route("/api/suggestions", axum::routing::get(routes::api_suggestions_index).post(routes::api_suggestion_create))
+        .route("/api/suggestions/{id}", axum::routing::post(routes::api_suggestion_update))
         .route("/api/production/material_receipts/{id}/lines/{line}/assign", axum::routing::post(routes::api_material_receipt_assign))
         .route("/api/admin/part_files/{id}", get(routes::api_part_file_download))
         .route(

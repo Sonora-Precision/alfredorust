@@ -23,9 +23,11 @@ import { PartMachines, placesByPart } from './PartMachines'
 import { folioOf, matchesWorkOrder } from '../production/WorkOrderSearch'
 import { type PartFile, listProjectPartFiles } from '../../lib/api/partFiles'
 import { PartDrawing } from './PartDrawing'
+import { PartComments } from './PartComments'
 import { PartMaterialCell } from './PartMaterialCell'
+import { listPartComments } from '../../lib/api/notes'
 import { getCutList } from '../../lib/api/material'
-import type { ConceptStatusFull, PartProgressPayload, ProcessOperation, ProjectConcept, StepState } from '../../lib/api/types'
+import type { ConceptStatusFull, PartComment, PartProgressPayload, ProcessOperation, ProjectConcept, StepState } from '../../lib/api/types'
 import { cn } from '../../lib/cn'
 
 /** The shop's Excel tracking sheet, offered as a starting catalog. */
@@ -45,12 +47,15 @@ const NEXT_STATE: Record<StepState, StepState> = {
   pending: 'done',
   done: 'not_applicable',
   not_applicable: 'pending',
+  // Held up until the tool comes: a tap says it got done.
+  blocked: 'done',
 }
 
 const STATE_LABEL: Record<StepState, string> = {
   pending: 'Pendiente',
   done: 'Hecho',
   not_applicable: 'No aplica',
+  blocked: 'Detenido',
 }
 
 const num = (n: number): string => n.toLocaleString('es-MX', { maximumFractionDigits: 2 })
@@ -68,8 +73,8 @@ function applyLocally(c: ProjectConcept, p: PartProgressPayload): ProjectConcept
   if (p.operation_id && p.state) {
     const { operation_id, state } = p
     steps = steps.some((s) => s.operation_id === operation_id)
-      ? steps.map((s) => (s.operation_id === operation_id ? { ...s, state } : s))
-      : [...steps, { operation_id, name: '', state }]
+      ? steps.map((s) => (s.operation_id === operation_id ? { ...s, state, note: state === 'blocked' ? p.note : null } : s))
+      : [...steps, { operation_id, name: '', state, note: state === 'blocked' ? p.note : null }]
   }
   return { ...c, completed_quantity: p.completed_quantity ?? c.completed_quantity, process_steps: steps }
 }
@@ -235,6 +240,22 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
     })
   }
 
+  /** "Detenido": the step waits for something (a missing tool); it asks what (Daniel, 2026-11-06). */
+  const blockStep = (concept: ProjectConcept, op: ProcessOperation) => {
+    if (!tickable(concept)) return
+    const current = concept.process_steps.find((s) => s.operation_id === op.id)
+    const note = window.prompt(
+      `${op.name} · ${concept.name}\n¿Qué falta para continuar? (por ejemplo: machuelo 1/4-20)`,
+      current?.state === 'blocked' ? (current.note ?? '') : '',
+    )
+    if (note == null) return
+    const text = note.trim()
+    progressMutation.mutate({
+      id: concept.id,
+      payload: text ? { operation_id: op.id, state: 'blocked', note: text } : { operation_id: op.id, state: 'pending' },
+    })
+  }
+
   const setFinished = (concept: ProjectConcept, value: number) => {
     const { min, max } = producedBounds(concept)
     const v = Math.min(max, Math.max(min, value))
@@ -253,6 +274,16 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
     for (const f of filesQuery.data ?? []) {
       if (f.kind === 'drawing' && !map.has(f.concept_id)) map.set(f.concept_id, f)
     }
+    return map
+  })
+  // Comments, scrap and notes per part (notes from the same part number elsewhere too).
+  const commentsQuery = createQuery(() => ({
+    queryKey: ['part-comments', props.projectId],
+    queryFn: () => listPartComments(props.projectId),
+  }))
+  const commentsOf = createMemo(() => {
+    const map = new Map<string, PartComment[]>()
+    for (const c of commentsQuery.data ?? []) map.set(c.concept_id, [...(map.get(c.concept_id) ?? []), c])
     return map
   })
   // Each part's row in the saw's cut list ("Pasar a corte" / place in the queue).
@@ -399,6 +430,20 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
                         machines={machines()}
                         canEdit={props.canEdit && !cancelled()}
                       />
+                      {/* Held up steps say what is missing, in sight (Daniel, 2026-11-06). */}
+                      <For each={c.process_steps.filter((s) => s.state === 'blocked')}>
+                        {(s) => (
+                          <p class="mt-0.5 max-w-[18rem] text-xs font-medium text-orange-600 dark:text-orange-400">
+                            ⏸ {s.name || 'Paso'}: {s.note}
+                          </p>
+                        )}
+                      </For>
+                      <PartComments
+                        projectId={props.projectId}
+                        conceptId={c.id}
+                        partName={c.name}
+                        comments={commentsOf().get(c.id) ?? []}
+                      />
                       <Show when={c.description}>
                         <p class="max-w-[16rem] truncate text-xs text-muted-foreground" title={c.description ?? ''}>
                           {c.description}
@@ -451,6 +496,7 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
                           op={op}
                           canEdit={tickable(c)}
                           onToggle={() => toggleStep(c, op)}
+                          onBlock={() => blockStep(c, op)}
                         />
                       </TableCell>
                     )}</For>
@@ -497,31 +543,64 @@ function StepCell(props: {
   op: ProcessOperation
   canEdit: boolean
   onToggle: () => void
+  /** Right click or long press: held up, with what is missing. */
+  onBlock: () => void
 }): JSX.Element {
   const step = () => props.concept.process_steps.find((s) => s.operation_id === props.op.id)
   const state = (): StepState => step()?.state ?? 'pending'
   const title = () => {
     const s = step()
     const who = s?.updated_by ? `\n${s.updated_by} · ${fecha(s.updated_at)}` : ''
-    return `${props.op.name}: ${STATE_LABEL[state()]}${who}`
+    const why = s?.state === 'blocked' && s.note ? ` — ${s.note}` : ''
+    const hint = props.canEdit ? '\nClic derecho o mantén presionado: Detenido (con nota)' : ''
+    return `${props.op.name}: ${STATE_LABEL[state()]}${why}${who}${hint}`
   }
+  // Long press on touch screens marks it held up; the click that follows is ignored.
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let longPressed = false
+  const press = () => {
+    longPressed = false
+    clearTimeout(timer)
+    timer = setTimeout(() => {
+      longPressed = true
+      props.onBlock()
+    }, 600)
+  }
+  const release = () => clearTimeout(timer)
   return (
     <button
       type="button"
       title={title()}
       aria-label={title()}
       disabled={!props.canEdit}
-      onClick={() => props.onToggle()}
+      onClick={() => {
+        if (longPressed) {
+          longPressed = false
+          return
+        }
+        props.onToggle()
+      }}
+      onContextMenu={(e) => {
+        if (!props.canEdit) return
+        e.preventDefault()
+        clearTimeout(timer)
+        props.onBlock()
+      }}
+      onPointerDown={(e) => props.canEdit && e.pointerType !== 'mouse' && press()}
+      onPointerUp={release}
+      onPointerLeave={release}
+      onPointerCancel={release}
       class={cn(
         'inline-flex h-7 w-7 items-center justify-center rounded-md border text-xs font-semibold transition-colors',
         'disabled:cursor-default',
         state() === 'done' && 'border-emerald-500 bg-emerald-500 text-white',
         state() === 'not_applicable' && 'border-border bg-muted text-muted-foreground',
+        state() === 'blocked' && 'border-orange-500 bg-orange-500 text-white',
         state() === 'pending' && 'border-input bg-background text-transparent',
         props.canEdit && state() === 'pending' && 'hover:border-emerald-400',
       )}
     >
-      {state() === 'done' ? '✔' : state() === 'not_applicable' ? 'N/A' : '·'}
+      {state() === 'done' ? '✔' : state() === 'not_applicable' ? 'N/A' : state() === 'blocked' ? '!' : '·'}
     </button>
   )
 }

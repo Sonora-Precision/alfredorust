@@ -242,8 +242,11 @@ pub struct PartProgressPayload {
     pub completed_quantity: Option<f64>,
     /// Step to mark, together with `state`.
     pub operation_id: Option<String>,
-    /// "pending", "done" or "not_applicable".
+    /// "pending", "done", "not_applicable" or "blocked" (with `note`).
     pub state: Option<String>,
+    /// What holds a blocked step up ("falta machuelo 1/4-20").
+    #[serde(default)]
+    pub note: Option<String>,
 }
 
 #[utoipa::path(
@@ -288,7 +291,7 @@ pub async fn api_project_concept_progress(
             let Some(st) = StepState::parse(st) else {
                 return json_error(
                     StatusCode::BAD_REQUEST,
-                    "state must be pending, done or not_applicable",
+                    "state must be pending, done, not_applicable or blocked",
                 );
             };
             Some((op, st))
@@ -304,9 +307,15 @@ pub async fn api_project_concept_progress(
         return json_error(StatusCode::BAD_REQUEST, "nothing to update");
     }
     let username = session_user.user().username.clone();
+    // A blocked step says what holds it up (Daniel, 2026-11-06).
+    let note = payload.note.as_deref().map(str::trim).filter(|n| !n.is_empty()).map(|n| n.chars().take(300).collect::<String>());
+    if matches!(step, Some((_, StepState::Blocked))) && note.is_none() {
+        return json_error(StatusCode::BAD_REQUEST, "di qué falta para continuar (por ejemplo, la herramienta)");
+    }
     let update = PartProgressUpdate {
         completed_quantity: payload.completed_quantity,
         step,
+        note,
     };
     let before = get_project_concept_by_id_for_company(&state, &id, &company_id)
         .await

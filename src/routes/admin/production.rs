@@ -581,6 +581,7 @@ pub async fn api_work_order_complete(
     let update = PartProgressUpdate {
         completed_quantity: None,
         step: Some((operation_id, StepState::Done)),
+        note: None,
     };
     let username = session_user.user().username.clone();
     match update_part_progress(&state, &id, &company_id, update, &username).await {

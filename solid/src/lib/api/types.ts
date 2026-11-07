@@ -425,6 +425,8 @@ export interface ProjectRow {
   total_budget?: number | null
   scheduled_at?: string | null
   contact_id?: string | null
+  /** Set when the project was closed (delivered or cancelled). */
+  completed_at?: string | null
 }
 
 export interface ProjectPayload {
@@ -447,6 +449,10 @@ export interface ProjectDetail {
   total_budget?: number | null
   scheduled_at?: string | null
   notes?: string | null
+  status?: ProjectStatus
+  status_label?: string
+  /** Set when the project was closed (delivered or cancelled). */
+  completed_at?: string | null
 }
 
 // --- project concepts + statuses -------------------------------------------------
@@ -478,7 +484,8 @@ export interface ProjectConcept {
   process_steps: PartStep[]
 }
 
-export type StepState = 'pending' | 'done' | 'not_applicable'
+/** `blocked`: held up by something (a missing tool), said in `note`. */
+export type StepState = 'pending' | 'done' | 'not_applicable' | 'blocked'
 
 export interface PartStep {
   operation_id: string
@@ -488,6 +495,8 @@ export interface PartStep {
   updated_at?: string | null
   /** Who holds this step on the production board. */
   assignee_user_id?: string | null
+  /** What holds a blocked step up. */
+  note?: string | null
 }
 
 export type WorkQueue = 'programming' | 'setup' | 'machining' | 'finishing'
@@ -699,6 +708,8 @@ export interface PartProgressPayload {
   completed_quantity?: number
   operation_id?: string
   state?: StepState
+  /** What holds a blocked step up (required with `blocked`). */
+  note?: string
 }
 
 // --- machine time from the shop floor (DNC runs pushed by taller-vision) -------------
@@ -1232,4 +1243,34 @@ export interface CutListItem extends ReceiptPartRef {
     leftover: number
     note: string | null
   }[]
+}
+
+/** A comment on a part number: scrap (with pieces), a note to learn from or a comment. */
+export type PartCommentKind = 'comentario' | 'scrap' | 'nota'
+
+export interface PartComment {
+  id: string
+  concept_id: string
+  part: string
+  kind: PartCommentKind
+  text: string
+  quantity?: number | null
+  author: string
+  author_id: string
+  created_at: string
+  /** A note left on the same part number in another project. */
+  other_project?: string | null
+}
+
+export type SuggestionStatus = 'nueva' | 'en_revision' | 'hecha' | 'descartada'
+
+export interface Suggestion {
+  id: string
+  author: string
+  mine: boolean
+  text: string
+  status: SuggestionStatus
+  reply?: string | null
+  created_at: string
+  updated_at?: string | null
 }
