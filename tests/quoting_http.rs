@@ -151,5 +151,16 @@ async fn quote_from_blank_weight_and_apply() {
     assert!(line(&q, "CG-15253-A")["unit_price"].is_null());
     assert_eq!(q["quoted_total"], 200.0 * 30.0);
 
+    // Costing from Seguimiento (Daniel, 2026-11-07): the admin types the price per piece.
+    let set_price = format!("/api/admin/project_concepts/{}/unit_price", p253.to_hex());
+    let (status, _) = post(set_price.clone(), jose.clone(), serde_json::json!({ "unit_price": 585 })).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _) = post(set_price.clone(), admin.clone(), serde_json::json!({ "unit_price": -1 })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, body) = post(set_price, admin.clone(), serde_json::json!({ "unit_price": 585 })).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let q = quote().await;
+    assert_eq!(line(&q, "CG-15253-A")["unit_price"], 585.0);
+
     common::teardown(Some(ctx)).await;
 }

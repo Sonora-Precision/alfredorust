@@ -80,3 +80,7 @@ export interface CfdiPrices {
 
 export const pricesFromInvoices = (apply: boolean) =>
   apiPost<CfdiPrices>('/api/admin/material_prices/from_cfdis', { apply })
+
+/** Price per piece set by hand while costing a part (admin). */
+export const setUnitPrice = (conceptId: string, unitPrice: number | null) =>
+  apiPost<void>(`/api/admin/project_concepts/${conceptId}/unit_price`, { unit_price: unitPrice })

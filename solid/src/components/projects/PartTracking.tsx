@@ -23,7 +23,9 @@ import { PartMachines, placesByPart } from './PartMachines'
 import { folioOf, matchesWorkOrder } from '../production/WorkOrderSearch'
 import { type PartFile, listProjectPartFiles } from '../../lib/api/partFiles'
 import { PartDrawing } from './PartDrawing'
+import { PartCost } from './PartCost'
 import { PartComments } from './PartComments'
+import { getProjectQuote } from '../../lib/api/quoting'
 import { PartMaterialCell } from './PartMaterialCell'
 import { listPartComments } from '../../lib/api/notes'
 import { getCutList } from '../../lib/api/material'
@@ -154,6 +156,8 @@ interface PartTrackingProps {
   canSeeAssignees: boolean
   /** Assign or change who holds each part (whoever manages the board). */
   canAssign: boolean
+  /** Prices, costing and money (admins only). */
+  canSeeMoney?: boolean
   /** Upload, replace or remove part drawings (admins only). */
   canUploadFiles: boolean
 }
@@ -304,6 +308,30 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
     }
     return map
   })
+  // Costing with the quoting method and what the project is worth (admin; Daniel, 2026-11-07).
+  const quoteQuery = createQuery(() => ({
+    queryKey: ['project-quote', props.projectId],
+    queryFn: () => getProjectQuote(props.projectId),
+    enabled: !!props.canSeeMoney,
+  }))
+  const quoteOf = createMemo(() => new Map((quoteQuery.data?.lines ?? []).map((l) => [l.concept_id, l])))
+  const money = createMemo(() => {
+    let total = 0
+    let produced = 0
+    let released = 0
+    let missing = 0
+    for (const c of counted()) {
+      if (c.unit_price == null) {
+        missing++
+        continue
+      }
+      total += c.unit_price * c.quantity
+      produced += c.unit_price * Math.min(c.completed_quantity, c.quantity)
+      released += c.unit_price * releasedOf(c)
+    }
+    return { total, produced, released, missing }
+  })
+  const mx = (n: number) => n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 })
   // Comments, scrap and notes per part (notes from the same part number elsewhere too).
   const commentsQuery = createQuery(() => ({
     queryKey: ['part-comments', props.projectId],
@@ -392,6 +420,33 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
             </div>
           </div>
           <Bar ratio={totals().ordered > 0 ? totals().finished / totals().ordered : 0} class="h-3" />
+          {/* What the project is worth and what is done (admin only; Daniel, 2026-11-07). */}
+          <Show when={props.canSeeMoney}>
+            <div class="grid grid-cols-2 gap-3 border-t border-border pt-3 text-sm sm:grid-cols-4">
+              <div>
+                <p class="text-xs text-muted-foreground">Total con precio</p>
+                <p class="tnum font-semibold text-foreground">{mx(money().total)}</p>
+              </div>
+              <div>
+                <p class="text-xs text-muted-foreground">Liberado por calidad</p>
+                <p class="tnum font-semibold text-emerald-600 dark:text-emerald-400">{mx(money().released)}</p>
+              </div>
+              <div>
+                <p class="text-xs text-muted-foreground">Producido</p>
+                <p class="tnum font-semibold text-foreground">{mx(money().produced)}</p>
+              </div>
+              <div>
+                <p class="text-xs text-muted-foreground">Por hacer</p>
+                <p class="tnum font-semibold text-foreground">{mx(money().total - money().released)}</p>
+              </div>
+              <Show when={money().missing > 0}>
+                <p class="col-span-full text-xs text-amber-700 dark:text-amber-300">
+                  {money().missing} {money().missing === 1 ? 'número de parte sin precio' : 'números de parte sin precio'}: tócalos en
+                  "Sin precio · Costear".
+                </p>
+              </Show>
+            </div>
+          </Show>
         </CardContent>
       </Card>
 
@@ -542,6 +597,16 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
                         partName={c.name}
                         comments={commentsOf().get(c.id) ?? []}
                       />
+                      <Show when={props.canSeeMoney}>
+                        <PartCost
+                          projectId={props.projectId}
+                          conceptId={c.id}
+                          partName={c.name}
+                          description={c.description}
+                          unitPrice={c.unit_price}
+                          line={quoteOf().get(c.id)}
+                        />
+                      </Show>
                       <Show when={c.description}>
                         <p class="max-w-[16rem] truncate text-xs text-muted-foreground" title={c.description ?? ''}>
                           {c.description}

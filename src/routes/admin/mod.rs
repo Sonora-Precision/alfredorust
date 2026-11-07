@@ -63,6 +63,7 @@ pub use quotes::{
     api_quote_update, api_quote_file_upload, api_quote_file_download,
 };
 pub use quoting::{
+    api_part_unit_price_set,
     api_material_prices_from_cfdis,
     api_material_price_set, api_material_prices_index, api_part_quote_set, api_project_quote, api_project_quote_apply,
 };
