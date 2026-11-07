@@ -1022,6 +1022,13 @@ pub struct PartMaterial {
     pub customer_supplied: bool,
     #[serde(default)]
     pub ordered: bool,
+    /// Offcuts in the shop before buying (Daniel, 2026-11-07): "buscar" = look for it in the
+    /// shop; "en_taller" = found there, so it is not ordered and counts as in the shop.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shop_stock: Option<String>,
+    /// Where the offcut is or what was found ("retazo en el rack 2").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shop_note: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
 }

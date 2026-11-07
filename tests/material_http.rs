@@ -431,5 +431,34 @@ async fn material_receipt_matches_and_assigns_bars() {
         get_with_cookie(build_app(shared.clone()), "mat-b.miapp.local", &format!("/api/production/material_receipts/{receipt}"), &out).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 
+    // Offcuts in the shop (Daniel, 2026-11-07): "buscar" asks the shop to look; once found
+    // ("en_taller") nothing is bought and it can go to the saw.
+    let shop = |state: &str| {
+        serde_json::json!({
+            "material": "Aluminio 6061", "shape": "solera", "thickness": 1.0, "width": 1.5, "length": 1.5,
+            "shop_stock": state, "shop_note": "retazo en el rack 2",
+        })
+    };
+    let set = format!("/api/admin/project_concepts/{}/material", p296.to_hex());
+    let status_of = |name: &'static str| {
+        let concepts = concepts.clone();
+        let jose = jose.clone();
+        async move {
+            let list = concepts(jose).await;
+            list.as_array().unwrap().iter().find(|c| c["name"] == name).unwrap()["material_status"].clone()
+        }
+    };
+    let (status, body) = post(set.clone(), jose.clone(), shop("buscar")).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    assert_eq!(status_of("CG-15296-A").await, "buscar");
+    let (status, _) = post(set.clone(), jose.clone(), shop("en_rack")).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = post(set, jose.clone(), shop("en_taller")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status_of("CG-15296-A").await, "en_taller");
+    let (status, body) =
+        post(format!("/api/production/cut_list/{}/queue", p296.to_hex()), jose.clone(), serde_json::json!({})).await;
+    assert_eq!(status, StatusCode::CREATED, "found in the shop goes to the saw: {body}");
+
     common::teardown(Some(ctx)).await;
 }

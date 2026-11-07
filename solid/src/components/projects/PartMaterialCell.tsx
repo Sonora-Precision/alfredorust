@@ -20,6 +20,8 @@ export const MATERIAL_STATUS: Record<MaterialStatus, { label: string; class: str
   surtido_por_cliente: { label: 'Surtido por cliente', class: 'bg-sky-500/15 text-sky-700 dark:text-sky-300' },
   cortado: { label: 'Cortado', class: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' },
   recibido: { label: 'Recibido', class: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' },
+  en_taller: { label: 'Stock en taller', class: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' },
+  buscar: { label: 'Buscar en taller', class: 'bg-violet-500/15 text-violet-700 dark:text-violet-300' },
   pedido: { label: 'Pedido', class: 'bg-amber-500/15 text-amber-700 dark:text-amber-300' },
   pendiente: { label: 'Pendiente', class: 'bg-rose-500/10 text-rose-600 dark:text-rose-300' },
 }
@@ -144,7 +146,7 @@ export function SendToSaw(props: {
   /** Only material already in the shop goes to the saw (Daniel, 2026-11-06). */
   status: MaterialStatus | null | undefined
 }): JSX.Element {
-  const inShop = () => props.status === 'recibido' || props.status === 'cortado' || props.status === 'surtido_por_cliente'
+  const inShop = () => props.status === 'recibido' || props.status === 'cortado' || props.status === 'en_taller' || props.status === 'surtido_por_cliente'
   const auth = useAuth()
   const qc = useQueryClient()
   const canSend = () =>

@@ -111,6 +111,12 @@ pub async fn api_part_material_set(
                 bar_to_order: clean_text(m.bar_to_order, 120),
                 customer_supplied: m.customer_supplied,
                 ordered: m.ordered,
+                shop_stock: match m.shop_stock.as_deref().map(str::trim) {
+                    None | Some("") => None,
+                    Some(s @ ("buscar" | "en_taller")) => Some(s.to_string()),
+                    Some(_) => return json_error(StatusCode::BAD_REQUEST, "el stock en taller va buscar o en_taller"),
+                },
+                shop_note: clean_text(m.shop_note, 200),
                 notes: clean_text(m.notes, 500),
             })
         }
@@ -703,7 +709,7 @@ pub(crate) async fn material_in_shop(state: &AppState, company_id: &ObjectId, co
     if let Some(m) = in_shop.material.as_mut() {
         m.customer_supplied = false;
     }
-    matches!(material_status(&in_shop, received), Some("recibido" | "cortado"))
+    matches!(material_status(&in_shop, received), Some("recibido" | "cortado" | "en_taller"))
 }
 
 pub(crate) async fn find_saw(state: &AppState, company_id: &ObjectId) -> Option<ObjectId> {

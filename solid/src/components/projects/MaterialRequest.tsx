@@ -140,6 +140,23 @@ export function requestText(projectTitle: string, groups: Group[], date = new Da
   return out.join('\n')
 }
 
+/** What to look for in the shop, per part: the blank per piece and how many (for offcuts the
+ * size of each piece matters, not a bar length). */
+export function searchText(projectTitle: string, parts: ProjectConcept[], date = new Date()): string {
+  const day = date.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })
+  const out = ['*Buscar en el taller (retazos)*', `Proyecto: ${projectTitle}`, `Fecha: ${day}`, '']
+  parts.forEach((c, i) => {
+    const m = c.material ?? {}
+    const round = isRound(m.shape)
+    const dims = [m.thickness, round ? null : m.width, m.length].filter((d) => d != null).map((d) => `${inch(d)}"`)
+    const size = dims.length ? `${round && m.shape?.toLowerCase() === 'redondo' ? 'Ø' : ''}${dims.join(' x ')}` : 'medida por definir'
+    const n = Math.ceil(c.quantity)
+    out.push(`${i + 1}. *${[m.material, m.shape].filter(Boolean).join(' ') || 'Material'} ${size}* - ${n} ${n === 1 ? 'pz' : 'pzs'} (${c.name})`)
+  })
+  out.push('', 'Medidas por pieza en pulgadas. Si lo encuentran, avisen para marcarlo como stock en taller.')
+  return out.join('\n')
+}
+
 export function MaterialRequest(props: {
   projectId: string
   projectTitle: string
@@ -150,9 +167,29 @@ export function MaterialRequest(props: {
   // Parts picked for the request; by default those with stock and not yet ordered.
   const [skip, setSkip] = createSignal<Set<string>>(new Set())
 
+  // Parts being looked for in the shop (offcuts) or found there are not bought (Daniel,
+  // 2026-11-07); if the shop has none they come back to the request.
   const pending = (c: ProjectConcept) => {
     const m = c.material
-    return !!m && m.length != null && !m.ordered && !m.customer_supplied && c.material_status !== 'recibido' && c.material_status !== 'cortado'
+    return (
+      !!m &&
+      m.length != null &&
+      !m.ordered &&
+      !m.customer_supplied &&
+      !m.shop_stock &&
+      c.material_status !== 'recibido' &&
+      c.material_status !== 'cortado'
+    )
+  }
+  const lookFor = createMemo(() => props.concepts.filter((c) => c.material?.shop_stock === 'buscar'))
+  const lookText = () => searchText(props.projectTitle, lookFor())
+  const copyLook = async () => {
+    try {
+      await navigator.clipboard.writeText(lookText())
+      toast.success('Lista copiada', 'Pásala a los muchachos')
+    } catch {
+      toast.error('No se pudo copiar', 'Selecciona el texto y cópialo a mano')
+    }
   }
   const lines = createMemo<StockLine[]>(() =>
     props.concepts.filter((c) => pending(c) && !skip().has(c.id)).map((c) => stockLine(c.id, c.name, c.material!, c.quantity)),
@@ -232,6 +269,29 @@ export function MaterialRequest(props: {
           )}
         </For>
       </div>
+
+      <Show when={lookFor().length}>
+        <div class="rounded-xl border-2 border-violet-500/40 bg-card p-4">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 class="text-base font-semibold text-foreground">Buscar en el taller</h3>
+              <p class="text-xs text-muted-foreground">
+                Retazos que pueden servir antes de comprar. Si lo encuentran: "Está en el taller"; si no: "No hay", y regresa a la
+                solicitud.
+              </p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={() => void copyLook()}>
+                <Copy class="mr-1.5 h-4 w-4" /> Copiar
+              </Button>
+              <Button onClick={() => window.open(`https://wa.me/?text=${encodeURIComponent(lookText())}`, '_blank', 'noopener')}>
+                <MessageCircle class="mr-1.5 h-4 w-4" /> Enviar por WhatsApp
+              </Button>
+            </div>
+          </div>
+          <pre class="mt-3 whitespace-pre-wrap rounded-lg bg-muted/50 p-3 font-sans text-sm text-foreground">{lookText()}</pre>
+        </div>
+      </Show>
 
       <div class="rounded-xl border-2 border-primary/40 bg-card p-4">
         <div class="flex flex-wrap items-center justify-between gap-2">
@@ -319,6 +379,28 @@ function PartStockRow(props: {
     })
   }
 
+  // Offcuts: ask the shop to look, then mark found ("Stock en taller") or none (back to buy).
+  const shop = createMutation(() => ({
+    mutationFn: (v: { stock: 'buscar' | 'en_taller' | null; note?: string | null }) =>
+      setPartMaterial(props.concept.id, { ...m(), shop_stock: v.stock, shop_note: v.note ?? (v.stock ? (m().shop_note ?? null) : null) }),
+    onSuccess: (_d, v) => {
+      toast.success(
+        v.stock === 'buscar' ? 'A buscar en el taller' : v.stock === 'en_taller' ? 'Marcado: stock en taller' : 'Regresa a la solicitud',
+        props.concept.name,
+      )
+      void qc.invalidateQueries({ queryKey: ['project-concepts', props.projectId] })
+      void qc.invalidateQueries({ queryKey: ['cut-list'] })
+    },
+    onError: (err) => toast.error('No se pudo guardar', humanizeError(err, '')),
+  }))
+  const found = () => {
+    const note = window.prompt(`${props.concept.name}: ¿dónde está o qué se encontró? (opcional)`, m().shop_note ?? '')
+    if (note == null) return
+    shop.mutate({ stock: 'en_taller', note: note.trim() || null })
+  }
+  const shopBtn = (active: boolean, tone: string) =>
+    `rounded-full border px-2.5 py-0.5 text-xs font-medium disabled:opacity-50 ${active ? tone : 'border-border text-muted-foreground hover:bg-muted'}`
+
   const preview = () => {
     const le = sizer()?.cutLength() ?? null
     return le == null ? null : lengthToOrder(props.concept.quantity, le, sizer()?.kerf() ?? DEFAULT_KERF)
@@ -350,6 +432,36 @@ function PartStockRow(props: {
           </span>
         </Show>
       </div>
+      {/* Offcuts in the shop before buying (Daniel, 2026-11-07). */}
+      <Show when={props.canEdit && props.concept.material?.length != null && !m().customer_supplied}>
+        <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
+          <span class="text-muted-foreground">¿En el taller?</span>
+          <button
+            type="button"
+            class={shopBtn(m().shop_stock === 'buscar', 'border-violet-500 bg-violet-500/15 text-violet-700 dark:text-violet-300')}
+            disabled={shop.isPending}
+            onClick={() => shop.mutate({ stock: m().shop_stock === 'buscar' ? null : 'buscar' })}
+          >
+            Buscar en taller
+          </button>
+          <button
+            type="button"
+            class={shopBtn(m().shop_stock === 'en_taller', 'border-emerald-500 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300')}
+            disabled={shop.isPending}
+            onClick={found}
+          >
+            ✔ Está en el taller
+          </button>
+          <Show when={m().shop_stock}>
+            <button type="button" class={shopBtn(false, '')} disabled={shop.isPending} onClick={() => shop.mutate({ stock: null })}>
+              No hay: comprar
+            </button>
+          </Show>
+          <Show when={m().shop_stock === 'en_taller' && m().shop_note}>
+            <span class="text-emerald-700 dark:text-emerald-300">· {m().shop_note}</span>
+          </Show>
+        </div>
+      </Show>
       <form
         class="mt-2 space-y-3"
         onSubmit={(e) => {
