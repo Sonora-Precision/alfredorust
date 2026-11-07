@@ -29,6 +29,9 @@ export function lengthToOrder(pieces: number, cut: number, kerf = DEFAULT_KERF):
   return barLength(pieces, cut, kerf)
 }
 
+/** Plates come cut to size from the supplier (Daniel, 2026-11-06). */
+export const isPlate = (m: PartMaterial) => (m.shape ?? '').toLowerCase() === 'placa'
+
 /** "Aluminio 6061 solera 1/8 × 1.75" — what the supplier is asked for, without length. */
 export function stockLabel(m: PartMaterial): string {
   const round = isRound(m.shape)
@@ -46,6 +49,8 @@ interface Line {
 
 interface Group {
   stock: string
+  /** Plates: the supplier cuts them, so the group is pieces of one size. */
+  cutToSize: boolean
   lines: Line[]
   total: number
 }
@@ -53,9 +58,14 @@ interface Group {
 export function requestText(projectTitle: string, groups: Group[], date = new Date()): string {
   const day = date.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })
   const out = ['*Solicitud de material — Sonora Precision*', `Proyecto: ${projectTitle}`, `Fecha: ${day}`, '']
-  // The supplier does not cut: it only needs the bar section by the total length.
+  // Bars: the supplier does not cut, it only needs the section by the total length.
+  // Plates: it cuts them, so it gets how many of each size.
   groups.forEach((g, i) => {
-    out.push(`${i + 1}. *${g.stock} × ${inch(+g.total.toFixed(3))}"*`)
+    out.push(
+      g.cutToSize
+        ? `${i + 1}. *${g.stock}* — ${g.total} ${g.total === 1 ? 'pza cortada' : 'pzas cortadas'} a la medida`
+        : `${i + 1}. *${g.stock} × ${inch(+g.total.toFixed(3))}"*`,
+    )
   })
   out.push('', 'Medidas en pulgadas.')
   return out.join('\n')
@@ -78,14 +88,16 @@ export function MaterialRequest(props: {
   const lines = createMemo<Line[]>(() =>
     props.concepts
       .filter((c) => pending(c) && !skip().has(c.id))
-      .map((c) => ({ concept: c, material: c.material!, pieces: c.quantity, total: lengthToOrder(c.quantity, c.material!.length!, kerfOf(c.material!)) })),
+      .map((c) => ({ concept: c, material: c.material!, pieces: c.quantity, total: isPlate(c.material!) ? Math.ceil(c.quantity) : lengthToOrder(c.quantity, c.material!.length!, kerfOf(c.material!)) })),
   )
   const groups = createMemo<Group[]>(() => {
     const map = new Map<string, Group>()
     for (const l of lines()) {
-      const stock = stockLabel(l.material) || 'Material sin asignar'
-      const key = stock.toLowerCase()
-      const g = map.get(key) ?? { stock, lines: [], total: 0 }
+      const plate = isPlate(l.material)
+      const label = stockLabel(l.material) || 'Material sin asignar'
+      const stock = plate ? `${label} × ${inch(l.material.length)}"` : label
+      const key = `${plate ? 'p' : 'b'}|${stock.toLowerCase()}`
+      const g = map.get(key) ?? { stock, cutToSize: plate, lines: [], total: 0 }
       g.lines.push(l)
       g.total += l.total
       map.set(key, g)
@@ -111,7 +123,9 @@ export function MaterialRequest(props: {
           await setPartMaterial(l.concept.id, {
             ...l.material,
             ordered: true,
-            bar_to_order: l.material.bar_to_order ?? `${g.stock} · ${inch(+l.total.toFixed(3))}"`.slice(0, 120),
+            bar_to_order:
+              l.material.bar_to_order ??
+              (g.cutToSize ? `${l.total} pzas de ${g.stock}` : `${g.stock} · ${inch(+l.total.toFixed(3))}"`).slice(0, 120),
           })
     },
     onSuccess: () => {
@@ -277,7 +291,8 @@ function PartStockRow(props: {
         </Show>
         <Show when={preview() != null && preview()! > 0}>
           <span class="tnum ml-auto text-sm text-foreground">
-            A pedir: <b>{inch(+preview()!.toFixed(3))}"</b>
+            A pedir:{' '}
+            <b>{shape() === 'placa' ? `${Math.ceil(props.concept.quantity)} pzas cortadas` : `${inch(+preview()!.toFixed(3))}"`}</b>
           </span>
         </Show>
       </div>
@@ -306,6 +321,7 @@ function PartStockRow(props: {
           round={round()}
           firstLabel={firstLabel()}
           pieces={props.concept.quantity}
+          cutToSize={shape() === 'placa'}
           disabled={!props.canEdit}
           ref={(api) => setSizer(() => api)}
         />
