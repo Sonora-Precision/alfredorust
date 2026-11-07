@@ -10,6 +10,7 @@ import {
   FileText,
   Home,
   Landmark,
+  Lightbulb,
   Map as MapIcon,
   Rocket,
   Scissors,
@@ -152,6 +153,8 @@ export const NAV: NavEntry[] = [
       { href: '/users', label: 'Usuarios' },
     ],
   },
+  // Everyone can tell the admin how to improve the system (Daniel, 2026-11-06).
+  { id: 'sugerencias', label: 'Sugerencias', icon: Lightbulb, href: '/sugerencias' },
 ]
 
 export function visibleChildren(group: NavGroupDef, auth: NavAuth): NavLeaf[] {

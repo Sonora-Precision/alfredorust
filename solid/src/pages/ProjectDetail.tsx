@@ -25,6 +25,7 @@ import { toast } from '../components/ui/Toast'
 import { humanizeError } from '../lib/api/client'
 import { advanceProjectConcept, createProjectConcept, deleteProjectConcept, getProject, getProjectMachineTime, listConceptStatuses, listProjectConcepts, updateProjectConcept } from '../lib/api/operations'
 import type { ProjectConcept, ProjectConceptPayload } from '../lib/api/types'
+import { closeProject } from '../lib/api/notes'
 import { useAuth } from '../lib/auth/AuthContext'
 
 const opt = (s: string): string | null => {
@@ -93,6 +94,21 @@ export default function ProjectDetail(): JSX.Element {
   const machineOf = (conceptId: string) => machineQuery.data?.concepts.find((m) => m.concept_id === conceptId)
 
   const [tab, setTab] = createSignal('seguimiento')
+
+  // "Terminar proyecto": out of the active list into "Terminados" (Daniel, 2026-11-06).
+  const closed = () => {
+    const p = projectQuery.data
+    return !!p && (!!p.completed_at || p.status === 'entregado' || p.status === 'cancelado')
+  }
+  const closeMutation = createMutation(() => ({
+    mutationFn: (close: boolean) => closeProject(params.id, close),
+    onSuccess: (_d, close) => {
+      toast.success(close ? 'Proyecto terminado' : 'Proyecto reabierto', projectQuery.data?.title)
+      void qc.invalidateQueries({ queryKey: ['project', params.id] })
+      void qc.invalidateQueries({ queryKey: ['projects'] })
+    },
+    onError: (err) => toast.error('No se pudo cambiar el proyecto', humanizeError(err, '')),
+  }))
 
   const statusName = (sid: string): string => (statusesQuery.data ?? []).find((s) => s.id === sid)?.name ?? ''
 
@@ -277,9 +293,27 @@ export default function ProjectDetail(): JSX.Element {
       <PageHeader
         title={projectQuery.data?.title || 'Proyecto'}
         breadcrumb={['Operaciones', 'Proyectos']}
+        subtitle={closed() ? `Terminado${projectQuery.data?.completed_at ? ` el ${fecha(projectQuery.data.completed_at)}` : ''}` : undefined}
         actions={
           <Show when={isAdmin()}>
-            <Button onClick={openCreate}>Agregar concepto</Button>
+            <div class="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                disabled={closeMutation.isPending}
+                onClick={() =>
+                  window.confirm(
+                    closed()
+                      ? '¿Reabrir el proyecto? Regresa a Activos, en producción.'
+                      : '¿Terminar el proyecto? Se marca como entregado y pasa a Terminados.',
+                  ) && closeMutation.mutate(!closed())
+                }
+              >
+                {closed() ? 'Reabrir proyecto' : 'Terminar proyecto'}
+              </Button>
+              <Show when={!closed()}>
+                <Button onClick={openCreate}>Agregar concepto</Button>
+              </Show>
+            </div>
           </Show>
         }
       />

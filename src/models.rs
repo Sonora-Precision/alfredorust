@@ -1276,6 +1276,9 @@ pub enum StepState {
     Pending,
     Done,
     NotApplicable,
+    /// Held up by something (a missing tool): not finished, and it says why in `note`
+    /// (Daniel, 2026-11-06).
+    Blocked,
 }
 
 impl StepState {
@@ -1284,6 +1287,7 @@ impl StepState {
             "pending" => Some(StepState::Pending),
             "done" => Some(StepState::Done),
             "not_applicable" => Some(StepState::NotApplicable),
+            "blocked" => Some(StepState::Blocked),
             _ => None,
         }
     }
@@ -1293,6 +1297,7 @@ impl StepState {
             StepState::Pending => "pending",
             StepState::Done => "done",
             StepState::NotApplicable => "not_applicable",
+            StepState::Blocked => "blocked",
         }
     }
 }
@@ -1317,6 +1322,10 @@ pub struct PartStep {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub assigned_at: Option<DateTime>,
+
+    /// Why a blocked step is held up: "falta machuelo 1/4-20".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 /// Production-board queue an operation belongs to. Operations without a queue (e.g.
@@ -1882,4 +1891,45 @@ mod tests {
         assert_eq!(ResourceType::Vehicle.as_str(), "vehicle");
         assert_eq!(ResourceType::Vehicle.label(), "Vehículo");
     }
+}
+
+/// A comment on a part number (Daniel, 2026-11-06): scrap with how many and why, a note to
+/// learn from ("nota", shown again when the same part number comes back) or a comment.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PartComment {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub company_id: ObjectId,
+    pub project_id: ObjectId,
+    pub concept_id: ObjectId,
+    /// Part number without spaces or symbols, upper case: matches it in other projects.
+    pub part_key: String,
+    pub part: String,
+    /// "comentario", "scrap" or "nota".
+    pub kind: String,
+    pub text: String,
+    /// Scrap pieces.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quantity: Option<f64>,
+    pub author_id: ObjectId,
+    pub author: String,
+    pub created_at: DateTime,
+}
+
+/// A user's suggestion to improve the system, with the admin's answer.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Suggestion {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub company_id: ObjectId,
+    pub user_id: ObjectId,
+    pub author: String,
+    pub text: String,
+    /// "nueva", "en_revision", "hecha" or "descartada".
+    pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reply: Option<String>,
+    pub created_at: DateTime,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<DateTime>,
 }

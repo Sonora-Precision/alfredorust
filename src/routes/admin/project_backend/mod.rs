@@ -158,6 +158,9 @@ pub struct PartStepData {
     pub updated_at: Option<String>,
     /// Who holds this step on the production board.
     pub assignee_user_id: Option<String>,
+    /// What holds a blocked step up.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 pub(crate) fn project_concept_data(c: ProjectConcept) -> Option<ProjectConceptData> {
@@ -192,6 +195,7 @@ pub(crate) fn project_concept_data(c: ProjectConcept) -> Option<ProjectConceptDa
                 updated_by: s.updated_by,
                 updated_at: s.updated_at.map(iso),
                 assignee_user_id: s.assignee_user_id.map(|id| id.to_hex()),
+                note: s.note,
             })
             .collect(),
         created_at: c.created_at.map(iso),

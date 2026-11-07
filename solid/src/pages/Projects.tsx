@@ -171,7 +171,13 @@ export default function Projects(): JSX.Element {
     },
   }))
 
-  const totalCount = createMemo(() => (projectsQuery.data ?? []).length)
+  // Closed projects (delivered or cancelled) go to "Terminados" so they do not get in the
+  // way (Daniel, 2026-11-06).
+  const isClosed = (p: ProjectRow) => !!p.completed_at || p.status === 'entregado' || p.status === 'cancelado'
+  const [showClosed, setShowClosed] = createSignal(false)
+  const shown = createMemo(() => (projectsQuery.data ?? []).filter((p) => isClosed(p) === showClosed()))
+  const closedCount = createMemo(() => (projectsQuery.data ?? []).filter(isClosed).length)
+  const totalCount = createMemo(() => (projectsQuery.data ?? []).length - closedCount())
 
   return (
     <div class="space-y-6">
@@ -179,7 +185,9 @@ export default function Projects(): JSX.Element {
         title="Proyectos"
         breadcrumb={['Operaciones', 'Proyectos']}
         subtitle={
-          projectsQuery.data ? `${totalCount()} proyecto${totalCount() === 1 ? '' : 's'}` : 'Seguimiento de proyectos y presupuestos.'
+          projectsQuery.data
+            ? `${totalCount()} activo${totalCount() === 1 ? '' : 's'} · ${closedCount()} terminado${closedCount() === 1 ? '' : 's'}`
+            : 'Seguimiento de proyectos y presupuestos.'
         }
         actions={
           <Show when={isAdmin()}>
@@ -190,6 +198,22 @@ export default function Projects(): JSX.Element {
           </Show>
         }
       />
+
+      <div class="flex gap-2" role="tablist" aria-label="Proyectos activos o terminados">
+        <For each={[false, true]}>
+          {(closed) => (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={showClosed() === closed}
+              class={`rounded-full border px-4 py-1.5 text-sm ${showClosed() === closed ? 'border-primary bg-primary/15 font-medium text-foreground' : 'border-border text-muted-foreground hover:bg-muted'}`}
+              onClick={() => setShowClosed(closed)}
+            >
+              {closed ? `Terminados (${closedCount()})` : `Activos (${totalCount()})`}
+            </button>
+          )}
+        </For>
+      </div>
 
       <Card glass>
         <Show when={!projectsQuery.isLoading} fallback={
@@ -207,11 +231,13 @@ export default function Projects(): JSX.Element {
             }
           >
             <Show
-              when={projectsQuery.data && projectsQuery.data.length > 0}
+              when={shown().length > 0}
               fallback={
                 <CardContent class="flex flex-col items-center gap-3 py-16 text-center">
                   <Briefcase class="h-8 w-8 text-muted-foreground" />
-                  <p class="text-sm text-muted-foreground">Sin proyectos todavía.</p>
+                  <p class="text-sm text-muted-foreground">
+                    {showClosed() ? 'Todavía no hay proyectos terminados.' : 'Sin proyectos activos.'}
+                  </p>
                   <Show when={isAdmin()}>
                     <Button variant="outline" onClick={openCreate}>
                       Crear el primer proyecto
@@ -236,7 +262,7 @@ export default function Projects(): JSX.Element {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    <For each={projectsQuery.data ?? []}>{(p) => {
+                    <For each={shown()}>{(p) => {
                       const statusLabel = p.status_label || p.status
                       const priorityLabel = p.priority_label || p.priority
                       return (
@@ -294,7 +320,7 @@ export default function Projects(): JSX.Element {
                 </Table>
               </div>
               <div class="space-y-2 md:hidden">
-                <For each={projectsQuery.data ?? []}>{(p) => {
+                <For each={shown()}>{(p) => {
                   const statusLabel = p.status_label || p.status
                   const priorityLabel = p.priority_label || p.priority
                   return (

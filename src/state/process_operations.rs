@@ -112,6 +112,8 @@ pub async fn delete_process_operation(
 pub struct PartProgressUpdate {
     pub completed_quantity: Option<f64>,
     pub step: Option<(ObjectId, StepState)>,
+    /// Why a blocked step is held up; cleared for any other state.
+    pub note: Option<String>,
 }
 
 /// Records finished pieces and/or one step state and returns the updated part, or `None` when
@@ -178,6 +180,7 @@ pub async fn update_part_progress(
     }
 
     if let Some((operation_id, step_state)) = update.step {
+        let note = if step_state == StepState::Blocked { update.note.clone() } else { None };
         let set_existing = |filter: bson::Document| {
             state.project_concepts.update_one(
                 filter,
@@ -185,6 +188,7 @@ pub async fn update_part_progress(
                     "process_steps.$.state": step_state.as_str(),
                     "process_steps.$.updated_by": username,
                     "process_steps.$.updated_at": now,
+                    "process_steps.$.note": note.clone(),
                     "updated_at": now,
                 } },
             )
@@ -205,6 +209,7 @@ pub async fn update_part_progress(
                 updated_at: Some(now),
                 assignee_user_id: None,
                 assigned_at: None,
+                note: note.clone(),
             })?;
             let mut not_on_part = part.clone();
             not_on_part.insert("process_steps.operation_id", doc! { "$ne": operation_id });
