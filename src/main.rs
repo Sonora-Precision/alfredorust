@@ -810,6 +810,23 @@ async fn main() {
             post(routes::api_machine_runs_ingest),
         )
         .route(
+            "/api/admin/attendance/ingest",
+            post(routes::api_attendance_ingest),
+        )
+        .route("/api/admin/attendance/last", get(routes::api_attendance_last))
+        .route(
+            "/api/admin/attendance/employees",
+            get(routes::api_attendance_employees).post(routes::api_attendance_employee_save),
+        )
+        .route(
+            "/api/admin/attendance/employees/{employee_no}/delete",
+            post(routes::api_attendance_employee_delete),
+        )
+        .route(
+            "/api/admin/attendance/report",
+            get(routes::api_attendance_report),
+        )
+        .route(
             "/api/admin/projects/{id}/machine_time",
             get(routes::api_project_machine_time),
         )

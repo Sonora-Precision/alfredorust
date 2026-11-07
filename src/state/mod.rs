@@ -10,7 +10,7 @@ use crate::models::{
     PlannedEntry, ProcessOperation, Project, ProjectConcept, RecurringPlan, Resource, ResourceLog,
     ResourceUsage, ResourceUsageAllocation, SatConfig, ServiceOrder, Session, Transaction, User,
     UserCompany, WorkOrderEvent, MachineQueueEntry, MachineState, MaterialPrice, MaterialPricePoint, MaterialReceipt, PartComment, PartFile, Suggestion, PlantLayout, Quote, QuoteFile, QuoteSettings, ClientQuoteDefaults,
-    ShopDailyReport,
+    ShopDailyReport, AttendanceEmployee, AttendanceEvent,
 };
 use bson::Document;
 
@@ -45,6 +45,7 @@ pub struct CfdiJob {
 }
 
 mod api_tokens;
+mod attendance;
 mod cfdi_jobs;
 mod companies;
 mod finance;
@@ -70,6 +71,7 @@ mod seed;
 mod users;
 
 pub use api_tokens::*;
+pub use attendance::*;
 pub use cfdi_jobs::*;
 pub use companies::*;
 pub use finance::*;
@@ -142,6 +144,8 @@ pub struct AppState {
     pub client_quote_defaults: Collection<ClientQuoteDefaults>,
     pub part_files: Collection<PartFile>,
     pub quote_files: Collection<QuoteFile>,
+    pub attendance_events: Collection<AttendanceEvent>,
+    pub attendance_employees: Collection<AttendanceEmployee>,
 }
 
 pub async fn init_state() -> Result<AppState> {
@@ -348,6 +352,43 @@ pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppStat
         )
         .await
         .context("creating the part files index")?;
+    // Time-clock checks are re-sent by the agent; the unique key makes that a no-op.
+    db.collection::<AttendanceEvent>("attendance_events")
+        .create_index(
+            IndexModel::builder()
+                .keys(mongodb::bson::doc! { "company_id": 1, "device": 1, "serial_no": 1, "at": 1 })
+                .options(
+                    IndexOptions::builder()
+                        .name("unique_attendance_event".to_string())
+                        .unique(true)
+                        .build(),
+                )
+                .build(),
+        )
+        .await
+        .context("creating the unique attendance event index")?;
+    db.collection::<AttendanceEvent>("attendance_events")
+        .create_index(
+            IndexModel::builder()
+                .keys(mongodb::bson::doc! { "company_id": 1, "at": 1 })
+                .build(),
+        )
+        .await
+        .context("creating the attendance events by time index")?;
+    db.collection::<AttendanceEmployee>("attendance_employees")
+        .create_index(
+            IndexModel::builder()
+                .keys(mongodb::bson::doc! { "company_id": 1, "employee_no": 1 })
+                .options(
+                    IndexOptions::builder()
+                        .name("unique_attendance_employee".to_string())
+                        .unique(true)
+                        .build(),
+                )
+                .build(),
+        )
+        .await
+        .context("creating the unique attendance employee index")?;
 
     let state = AppState {
         cfdi_archive_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
@@ -394,6 +435,8 @@ pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppStat
         client_quote_defaults: db.collection::<ClientQuoteDefaults>("client_quote_defaults"),
         part_files: db.collection::<PartFile>("part_files"),
         quote_files: db.collection::<QuoteFile>("quote_files"),
+        attendance_events: db.collection::<AttendanceEvent>("attendance_events"),
+        attendance_employees: db.collection::<AttendanceEmployee>("attendance_employees"),
     };
 
     let interrupted = fail_interrupted_cfdi_jobs(&state).await?;

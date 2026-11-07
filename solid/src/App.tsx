@@ -38,6 +38,7 @@ const Projects = lazyWithReload(() => import('./pages/Projects'))
 const Production = lazyWithReload(() => import('./pages/Production'))
 const Plant = lazyWithReload(() => import('./pages/Plant'))
 const ShopReports = lazyWithReload(() => import('./pages/ShopReports'))
+const Attendance = lazyWithReload(() => import('./pages/Attendance'))
 const MaterialReceipts = lazyWithReload(() => import('./pages/MaterialReceipts'))
 const CutList = lazyWithReload(() => import('./pages/CutList'))
 const QuoteDocument = lazyWithReload(() => import('./pages/QuoteDocument'))
@@ -85,6 +86,7 @@ export default function App(): JSX.Element {
         <Route path="/produccion" component={Production} />
         <Route path="/produccion/planta" component={Plant} />
         <Route path="/produccion/reportes" component={ShopReports} />
+        <Route path="/asistencia" component={Attendance} />
         <Route path="/produccion/material" component={MaterialReceipts} />
         <Route path="/produccion/cortes" component={CutList} />
         <Route path="/cotizaciones" component={Quotes} />

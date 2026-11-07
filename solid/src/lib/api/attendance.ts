@@ -1,0 +1,63 @@
+// Asistencia: checks from the shop's time clock, the employees with their shift, and the
+// weekly report. Admin-only on the server.
+import { apiGet, apiPost } from './client'
+
+export interface AttendanceShift {
+  /** "HH:MM", shop time */
+  start: string
+  end: string
+  /** 1 = Monday … 7 = Sunday */
+  days: number[]
+  tolerance_min: number
+}
+
+export interface AttendanceEmployee {
+  employee_no: string
+  name: string
+  user_id?: string | null
+  shift?: AttendanceShift | null
+  active: boolean
+}
+
+export type AttendanceStatus =
+  | 'ok'
+  | 'retardo'
+  | 'falta'
+  | 'incompleto'
+  | 'descanso'
+  | 'extra'
+  | 'pendiente'
+  | 'sin_horario'
+
+export interface AttendanceDay {
+  date: string
+  checks: string[]
+  entry?: string | null
+  exit?: string | null
+  worked_min: number
+  late_min: number
+  status: AttendanceStatus
+}
+
+export interface AttendanceEmployeeReport {
+  employee_no: string
+  name: string
+  shift?: AttendanceShift | null
+  days: AttendanceDay[]
+  totals: { worked_min: number; late_min: number; late_days: number; absences: number; incomplete: number }
+}
+
+export interface AttendanceReport {
+  from: string
+  to: string
+  employees: AttendanceEmployeeReport[]
+  unknown: { employee_no: string; checks: number }[]
+}
+
+export const getAttendanceReport = (from?: string, to?: string) =>
+  apiGet<AttendanceReport>('/api/admin/attendance/report', { ...(from ? { from } : {}), ...(to ? { to } : {}) })
+export const listAttendanceEmployees = () => apiGet<AttendanceEmployee[]>('/api/admin/attendance/employees')
+export const saveAttendanceEmployee = (payload: AttendanceEmployee) =>
+  apiPost<void>('/api/admin/attendance/employees', payload)
+export const deleteAttendanceEmployee = (employeeNo: string) =>
+  apiPost<void>(`/api/admin/attendance/employees/${encodeURIComponent(employeeNo)}/delete`)
