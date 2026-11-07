@@ -15,6 +15,9 @@ export const STOCK_STEP = 0.25
 const inch = (v: number | null | undefined) => (v == null ? '' : String(+v.toFixed(4)).replace(/^0\./, '.'))
 
 /** The stock suggested for one part dimension, in inches. */
+/** Shapes to pick from; a new part starts "Sin asignar" (Daniel, 2026-11-06). */
+export const SHAPES = ['redondo', 'solera', 'placa', 'barra', 'cuadrado', 'hexagonal', 'tubo']
+
 /** What the saw takes per piece unless the part says otherwise. */
 export const DEFAULT_KERF = 0.125
 
