@@ -665,6 +665,13 @@ pub struct CutListItemData {
 }
 
 /// The band saw of the company: the active machine whose name says "sierra".
+pub(crate) const PLATE_NO_SAW: &str = "las placas llegan cortadas a la medida: no pasan por la sierra";
+
+/// Plates come cut to size from the supplier (Daniel, 2026-11-06).
+pub(crate) fn is_plate(concept: &ProjectConcept) -> bool {
+    concept.material.as_ref().and_then(|m| m.shape.as_deref()).is_some_and(|s| s.eq_ignore_ascii_case("placa"))
+}
+
 pub(crate) const NOT_IN_SHOP: &str =
     "el material todavía no está en el taller: asígnale una barra recibida o marca el paso Material";
 
@@ -730,6 +737,9 @@ pub async fn api_cut_queue(
     let Some(length) = concept.material.as_ref().and_then(|m| m.length) else {
         return json_error(StatusCode::BAD_REQUEST, "captura primero el material y el largo de corte de la parte");
     };
+    if is_plate(&concept) {
+        return json_error(StatusCode::BAD_REQUEST, PLATE_NO_SAW);
+    }
     if !material_in_shop(&state, &company_id, &concept).await {
         return json_error(StatusCode::BAD_REQUEST, NOT_IN_SHOP);
     }
@@ -778,6 +788,8 @@ pub(crate) async fn load_cut_plan(state: &AppState, company_id: &ObjectId) -> an
             "company_id": company_id,
             "project_id": { "$in": &project_ids },
             "material.length": { "$exists": true },
+            // Plates come cut to size from the supplier: they never go to the saw (Daniel, 2026-11-06).
+            "material.shape": { "$ne": "placa" },
         })
         .await?
         .try_collect::<Vec<_>>()
