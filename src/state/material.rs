@@ -63,6 +63,11 @@ pub fn material_status(concept: &ProjectConcept, received: bool) -> Option<&'sta
         "cortado"
     } else if received {
         "recibido"
+    } else if m.is_some_and(|m| m.shop_stock.as_deref() == Some("en_taller")) {
+        // An offcut found in the shop: in the shop, nothing to buy (Daniel, 2026-11-07).
+        "en_taller"
+    } else if m.is_some_and(|m| m.shop_stock.as_deref() == Some("buscar")) {
+        "buscar"
     } else if m.is_some_and(|m| m.ordered) {
         "pedido"
     } else {

@@ -1134,7 +1134,7 @@ export type TimelineMode = 'day' | 'week' | 'month' | 'year'
 
 // --- part material and material receipts (openspec add-part-material) ---------------
 
-export type MaterialStatus = 'surtido_por_cliente' | 'cortado' | 'recibido' | 'pedido' | 'pendiente'
+export type MaterialStatus = 'surtido_por_cliente' | 'cortado' | 'recibido' | 'en_taller' | 'buscar' | 'pedido' | 'pendiente'
 
 /** A whole sheet a part is nested on (inches). */
 export interface SheetSpec {
@@ -1163,6 +1163,10 @@ export interface PartMaterial {
   bar_to_order?: string | null
   customer_supplied?: boolean
   ordered?: boolean
+  /** Offcuts: "buscar" = look for it in the shop; "en_taller" = found, nothing to buy. */
+  shop_stock?: 'buscar' | 'en_taller' | null
+  /** Where it is or what was found. */
+  shop_note?: string | null
   notes?: string | null
 }
 
