@@ -54,7 +54,7 @@ export function requestText(projectTitle: string, groups: Group[], date = new Da
   const out = ['*Solicitud de material — Sonora Precision*', `Proyecto: ${projectTitle}`, `Fecha: ${day}`, '']
   // The supplier does not cut: it only needs the bar section by the total length.
   groups.forEach((g, i) => {
-    out.push(`${i + 1}. *${g.stock} × ${inch(+g.total.toFixed(3))}"* (${(g.total / 12).toFixed(2)} ft)`)
+    out.push(`${i + 1}. *${g.stock} × ${inch(+g.total.toFixed(3))}"*`)
   })
   out.push('', 'Medidas en pulgadas.')
   return out.join('\n')
@@ -277,7 +277,6 @@ function PartStockRow(props: {
         <Show when={preview() != null && preview()! > 0}>
           <span class="tnum ml-auto text-sm text-foreground">
             A pedir: <b>{inch(+preview()!.toFixed(3))}"</b>
-            <span class="text-xs text-muted-foreground"> ({(preview()! / 12).toFixed(2)} ft)</span>
           </span>
         </Show>
       </div>
