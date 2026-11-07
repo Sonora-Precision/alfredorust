@@ -348,6 +348,7 @@ function StockAndCuts(props: { order: NonNullable<PlantMachine['order']>; canEdi
         conceptId={props.order.id}
         partName={props.order.part}
         projectId=""
+        pieces={props.order.quantity}
         material={m() ?? {}}
         onClose={() => setEditing(false)}
       />

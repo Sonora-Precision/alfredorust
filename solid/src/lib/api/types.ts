@@ -1136,6 +1136,8 @@ export interface PartMaterial {
   part_thickness?: number | null
   part_width?: number | null
   part_length?: number | null
+  /** What the saw takes per piece, inches (1/8" when missing). */
+  saw_kerf?: number | null
   bar_to_order?: string | null
   customer_supplied?: boolean
   ordered?: boolean

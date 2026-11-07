@@ -1,6 +1,6 @@
 // Material a pedir — per part number the programmer picks the stock it is cut from (material,
-// shape, section) and the cut length per piece; with several pieces each one takes .125" more
-// for the cut. The parts still to order become one request, grouped by stock, to send by
+// shape, section) and the cut length per piece; each piece takes the saw cut (1/8" unless
+// changed) on top. The parts still to order become one request, grouped by stock, to send by
 // WhatsApp or copy (Daniel, 2026-11-06). No prices: programmers use it.
 import { createMutation, useQueryClient } from '@tanstack/solid-query'
 import { Check, Copy, MessageCircle } from 'lucide-solid'
@@ -10,13 +10,13 @@ import { Button } from '../ui/Button'
 import { toast } from '../ui/Toast'
 import { folioOf } from '../production/WorkOrderSearch'
 import { MATERIAL_STATUS } from './PartMaterialCell'
-import { type SizerApi, StockSizer } from './StockSizer'
+import { DEFAULT_KERF, type SizerApi, StockSizer, barLength } from './StockSizer'
 import { humanizeError } from '../../lib/api/client'
 import { setPartMaterial } from '../../lib/api/material'
 import type { PartMaterial, ProjectConcept } from '../../lib/api/types'
 
-/** Extra length per piece for the saw cut when there are several pieces. */
-export const CUT_ALLOWANCE = 0.125
+/** What the saw takes per piece of a part (its own, or 1/8"). */
+export const kerfOf = (m: PartMaterial) => m.saw_kerf ?? DEFAULT_KERF
 
 const SHAPES = ['redondo', 'solera', 'placa', 'barra', 'cuadrado', 'hexagonal', 'tubo']
 const MATERIALS = ['Aluminio 6061', 'Aluminio 7075', '1018', '1045', '4140', 'Inoxidable 304', 'Delrin', 'Delrin negro', 'Delrin blanco', 'G10', 'Nylamid', 'Latón']
@@ -24,10 +24,9 @@ const MATERIALS = ['Aluminio 6061', 'Aluminio 7075', '1018', '1045', '4140', 'In
 const inch = (v: number | null | undefined) => (v == null ? '' : String(+v.toFixed(4)).replace(/^0\./, '.'))
 const isRound = (shape?: string | null) => ['redondo', 'hexagonal'].includes((shape ?? '').toLowerCase())
 
-/** Length to order for one part: n × (L + .125") with several pieces, L for a single one. */
-export function lengthToOrder(pieces: number, cut: number): number {
-  const n = Math.max(0, Math.ceil(pieces))
-  return n > 1 ? n * (cut + CUT_ALLOWANCE) : n * cut
+/** Length to order for one part: pieces × (cut length + saw cut). */
+export function lengthToOrder(pieces: number, cut: number, kerf = DEFAULT_KERF): number {
+  return barLength(pieces, cut, kerf)
 }
 
 /** "Aluminio 6061 solera 1/8 × 1.75" — what the supplier is asked for, without length. */
@@ -59,13 +58,13 @@ export function requestText(projectTitle: string, groups: Group[], date = new Da
     // Same cut length in several parts goes together: "30 pzas de 5.125""
     const byCut = new Map<number, number>()
     for (const l of g.lines) {
-      const cut = l.pieces > 1 ? l.material.length! + CUT_ALLOWANCE : l.material.length!
+      const cut = l.material.length! + kerfOf(l.material)
       byCut.set(cut, (byCut.get(cut) ?? 0) + Math.ceil(l.pieces))
     }
     for (const [cut, n] of byCut) out.push(`   • ${n} ${n === 1 ? 'pza' : 'pzas'} de ${inch(cut)}"`)
     out.push(`   Total: ${inch(+g.total.toFixed(3))}" (${(g.total / 12).toFixed(2)} ft)`)
   })
-  out.push('', `Medidas en pulgadas; con varias piezas cada una lleva ${inch(CUT_ALLOWANCE)}" para el corte.`)
+  out.push('', 'Medidas en pulgadas; cada pieza ya lleva lo que se come la sierra.')
   return out.join('\n')
 }
 
@@ -86,7 +85,7 @@ export function MaterialRequest(props: {
   const lines = createMemo<Line[]>(() =>
     props.concepts
       .filter((c) => pending(c) && !skip().has(c.id))
-      .map((c) => ({ concept: c, material: c.material!, pieces: c.quantity, total: lengthToOrder(c.quantity, c.material!.length!) })),
+      .map((c) => ({ concept: c, material: c.material!, pieces: c.quantity, total: lengthToOrder(c.quantity, c.material!.length!, kerfOf(c.material!)) })),
   )
   const groups = createMemo<Group[]>(() => {
     const map = new Map<string, Group>()
@@ -119,7 +118,7 @@ export function MaterialRequest(props: {
           await setPartMaterial(l.concept.id, {
             ...l.material,
             ordered: true,
-            bar_to_order: `${g.stock} · ${inch(+l.total.toFixed(3))}"`.slice(0, 120),
+            bar_to_order: l.material.bar_to_order ?? `${g.stock} · ${inch(+l.total.toFixed(3))}"`.slice(0, 120),
           })
     },
     onSuccess: () => {
@@ -133,12 +132,27 @@ export function MaterialRequest(props: {
   return (
     <div class="space-y-4 pt-4">
       <p class="text-sm text-muted-foreground">
-        Escoge de qué stock sale cada número de parte y el largo de corte por pieza. Con varias piezas se suma{' '}
-        {inch(CUT_ALLOWANCE)}" por corte a cada una.
+        Pon las medidas de cada número de parte y ajusta el stock sugerido. La barra a pedir es piezas × (largo + corte de
+        sierra, 1/8" si no lo cambias).
       </p>
       <datalist id="stock-materials">
         <For each={MATERIALS}>{(n) => <option value={n} />}</For>
       </datalist>
+      <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <span>
+          En la solicitud: <b class="text-foreground">{lines().length}</b> de {props.concepts.filter(pending).length} partes con stock por pedir
+        </span>
+        <button type="button" class="rounded-full border border-border px-3 py-1 hover:bg-muted" onClick={() => setSkip(new Set<string>())}>
+          Todas
+        </button>
+        <button
+          type="button"
+          class="rounded-full border border-border px-3 py-1 hover:bg-muted"
+          onClick={() => setSkip(new Set(props.concepts.filter(pending).map((c) => c.id)))}
+        >
+          Ninguna
+        </button>
+      </div>
       <div class="space-y-2">
         <For each={props.concepts}>
           {(c) => (
@@ -246,7 +260,7 @@ function PartStockRow(props: {
 
   const preview = () => {
     const le = sizer()?.cutLength() ?? null
-    return le == null ? null : lengthToOrder(props.concept.quantity, le)
+    return le == null ? null : lengthToOrder(props.concept.quantity, le, sizer()?.kerf() ?? DEFAULT_KERF)
   }
 
   const field = 'h-9 w-full rounded-lg border border-border bg-background px-2 text-sm text-foreground disabled:opacity-70'
@@ -298,6 +312,7 @@ function PartStockRow(props: {
           material={m()}
           round={round()}
           firstLabel={firstLabel()}
+          pieces={props.concept.quantity}
           disabled={!props.canEdit}
           ref={(api) => setSizer(() => api)}
         />

@@ -121,12 +121,22 @@ async fn material_receipt_matches_and_assigns_bars() {
     with_part["part_thickness"] = serde_json::json!(0.748);
     with_part["part_width"] = serde_json::json!(1.4961);
     with_part["part_length"] = serde_json::json!(4.7244);
+    with_part["saw_kerf"] = serde_json::json!(0.125);
+    with_part["bar_to_order"] = serde_json::json!("0.1875\" × 1.5\" × 25.625\"");
     let (status, body) = post(format!("/api/admin/project_concepts/{}/material", p289.to_hex()), jose.clone(), with_part).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
     let list = concepts(jose.clone()).await;
     let c289 = list.as_array().unwrap().iter().find(|c| c["name"] == "CG-15289-A").unwrap().clone();
     assert_eq!(c289["material"]["part_thickness"], 0.748);
     assert_eq!(c289["material"]["thickness"], 0.1875);
+    assert_eq!(c289["material"]["saw_kerf"], 0.125);
+    let (status, _) = post(
+        format!("/api/admin/project_concepts/{}/material", p289.to_hex()),
+        jose.clone(),
+        serde_json::json!({ "material": "Aluminio 6061", "saw_kerf": 2 }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "kerf over 1\"");
     with_part = serde_json::json!({ "material": "Aluminio 6061", "part_width": -2 });
     let (status, _) = post(format!("/api/admin/project_concepts/{}/material", p289.to_hex()), jose.clone(), with_part).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
