@@ -211,9 +211,9 @@ export function StockSizer(props: {
         </Show>
       </div>
       <div class={`grid gap-2 ${props.round ? 'grid-cols-2' : 'grid-cols-3'}`}>
-        {partField(props.firstLabel, pt, setPt, 't', '.748|19')}
-        <Show when={!props.round}>{partField('Ancho', pw, setPw, 'w', '1.969|50')}</Show>
-        {partField('Largo', pl, setPl, 'l', '2.362|60')}
+        {partField(props.firstLabel, pt, setPt, 't', 'in|mm')}
+        <Show when={!props.round}>{partField('Ancho', pw, setPw, 'w', 'in|mm')}</Show>
+        {partField('Largo', pl, setPl, 'l', 'in|mm')}
       </div>
       <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
         <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Stock a pedir por pieza (in)</p>
@@ -247,7 +247,7 @@ export function StockSizer(props: {
           </span>
           <input
             class={field}
-            placeholder={props.round ? 'Ø1.25" × 31.125"' : '1.25" × 3" × 31.125"'}
+            placeholder="Se calcula con el stock"
             disabled={props.disabled}
             value={barValue()}
             onInput={(e) => {
