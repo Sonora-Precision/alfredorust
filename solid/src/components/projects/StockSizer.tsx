@@ -115,9 +115,11 @@ export function StockSizer(props: {
     const section = props.round ? `Ø${inch(t)}"` : `${inch(t)}" × ${w == null ? '?' : inch(w)}"`
     return `${section} × ${inch(+barLength(props.pieces, l, k).toFixed(3))}"`
   }
-  // The bar follows the calculation until typed in; a saved bar that differs stays as typed.
-  const [barTouched, setBarTouched] = createSignal(!!m().bar_to_order && m().bar_to_order !== autoBar())
-  const barValue = () => (barTouched() ? bar() : autoBar())
+  // The bar always opens calculated (Daniel, 2026-11-06: an old one typed by hand hid the
+  // calculation); typing in it keeps what is typed until "Calcular".
+  const [barTouched, setBarTouched] = createSignal(false)
+  const savedBar = () => m().bar_to_order ?? null
+  const barValue = () => (barTouched() ? bar() : autoBar() || savedBar() || '')
 
   const same = (a: number | null, b: number | null | undefined) => (a ?? null) === (b ?? null)
   props.ref({
@@ -153,7 +155,7 @@ export function StockSizer(props: {
       (!props.round && !same(stockIn(sw()), m().width)) ||
       !same(stockIn(sl()), m().length) ||
       kerfIn() !== (m().saw_kerf ?? DEFAULT_KERF) ||
-      (barTouched() && (bar().trim() || null) !== (m().bar_to_order ?? null)),
+      (barValue().trim() || null) !== savedBar(),
     kerf: kerfIn,
     cutLength: () => {
       const x = stockIn(sl())
@@ -247,6 +249,19 @@ export function StockSizer(props: {
         <label class={`${props.cutToSize ? 'col-span-3' : 'col-span-2'} space-y-1`}>
           <span class="flex items-center justify-between text-xs text-muted-foreground">
             {props.cutToSize ? 'Placas a pedir (cortadas a la medida)' : 'Barra a pedir'}
+            <Show when={!barTouched() && savedBar() && savedBar() !== autoBar() && !props.disabled}>
+              <button
+                type="button"
+                class="truncate text-muted-foreground hover:underline"
+                title="Lo que estaba guardado antes"
+                onClick={() => {
+                  setBar(savedBar() ?? '')
+                  setBarTouched(true)
+                }}
+              >
+                Antes: {savedBar()}
+              </button>
+            </Show>
             <Show when={barTouched() && autoBar() && autoBar() !== bar() && !props.disabled}>
               <button type="button" class="text-sky-600 hover:underline" onClick={() => setBarTouched(false)}>
                 Calcular: {autoBar()}

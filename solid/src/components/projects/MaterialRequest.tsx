@@ -129,7 +129,6 @@ export function MaterialRequest(props: {
             ...l.material,
             ordered: true,
             bar_to_order:
-              l.material.bar_to_order ??
               (g.cutToSize ? `${g.stock} - ${l.total} pzs` : `${g.stock} · ${inch(+l.total.toFixed(3))}"`).slice(0, 120),
           })
     },
