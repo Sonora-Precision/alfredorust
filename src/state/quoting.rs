@@ -386,7 +386,10 @@ fn trailing_pieces(desc: &str) -> Option<f64> {
     let is_pz = |w: &str| matches!(w, "pz" | "pza" | "pzas" | "pzs" | "pieza" | "piezas");
     for (i, w) in words.iter().enumerate().rev() {
         if is_pz(w) {
-            return words.get(i.checked_sub(1)?)?.parse::<f64>().ok().filter(|n| *n > 0.0);
+            // The digits right before it, even glued to the size: "144\"4 pzas" → 4.
+            let prev = words.get(i.checked_sub(1)?)?;
+            let digits: String = prev.chars().rev().take_while(|c| c.is_ascii_digit()).collect::<Vec<_>>().into_iter().rev().collect();
+            return digits.parse::<f64>().ok().filter(|n| *n > 0.0);
         }
         let digits: String = w.chars().take_while(|c| c.is_ascii_digit()).collect();
         if !digits.is_empty() && is_pz(&w[digits.len()..]) {
@@ -421,6 +424,11 @@ pub fn cfdi_line_price(description: &str, quantity: f64, unit: &str, amount: f64
     // "… x 144\" 2 pza", "(2PZ)", "3pzas": the pieces however they are written.
     if let Some(n) = trailing_pieces(description) {
         line.pieces = n;
+    }
+    // A plate or flat bar needs its three measures; with two it would weigh as a round bar.
+    let lower = description.to_lowercase();
+    if line.width.is_none() && ["placa", "plate", "solera", "lamina", "lámina"].iter().any(|k| lower.contains(k)) {
+        return None;
     }
     let computed = invoice_line_kg(&line);
     let by_kg = matches!(unit.trim().to_uppercase().as_str(), "KGM" | "KG");
@@ -725,5 +733,15 @@ mod tests {
         // Delrin natural reads as blanco.
         assert_eq!(crate::state::material_of("Placa de Acetal Natural de 1 1/2\" x 4x12\""), Some("Delrin blanco".into()));
         assert_eq!(crate::state::material_of("Placa A36 de 1/2 x 4 x 12"), Some("A36".into()));
+    }
+
+    #[test]
+    fn invoice_lines_that_read_wrong_before() {
+        // "144\"4 pzas": four sheets, not one.
+        let (l, kg, ppk, _) = cfdi_line_price("Placa alum rectificada de 5/8\" x 48\" x 144\"4 pzas", 4.0, "H87", 191200.0).unwrap();
+        assert_eq!((l.material.as_deref(), l.pieces), (Some("Aluminio rectificado"), 4.0));
+        assert!((ppk - 250.0).abs() < 2.0, "{kg} {ppk}");
+        // A plate with two measures cannot be weighed: left out.
+        assert!(cfdi_line_price(".625 Mic-6 Cast Plate24\" X 48.5\"  TC+.125\"-.000\"", 1.0, "H87", 429.0).is_none());
     }
 }
