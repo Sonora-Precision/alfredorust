@@ -10,7 +10,7 @@ import { Drawer } from '../ui/Drawer'
 import { toast } from '../ui/Toast'
 import { humanizeError } from '../../lib/api/client'
 import { queuePartToSaw, setPartMaterial } from '../../lib/api/material'
-import { type SizerApi, StockSizer } from './StockSizer'
+import { SHAPES, type SizerApi, StockSizer } from './StockSizer'
 import type { CutListItem, MaterialStatus, PartMaterial } from '../../lib/api/types'
 import { useAuth } from '../../lib/auth/AuthContext'
 
@@ -192,7 +192,7 @@ export function MaterialEditor(props: {
 }): JSX.Element {
   const qc = useQueryClient()
   const [material, setMaterial] = createSignal(props.material.material ?? '')
-  const [shape, setShape] = createSignal(props.material.shape ?? 'solera')
+  const [shape, setShape] = createSignal(props.material.shape ?? '')
   const [ordered, setOrdered] = createSignal(props.material.ordered ?? false)
   const [supplied, setSupplied] = createSignal(props.material.customer_supplied ?? false)
   const [notes, setNotes] = createSignal(props.material.notes ?? '')
@@ -243,7 +243,7 @@ export function MaterialEditor(props: {
         <div class="grid grid-cols-2 gap-2">
           <label class="space-y-1">
             <span class="text-xs text-muted-foreground">Material</span>
-            <input class={field} list="material-names" placeholder="Aluminio 6061" value={material()} onInput={(e) => setMaterial(e.currentTarget.value)} />
+            <input class={field} list="material-names" placeholder="Sin asignar" value={material()} onInput={(e) => setMaterial(e.currentTarget.value)} />
             <datalist id="material-names">
               {['Aluminio 6061', '4140', '1018', 'Delrin', 'Delrin negro', 'Delrin blanco', 'G10', 'Nylamid'].map((n) => (
                 <option value={n} />
@@ -253,7 +253,10 @@ export function MaterialEditor(props: {
           <label class="space-y-1">
             <span class="text-xs text-muted-foreground">Forma</span>
             <select class={field} value={shape()} onChange={(e) => setShape(e.currentTarget.value)}>
-              {['solera', 'placa', 'redondo', 'barra', 'tubo'].map((s) => (
+              <option value="" selected={shape() === ''}>
+                Sin asignar
+              </option>
+              {(SHAPES.includes(shape()) || !shape() ? SHAPES : [shape(), ...SHAPES]).map((s) => (
                 <option value={s} selected={shape() === s}>
                   {s}
                 </option>

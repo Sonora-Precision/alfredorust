@@ -10,7 +10,7 @@ import { Button } from '../ui/Button'
 import { toast } from '../ui/Toast'
 import { folioOf } from '../production/WorkOrderSearch'
 import { MATERIAL_STATUS } from './PartMaterialCell'
-import { DEFAULT_KERF, type SizerApi, StockSizer, barLength } from './StockSizer'
+import { DEFAULT_KERF, SHAPES, type SizerApi, StockSizer, barLength } from './StockSizer'
 import { humanizeError } from '../../lib/api/client'
 import { setPartMaterial } from '../../lib/api/material'
 import type { PartMaterial, ProjectConcept } from '../../lib/api/types'
@@ -18,7 +18,6 @@ import type { PartMaterial, ProjectConcept } from '../../lib/api/types'
 /** What the saw takes per piece of a part (its own, or 1/8"). */
 export const kerfOf = (m: PartMaterial) => m.saw_kerf ?? DEFAULT_KERF
 
-const SHAPES = ['redondo', 'solera', 'placa', 'barra', 'cuadrado', 'hexagonal', 'tubo']
 const MATERIALS = ['Aluminio 6061', 'Aluminio 7075', '1018', '1045', '4140', 'Inoxidable 304', 'Delrin', 'Delrin negro', 'Delrin blanco', 'G10', 'Nylamid', 'Latón']
 
 const inch = (v: number | null | undefined) => (v == null ? '' : String(+v.toFixed(4)).replace(/^0\./, '.'))
@@ -53,18 +52,11 @@ interface Group {
 export function requestText(projectTitle: string, groups: Group[], date = new Date()): string {
   const day = date.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })
   const out = ['*Solicitud de material — Sonora Precision*', `Proyecto: ${projectTitle}`, `Fecha: ${day}`, '']
+  // The supplier does not cut: it only needs the bar section by the total length.
   groups.forEach((g, i) => {
-    out.push(`${i + 1}. *${g.stock}*`)
-    // Same cut length in several parts goes together: "30 pzas de 5.125""
-    const byCut = new Map<number, number>()
-    for (const l of g.lines) {
-      const cut = l.material.length! + kerfOf(l.material)
-      byCut.set(cut, (byCut.get(cut) ?? 0) + Math.ceil(l.pieces))
-    }
-    for (const [cut, n] of byCut) out.push(`   • ${n} ${n === 1 ? 'pza' : 'pzas'} de ${inch(cut)}"`)
-    out.push(`   Total: ${inch(+g.total.toFixed(3))}" (${(g.total / 12).toFixed(2)} ft)`)
+    out.push(`${i + 1}. *${g.stock} × ${inch(+g.total.toFixed(3))}"* (${(g.total / 12).toFixed(2)} ft)`)
   })
-  out.push('', 'Medidas en pulgadas; cada pieza ya lleva lo que se come la sierra.')
+  out.push('', 'Medidas en pulgadas.')
   return out.join('\n')
 }
 
@@ -90,7 +82,7 @@ export function MaterialRequest(props: {
   const groups = createMemo<Group[]>(() => {
     const map = new Map<string, Group>()
     for (const l of lines()) {
-      const stock = stockLabel(l.material) || 'Sin material'
+      const stock = stockLabel(l.material) || 'Material sin asignar'
       const key = stock.toLowerCase()
       const g = map.get(key) ?? { stock, lines: [], total: 0 }
       g.lines.push(l)
@@ -218,14 +210,14 @@ function PartStockRow(props: {
   const qc = useQueryClient()
   const m = () => props.concept.material ?? {}
   const [material, setMaterial] = createSignal(m().material ?? '')
-  const [shape, setShape] = createSignal(m().shape ?? 'redondo')
+  const [shape, setShape] = createSignal(m().shape ?? '')
   const round = () => isRound(shape())
   const firstLabel = () => (round() ? (shape() === 'hexagonal' ? 'Entre caras' : 'Diámetro') : 'Espesor')
   // Part size (mm or in) → stock to order (in), suggested and editable.
   const [sizer, setSizer] = createSignal<SizerApi>()
 
   const dirty = () =>
-    material() !== (m().material ?? '') || shape() !== (m().shape ?? 'redondo') || (sizer()?.dirty() ?? false)
+    material() !== (m().material ?? '') || shape() !== (m().shape ?? '') || (sizer()?.dirty() ?? false)
 
   const save = createMutation(() => ({
     mutationFn: (pm: PartMaterial) => setPartMaterial(props.concept.id, pm),
@@ -253,7 +245,7 @@ function PartStockRow(props: {
       ...m(),
       ...v,
       material: material().trim() || null,
-      shape: shape(),
+      shape: shape() || null,
       ordered: stockChanged ? false : (m().ordered ?? false),
     })
   }
@@ -299,12 +291,13 @@ function PartStockRow(props: {
         <div class="grid grid-cols-3 gap-2">
           <label class="col-span-2 space-y-1">
             <span class="text-xs text-muted-foreground">Material</span>
-            <input class={field} list="stock-materials" placeholder="1045" disabled={!props.canEdit} value={material()} onInput={(e) => setMaterial(e.currentTarget.value)} />
+            <input class={field} list="stock-materials" placeholder="Sin asignar" disabled={!props.canEdit} value={material()} onInput={(e) => setMaterial(e.currentTarget.value)} />
           </label>
           <label class="space-y-1">
             <span class="text-xs text-muted-foreground">Forma</span>
             <select class={field} disabled={!props.canEdit} value={shape()} onChange={(e) => setShape(e.currentTarget.value)}>
-              <For each={SHAPES.includes(shape()) ? SHAPES : [shape(), ...SHAPES]}>{(s) => <option value={s} selected={shape() === s}>{s}</option>}</For>
+              <option value="" selected={shape() === ''}>Sin asignar</option>
+              <For each={SHAPES.includes(shape()) || !shape() ? SHAPES : [shape(), ...SHAPES]}>{(s) => <option value={s} selected={shape() === s}>{s}</option>}</For>
             </select>
           </label>
         </div>
