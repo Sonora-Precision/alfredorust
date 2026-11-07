@@ -79,6 +79,34 @@ function applyLocally(c: ProjectConcept, p: PartProgressPayload): ProjectConcept
   return { ...c, completed_quantity: p.completed_quantity ?? c.completed_quantity, process_steps: steps }
 }
 
+const NO_MATERIAL = 'Sin material'
+const materialName = (c: ProjectConcept) => c.material?.material?.trim() || NO_MATERIAL
+const BAND_COLORS = [
+  'bg-sky-500/80',
+  'bg-amber-500/80',
+  'bg-emerald-500/80',
+  'bg-violet-500/80',
+  'bg-rose-500/80',
+  'bg-cyan-500/80',
+  'bg-lime-500/80',
+  'bg-fuchsia-500/80',
+]
+/** The same material keeps its color everywhere. */
+function bandColor(name: string): string {
+  if (name === NO_MATERIAL) return 'bg-muted-foreground/40'
+  let h = 0
+  for (const ch of name.toLowerCase()) h = (h * 31 + ch.charCodeAt(0)) >>> 0
+  return BAND_COLORS[h % BAND_COLORS.length]!
+}
+const BY_MATERIAL_KEY = 'seguimiento-por-material'
+function readByMaterial(): boolean {
+  try {
+    return localStorage.getItem(BY_MATERIAL_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
 /** Released by quality: only these count as finished (Daniel, 2026-11-03). */
 const releasedOf = (c: ProjectConcept) => c.released_quantity ?? 0
 const rejectedOf = (c: ProjectConcept) => c.rejected_quantity ?? 0
@@ -300,9 +328,43 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
   const placesOf = createMemo(() => placesByPart(machines()))
 
   const [filter, setFilter] = createSignal('')
-  const visibleConcepts = createMemo(() =>
-    props.concepts.filter((c) => matchesWorkOrder({ folio: folioOf(c.work_order_number), part: c.name }, filter())),
-  )
+  // Grouped by material with a band naming it, to find the parts of each material at a
+  // glance (Daniel, 2026-11-06). Remembered on this device.
+  const [byMaterial, setByMaterial] = createSignal(readByMaterial())
+  const visibleConcepts = createMemo(() => {
+    const list = props.concepts.filter((c) =>
+      matchesWorkOrder({ folio: folioOf(c.work_order_number), part: c.name }, filter()),
+    )
+    if (!byMaterial()) return list
+    return [...list].sort((a, b) => {
+      const ma = materialName(a)
+      const mb = materialName(b)
+      if (ma !== mb) {
+        if (ma === NO_MATERIAL) return 1
+        if (mb === NO_MATERIAL) return -1
+        return ma.localeCompare(mb, 'es', { numeric: true })
+      }
+      return a.position - b.position
+    })
+  })
+  /** First row of each material group and how many rows it spans. */
+  const groups = createMemo(() => {
+    const out = new Map<string, { name: string; span: number }>()
+    if (!byMaterial()) return out
+    let first: string | null = null
+    let current = ''
+    for (const c of visibleConcepts()) {
+      const name = materialName(c)
+      if (first == null || name !== current) {
+        first = c.id
+        current = name
+        out.set(c.id, { name, span: 1 })
+      } else {
+        out.get(first)!.span++
+      }
+    }
+    return out
+  })
 
   return (
     <div class="space-y-4">
@@ -352,8 +414,8 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
         <div class="flex items-center justify-between gap-2 px-4 pt-3 text-xs text-muted-foreground">
           <span>
             <Show when={props.canEdit} fallback="Solo lectura.">
-              Clic en una casilla: pendiente → ✔ hecho → N/A → pendiente. Piezas: escribe el
-              total o +N / −N.
+              Clic en una casilla: pendiente → ✔ hecho → N/A → pendiente. Clic derecho o mantener
+              presionado: detenido (naranja) con lo que falta. Piezas: escribe el total o +N / −N.
               <Show when={props.canTick}> Solo puedes palomear tus números de parte.</Show>
             </Show>
           </span>
@@ -371,12 +433,33 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
             placeholder="Filtrar por OT o nombre del item (ej. OT-12, 4471)"
             aria-label="Filtrar números de parte"
           />
+          <label class="mt-2 inline-flex items-center gap-2 text-sm text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={byMaterial()}
+              onChange={(e) => {
+                const on = e.currentTarget.checked
+                setByMaterial(on)
+                try {
+                  localStorage.setItem(BY_MATERIAL_KEY, on ? '1' : '0')
+                } catch {
+                  // Not remembered in a private window; still works now.
+                }
+              }}
+            />
+            Ordenar por material
+          </label>
         </div>
         <div class="overflow-x-auto">
           <Table>
             <TableHead>
               <TableRow>
-                <TableHeadCell class="sticky left-0 z-10 bg-card">Número de parte</TableHeadCell>
+                <Show when={byMaterial()}>
+                  <TableHeadCell class="sticky left-0 z-20 w-10 bg-card px-1 text-center">
+                    Mat.
+                  </TableHeadCell>
+                </Show>
+                <TableHeadCell class={cn('sticky z-10 bg-card', byMaterial() ? 'left-10' : 'left-0')}>Número de parte</TableHeadCell>
                 <Show when={props.canSeeAssignees}>
                   <TableHeadCell>Asignado a</TableHeadCell>
                 </Show>
@@ -401,7 +484,22 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
                 const ratio = () => (c.quantity > 0 ? releasedOf(c) / c.quantity : 0)
                 return (
                   <TableRow class={cn(cancelled() && 'opacity-50')}>
-                    <TableCell class="sticky left-0 z-10 bg-card">
+                    <Show when={groups().get(c.id)}>
+                      {(g) => (
+                        <td
+                          rowSpan={g().span}
+                          class={cn('sticky left-0 z-20 w-10 border-r border-border p-0 align-top', bandColor(g().name))}
+                          title={`${g().name} · ${g().span} ${g().span === 1 ? 'número de parte' : 'números de parte'}`}
+                        >
+                          <div class="sticky top-16 flex justify-center py-3">
+                            <span class="rotate-180 whitespace-nowrap text-xs font-bold uppercase tracking-widest text-white [writing-mode:vertical-rl]">
+                              {g().name}
+                            </span>
+                          </div>
+                        </td>
+                      )}
+                    </Show>
+                    <TableCell class={cn('sticky z-10 bg-card', byMaterial() ? 'left-10' : 'left-0')}>
                       <p class="font-medium text-foreground">{c.name}</p>
                       <Show when={c.work_order_number != null}>
                         <p class="tnum text-xs text-muted-foreground">{folioOf(c.work_order_number)}</p>
