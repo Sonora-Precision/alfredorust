@@ -73,7 +73,7 @@ async fn material_receipt_matches_and_assigns_bars() {
     let p289 = part("CG-15289-A", 2).await;
     let p296 = part("CG-15296-A", 3).await;
 
-    // Material of each part: admin only.
+    // Material of each part: the admin or the programmer (take_work_orders) picks the stock.
     let material = |t: f64, w: f64, l: f64| {
         serde_json::json!({
             "material": "Aluminio 6061", "shape": "Solera",
@@ -86,7 +86,7 @@ async fn material_receipt_matches_and_assigns_bars() {
         material(0.125, 1.75, 5.0),
     )
     .await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(status, StatusCode::OK);
     for (id, m) in [
         (p288, material(0.125, 1.75, 5.0)),
         (p289, material(0.1875, 1.5, 5.0)),
