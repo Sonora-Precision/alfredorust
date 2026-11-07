@@ -12,6 +12,7 @@ import { humanizeError } from '../../lib/api/client'
 import { queuePartToSaw, setPartMaterial } from '../../lib/api/material'
 import { SHAPES, type SizerApi, StockSizer } from './StockSizer'
 import { PartDrawingPanel } from '../production/PartName'
+import { MaterialNames } from './MaterialNames'
 import type { CutListItem, MaterialStatus, PartMaterial } from '../../lib/api/types'
 import { useAuth } from '../../lib/auth/AuthContext'
 
@@ -245,11 +246,7 @@ export function MaterialEditor(props: {
           <label class="space-y-1">
             <span class="text-xs text-muted-foreground">Material</span>
             <input class={field} list="material-names" placeholder="Sin asignar" value={material()} onInput={(e) => setMaterial(e.currentTarget.value)} />
-            <datalist id="material-names">
-              {['Aluminio 6061', '4140', '1018', 'Delrin', 'Delrin negro', 'Delrin blanco', 'G10', 'Nylamid'].map((n) => (
-                <option value={n} />
-              ))}
-            </datalist>
+            <MaterialNames id="material-names" extra={[props.material.material]} />
           </label>
           <label class="space-y-1">
             <span class="text-xs text-muted-foreground">Forma</span>
