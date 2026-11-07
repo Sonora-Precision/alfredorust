@@ -49,11 +49,16 @@ export default function Quotes(): JSX.Element {
         title="Cotizaciones"
         breadcrumb={['Cotizaciones']}
         actions={
-          <A href="/cotizaciones/nueva">
-            <Button>
-              <Plus class="h-4 w-4" /> Nueva cotización
-            </Button>
-          </A>
+          <div class="flex flex-wrap gap-2">
+            <A href="/cotizaciones/materiales">
+              <Button variant="outline">Precios de material</Button>
+            </A>
+            <A href="/cotizaciones/nueva">
+              <Button>
+                <Plus class="h-4 w-4" /> Nueva cotización
+              </Button>
+            </A>
+          </div>
         }
       />
       <p class="text-sm text-muted-foreground">

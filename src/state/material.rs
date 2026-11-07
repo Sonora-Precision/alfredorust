@@ -144,21 +144,71 @@ fn parse_dimensions(text: &str) -> Vec<f64> {
 }
 
 /// Alloy or plastic named in a description, normalized to how the shop writes it.
+/// The shop's list (Daniel, 2026-11-07): Aluminio 6061 / MIC 6 / ALCA 5, Inoxidable 304 /
+/// 316, Delrin negro / blanco (natural), 1018, 4140 R / 4140 T, D2, A2, A36, Toolox, G10,
+/// Nylamid… 4140 R (annealed) and 4140 T (heat treated) are priced apart.
 pub fn material_of(text: &str) -> Option<String> {
     let t = text.to_lowercase();
+    let words: Vec<&str> = t.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    let has_word = |w: &str| words.contains(&w);
     let alu = t.contains("alum");
+    // Cast tooling plate first: "ALUMINIO PLACA ALCA5", "MIC 6".
+    if t.contains("alca 5") || t.contains("alca5") || t.contains("alca-5") {
+        return Some("Aluminio ALCA 5".into());
+    }
+    if t.contains("mic 6") || t.contains("mic6") || t.contains("mic-6") {
+        return Some("Aluminio MIC 6".into());
+    }
     for alloy in ["6061", "7075", "6063", "5052", "2024"] {
         if t.contains(alloy) {
             return Some(format!("Aluminio {alloy}"));
         }
     }
-    for steel in ["4140", "1018", "1045", "4340", "d2", "a2", "o1"] {
-        if t.split(|c: char| !c.is_alphanumeric()).any(|w| w == steel) {
+    if t.contains("inox") || t.contains("stainless") {
+        for grade in ["304", "316", "303", "416", "420", "17-4"] {
+            if t.contains(grade) {
+                return Some(format!("Inoxidable {grade}"));
+            }
+        }
+        return Some("Inoxidable".into());
+    }
+    if t.contains("toolox") {
+        let grade = words.iter().skip_while(|w| **w != "toolox").nth(1).filter(|g| g.chars().all(|c| c.is_ascii_digit()));
+        return Some(match grade {
+            Some(g) => format!("Toolox {g}"),
+            None => "Toolox".into(),
+        });
+    }
+    // "4140R", "4140 T", "4140T": annealed or treated, priced apart.
+    for (i, w) in words.iter().enumerate() {
+        let state = match *w {
+            "4140r" => Some("R"),
+            "4140t" => Some("T"),
+            "4140" => match words.get(i + 1) {
+                Some(&"r") => Some("R"),
+                Some(&"t") => Some("T"),
+                _ => None,
+            },
+            _ => continue,
+        };
+        return Some(match state {
+            Some(s) => format!("4140 {s}"),
+            None => "4140".into(),
+        });
+    }
+    for steel in ["1018", "1045", "4340", "d2", "a2", "o1", "a36", "h13", "s7"] {
+        if has_word(steel) {
             return Some(steel.to_uppercase());
         }
     }
     if t.contains("delrin") || t.contains("acetal") {
-        let color = if t.contains("negro") { " negro" } else if t.contains("blanco") { " blanco" } else { "" };
+        let color = if t.contains("negro") {
+            " negro"
+        } else if t.contains("blanco") || t.contains("natural") {
+            " blanco"
+        } else {
+            ""
+        };
         return Some(format!("Delrin{color}"));
     }
     if t.contains("g10") || t.contains("g-10") {
@@ -166,6 +216,15 @@ pub fn material_of(text: &str) -> Option<String> {
     }
     if t.contains("nylamid") {
         return Some("Nylamid".into());
+    }
+    if has_word("nylon") {
+        return Some("Nylon".into());
+    }
+    if t.contains("policarbonato") {
+        return Some("Policarbonato".into());
+    }
+    if t.contains("uhmw") {
+        return Some("UHMW".into());
     }
     if alu {
         return Some("Aluminio".into());
