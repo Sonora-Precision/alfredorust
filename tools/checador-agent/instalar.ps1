@@ -2,7 +2,7 @@
 #   1. Pide la contrasena del checador (ventana de Windows), la prueba y la guarda cifrada (DPAPI)
 #      en %LOCALAPPDATA%\SonoraChecador\checador.xml; solo este usuario de Windows la puede leer.
 #   2. Copia agente.ps1 a esa carpeta y crea la tarea programada "Sonora - Checador" que lo corre
-#      cada 5 minutos, oculta, mientras este usuario tenga la sesion abierta.
+#      3 veces al dia (09:00, 15:30, 22:30), oculta, mientras este usuario tenga la sesion abierta.
 #   3. Corre una primera vuelta y muestra el resultado.
 # Volver a correrlo actualiza la contrasena y el agente. Para quitarlo:
 #   Unregister-ScheduledTask -TaskName 'Sonora - Checador' -Confirm:$false
@@ -40,11 +40,13 @@ Write-Host 'Contrasena guardada (cifrada).' -ForegroundColor Green
 
 $agent = Join-Path $dir 'agente.ps1'
 $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$agent`" -DeviceIp $DeviceIp -DataDir `"$dir`""
-$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 5)
+# 3 veces al dia, despues de cada entrada/salida de turno (Daniel, 2026-11-07). Si la PC estaba
+# apagada a esa hora, corre en cuanto se prenda (StartWhenAvailable).
+$trigger = @('09:00', '15:30', '22:30') | ForEach-Object { New-ScheduledTaskTrigger -Daily -At $_ }
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 4) -MultipleInstances IgnoreNew
 $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
-Register-ScheduledTask -TaskName 'Sonora - Checador' -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Description 'Sube las checadas del checador Hikvision a la plataforma cada 5 minutos' -Force | Out-Null
-Write-Host 'Tarea programada "Sonora - Checador" creada (cada 5 minutos).' -ForegroundColor Green
+Register-ScheduledTask -TaskName 'Sonora - Checador' -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Description 'Sube las checadas del checador Hikvision a la plataforma 3 veces al dia (09:00, 15:30, 22:30)' -Force | Out-Null
+Write-Host 'Tarea programada "Sonora - Checador" creada (corre a las 09:00, 15:30 y 22:30).' -ForegroundColor Green
 
 Write-Host 'Primera vuelta...'
 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $agent -DeviceIp $DeviceIp -DataDir $dir

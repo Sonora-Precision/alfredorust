@@ -1,6 +1,6 @@
 # Agente del checador: lee las checadas del checador Hikvision (ISAPI, red local) y las sube a la
-# plataforma (POST /api/admin/attendance/ingest). Lo corre una tarea programada de Windows cada
-# 5 minutos (ver instalar.ps1). Si no hay internet no se pierde nada: el aparato guarda las
+# plataforma (POST /api/admin/attendance/ingest). Lo corre una tarea programada de Windows a las
+# 09:00, 15:30 y 22:30 (ver instalar.ps1). Si no hay internet no se pierde nada: el aparato guarda las
 # checadas y en la siguiente vuelta se suben desde la ultima que tiene la plataforma.
 # Tambien corrige el reloj del aparato si se desvia mas de 1 minuto (hora de Sonora, UTC-7).
 #
