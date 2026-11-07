@@ -7,10 +7,16 @@
 # Volver a correrlo actualiza la contrasena y el agente. Para quitarlo:
 #   Unregister-ScheduledTask -TaskName 'Sonora - Checador' -Confirm:$false
 
-param([string]$DeviceIp = '192.168.100.243')
+param(
+  [string]$DeviceIp = '192.168.100.243',
+  # Donde quedan agente, credencial y log. Debe ser una carpeta real (no virtualizada).
+  [string]$DataDir = (Join-Path $env:LOCALAPPDATA 'SonoraChecador')
+)
 
 $ErrorActionPreference = 'Stop'
-$dir = Join-Path $env:LOCALAPPDATA 'SonoraChecador'
+# Lo que se manda a curl por stdin va sin BOM (con BOM curl no entiende su config).
+$OutputEncoding = New-Object Text.UTF8Encoding($false)
+$dir = $DataDir
 New-Item -ItemType Directory -Force -Path $dir | Out-Null
 
 if (-not ([Environment]::GetEnvironmentVariable('SPCLI_TOKEN', 'User'))) {
@@ -33,7 +39,7 @@ Copy-Item -Path (Join-Path $PSScriptRoot 'agente.ps1') -Destination (Join-Path $
 Write-Host 'Contrasena guardada (cifrada).' -ForegroundColor Green
 
 $agent = Join-Path $dir 'agente.ps1'
-$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$agent`" -DeviceIp $DeviceIp"
+$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$agent`" -DeviceIp $DeviceIp -DataDir `"$dir`""
 $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 5)
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 4) -MultipleInstances IgnoreNew
 $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
@@ -41,7 +47,7 @@ Register-ScheduledTask -TaskName 'Sonora - Checador' -Action $action -Trigger $t
 Write-Host 'Tarea programada "Sonora - Checador" creada (cada 5 minutos).' -ForegroundColor Green
 
 Write-Host 'Primera vuelta...'
-& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $agent -DeviceIp $DeviceIp
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $agent -DeviceIp $DeviceIp -DataDir $dir
 $vuelta = Join-Path $dir 'ultima-vuelta.txt'
 if ($LASTEXITCODE -eq 0 -and (Test-Path $vuelta)) {
   Write-Host ("Listo: " + (Get-Content $vuelta)) -ForegroundColor Green

@@ -5,8 +5,8 @@
 # Tambien corrige el reloj del aparato si se desvia mas de 1 minuto (hora de Sonora, UTC-7).
 #
 # Necesita:
-#   - %LOCALAPPDATA%\SonoraChecador\checador.xml  credencial del aparato (cifrada con DPAPI, solo
-#     la puede leer el usuario de Windows que corrio instalar.ps1)
+#   - <DataDir>\checador.xml  credencial del aparato (cifrada con DPAPI, solo la puede leer el
+#     usuario de Windows que corrio instalar.ps1); DataDir default %LOCALAPPDATA%\SonoraChecador
 #   - variable de entorno de usuario SPCLI_TOKEN  token spat_... de un admin (Mi cuenta -> Tokens)
 #   - curl.exe (viene con Windows 10/11)
 
@@ -14,11 +14,15 @@ param(
   [string]$DeviceIp = '192.168.100.243',
   [string]$Company = 'sp',
   [string]$BaseDomain = 'alfredorivera.dev',
-  [int]$FirstRunDays = 30
+  [int]$FirstRunDays = 30,
+  # Carpeta con checador.xml, el log y la marca de vida.
+  [string]$DataDir = (Join-Path $env:LOCALAPPDATA 'SonoraChecador')
 )
 
 $ErrorActionPreference = 'Stop'
-$dir = Join-Path $env:LOCALAPPDATA 'SonoraChecador'
+# Lo que se manda a curl por stdin va sin BOM (con BOM curl no entiende su config).
+$OutputEncoding = New-Object Text.UTF8Encoding($false)
+$dir = $DataDir
 New-Item -ItemType Directory -Force -Path $dir | Out-Null
 $logFile = Join-Path $dir 'agente.log'
 if ((Test-Path $logFile) -and (Get-Item $logFile).Length -gt 1MB) { Move-Item $logFile "$logFile.1" -Force }
@@ -94,17 +98,20 @@ try {
 
   # ---------- leer eventos de acceso (major 5) ----------
   # minor: 1 tarjeta, 38 huella, 75 rostro; los rechazados no traen numero de empleado.
+  # Este firmware rechaza (badParameters) major=5 y searchID largos: se piden todos los eventos
+  # (major 0) con un searchID corto y se filtran aqui los de acceso.
   $methods = @{ 1 = 'tarjeta'; 38 = 'huella'; 75 = 'rostro'; 6 = 'pin'; 7 = 'pin' }
   $events = New-Object System.Collections.Generic.List[object]
   $pos = 0
+  $searchId = 'ag' + (Get-Random -Maximum 99999)
   do {
-    $cond = @{ AcsEventCond = @{ searchID = [guid]::NewGuid().ToString('N'); searchResultPosition = $pos; maxResults = 30; major = 5; minor = 0; startTime = $start; endTime = $end } } | ConvertTo-Json -Depth 4 -Compress
+    $cond = @{ AcsEventCond = @{ searchID = $searchId; searchResultPosition = $pos; maxResults = 30; major = 0; minor = 0; startTime = $start; endTime = $end } } | ConvertTo-Json -Depth 4 -Compress
     $r = Invoke-Device 'POST' '/ISAPI/AccessControl/AcsEvent?format=json' $cond
     if ($r.code -ne 200) { throw "Error leyendo eventos ($($r.code)): $($r.text)" }
     $j = $r.text | ConvertFrom-Json
     $batch = @($j.AcsEvent.InfoList | Where-Object { $_ })
     foreach ($e in $batch) {
-      if (-not $e.employeeNoString) { continue }
+      if ([int]$e.major -ne 5 -or -not $e.employeeNoString) { continue }
       $m = $methods[[int]$e.minor]
       $events.Add(@{ serial_no = [long]$e.serialNo; employee_no = [string]$e.employeeNoString; time = [string]$e.time; method = $(if ($m) { $m } else { 'otro' }) })
     }
