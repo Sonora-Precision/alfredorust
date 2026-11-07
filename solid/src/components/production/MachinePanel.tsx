@@ -14,6 +14,7 @@ import { ProgrammerName } from './ProgrammerPanel'
 import { humanizeError } from '../../lib/api/client'
 import * as productionApi from '../../lib/api/production'
 import type { MachineStatus, PlantMachine } from '../../lib/api/types'
+import { MaterialEditor } from '../projects/PartMaterialCell'
 import { type PickedPart, carriesPart, droppedPart } from './ProjectPartsTray'
 
 const STATUS_LABEL: Record<MachineStatus, string> = {
@@ -182,7 +183,7 @@ export function MachinePanel(props: {
                           {(p) => <> · programó <ProgrammerName id={p().id} name={p().name} /></>}
                         </Show>
                       </p>
-                      <StockAndCuts order={o()} />
+                      <StockAndCuts order={o()} canEdit={props.canEdit} />
                     </div>
                     <Show when={props.canEdit && machine().source === 'manual'}>
                       <div class="shrink-0 self-center">
@@ -255,7 +256,7 @@ export function MachinePanel(props: {
                     <p class="truncate text-xs text-muted-foreground">
                       {e.order.client ?? e.order.project} · {pieces(e.order)}
                     </p>
-                    <StockAndCuts order={e.order} />
+                    <StockAndCuts order={e.order} canEdit={props.canEdit} />
                   </div>
                   <Show when={props.canEdit}>
                     <div class="flex shrink-0 flex-col items-end justify-between gap-1">
@@ -331,21 +332,48 @@ const inch = (v: number | null | undefined) => (v == null ? '' : String(+v.toFix
  * What to load for a job, without switching screens (Daniel, 2026-11-04): material, stock
  * (blank) size and, for the saw, the cuts from each assigned bar.
  */
-function StockAndCuts(props: { order: NonNullable<PlantMachine['order']> }): JSX.Element {
+function StockAndCuts(props: { order: NonNullable<PlantMachine['order']>; canEdit: boolean }): JSX.Element {
   const m = () => props.order.material
+  // The programmer suggests the stock of the parts on their machines (Daniel, 2026-11-06).
+  const [editing, setEditing] = createSignal(false)
   const blank = () => {
     const mat = m()
     if (!mat) return ''
     return [mat.thickness, mat.width, mat.length].filter((v) => v != null).map(inch).join('" × ')
   }
   return (
-    <Show when={m()}>
+    <>
+    <Show when={editing()}>
+      <MaterialEditor
+        conceptId={props.order.id}
+        partName={props.order.part}
+        projectId=""
+        material={m() ?? {}}
+        onClose={() => setEditing(false)}
+      />
+    </Show>
+    <Show
+      when={m()}
+      fallback={
+        <Show when={props.canEdit}>
+          <button type="button" class="mt-1 text-xs text-muted-foreground underline decoration-dotted hover:text-foreground" onClick={() => setEditing(true)}>
+            + Material
+          </button>
+        </Show>
+      }
+    >
       {(mat) => (
         <div class="mt-1 space-y-0.5 text-xs">
           <p class="text-foreground">
             {[mat().material, mat().shape].filter(Boolean).join(' ')}
             <Show when={blank()}>
               {' · '}stock <span class="font-semibold">{blank()}"</span>
+            </Show>
+            <Show when={props.canEdit}>
+              {' '}
+              <button type="button" class="text-sky-600 hover:underline" onClick={() => setEditing(true)}>
+                Editar
+              </button>
             </Show>
           </p>
           <For each={props.order.cuts}>
@@ -365,6 +393,7 @@ function StockAndCuts(props: { order: NonNullable<PlantMachine['order']> }): JSX
         </div>
       )}
     </Show>
+    </>
   )
 }
 

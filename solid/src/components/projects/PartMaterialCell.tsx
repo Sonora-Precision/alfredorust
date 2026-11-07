@@ -38,6 +38,33 @@ export function parseInches(text: string): number | null {
   return total
 }
 
+export type LengthUnit = 'in' | 'mm'
+
+/** A measure in `unit` (or with its own "mm" / "in" / '"' suffix), always back in inches:
+ * "50.8" mm → 2, "1 1/4" in → 1.25. Empty → null; invalid → NaN. */
+export function parseLength(text: string, unit: LengthUnit): number | null {
+  let t = text.trim().toLowerCase()
+  let u = unit
+  if (t.endsWith('mm')) {
+    u = 'mm'
+    t = t.slice(0, -2)
+  } else if (t.endsWith('in') || t.endsWith('"') || t.endsWith('”')) {
+    u = 'in'
+    t = t.replace(/(in|["”])$/, '')
+  }
+  const v = parseInches(t.replace(',', '.'))
+  if (v == null || Number.isNaN(v)) return v
+  return u === 'mm' ? +(v / 25.4).toFixed(4) : v
+}
+
+/** A typed measure shown in another unit when the toggle changes ("2" in → "50.8" mm). */
+export function convertField(text: string, from: LengthUnit, to: LengthUnit): string {
+  if (from === to) return text
+  const inches = parseLength(text, from)
+  if (inches == null || Number.isNaN(inches)) return text
+  return to === 'mm' ? String(+(inches * 25.4).toFixed(2)) : num(inches)
+}
+
 export function blankLabel(m: PartMaterial): string {
   const round = m.shape?.toLowerCase() === 'redondo'
   const dims = [m.thickness, round ? null : m.width, m.length].filter((d) => d != null).map((d) => num(d))
@@ -138,7 +165,7 @@ export function SendToSaw(props: { conceptId: string; partName: string; position
   )
 }
 
-function MaterialEditor(props: {
+export function MaterialEditor(props: {
   conceptId: string
   partName: string
   projectId: string
@@ -155,12 +182,16 @@ function MaterialEditor(props: {
   const [ordered, setOrdered] = createSignal(props.material.ordered ?? false)
   const [supplied, setSupplied] = createSignal(props.material.customer_supplied ?? false)
   const [notes, setNotes] = createSignal(props.material.notes ?? '')
+  // Measures may be typed in mm; they are saved in inches.
+  const [unit, setUnit] = createSignal<LengthUnit>('in')
 
   const save = createMutation(() => ({
     mutationFn: (m: PartMaterial | null) => setPartMaterial(props.conceptId, m),
     onSuccess: () => {
       toast.success('Material guardado', props.partName)
       void qc.invalidateQueries({ queryKey: ['project-concepts', props.projectId] })
+      void qc.invalidateQueries({ queryKey: ['production'] })
+      void qc.invalidateQueries({ queryKey: ['cut-list'] })
       props.onClose()
     },
     onError: (err) => toast.error('No se pudo guardar', humanizeError(err, 'Revisa las medidas')),
@@ -170,9 +201,9 @@ function MaterialEditor(props: {
   const round = () => shape() === 'redondo'
 
   const submit = () => {
-    const dims = [t(), round() ? '' : w(), l()].map(parseInches)
+    const dims = [t(), round() ? '' : w(), l()].map((v) => parseLength(v, unit()))
     if (dims.some((d) => Number.isNaN(d))) {
-      toast.error('Medida inválida', 'Usa pulgadas: 1 1/4, 1/8 o .625')
+      toast.error('Medida inválida', unit() === 'mm' ? 'Usa milímetros: 50.8 o 12' : 'Usa pulgadas: 1 1/4, 1/8 o .625')
       return
     }
     save.mutate({
@@ -190,7 +221,7 @@ function MaterialEditor(props: {
 
   const field = 'h-9 w-full rounded-lg border border-border bg-background px-2 text-sm text-foreground'
   return (
-    <Drawer open onOpenChange={(o) => !o && props.onClose()} title={`Material · ${props.partName}`} subtitle="Medidas del tocho por pieza, en pulgadas">
+    <Drawer open onOpenChange={(o) => !o && props.onClose()} title={`Material · ${props.partName}`} subtitle="Medidas del tocho por pieza; en mm se guardan en pulgadas">
       <form
         class="space-y-3 p-4 text-sm"
         onSubmit={(e) => {
@@ -219,6 +250,16 @@ function MaterialEditor(props: {
             </select>
           </label>
         </div>
+        <UnitToggle
+          unit={unit()}
+          onChange={(u) => {
+            const from = unit()
+            setT((v) => convertField(v, from, u))
+            setW((v) => convertField(v, from, u))
+            setL((v) => convertField(v, from, u))
+            setUnit(u)
+          }}
+        />
         <div class={`grid gap-2 ${round() ? 'grid-cols-2' : 'grid-cols-3'}`}>
           <label class="space-y-1">
             <span class="text-xs text-muted-foreground">{round() ? 'Diámetro' : 'Espesor'}</span>
@@ -268,5 +309,24 @@ function MaterialEditor(props: {
         </div>
       </form>
     </Drawer>
+  )
+}
+
+/** "in | mm": the unit the measures are typed in; they are always saved in inches. */
+export function UnitToggle(props: { unit: LengthUnit; onChange: (u: LengthUnit) => void; disabled?: boolean }): JSX.Element {
+  const btn = (u: LengthUnit) =>
+    `px-2.5 py-1 text-xs font-medium ${props.unit === u ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`
+  return (
+    <div class="inline-flex items-center gap-2 text-xs text-muted-foreground">
+      <span>Medidas en</span>
+      <div class="inline-flex overflow-hidden rounded-md border border-border" role="group" aria-label="Unidad de las medidas">
+        <button type="button" class={btn('in')} disabled={props.disabled} aria-pressed={props.unit === 'in'} onClick={() => props.onChange('in')}>
+          in
+        </button>
+        <button type="button" class={btn('mm')} disabled={props.disabled} aria-pressed={props.unit === 'mm'} onClick={() => props.onChange('mm')}>
+          mm
+        </button>
+      </div>
+    </div>
   )
 }
