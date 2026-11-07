@@ -184,13 +184,17 @@ export function SendToSaw(props: {
 }
 
 export function MaterialEditor(props: {
-  conceptId: string
+  /** The part in a project; a quote line has none yet. */
+  conceptId?: string
   partName: string
-  projectId: string
+  projectId?: string
   material: PartMaterial
   /** Pieces of the part, for the bar to order. */
   pieces?: number
   onClose: () => void
+  /** A quote line keeps the material itself (it goes to the part when the quote becomes a
+   * project) instead of saving it to a part; nothing is ordered yet. */
+  onSave?: (m: PartMaterial | null) => void
 }): JSX.Element {
   const qc = useQueryClient()
   const [material, setMaterial] = createSignal(props.material.material ?? '')
@@ -201,8 +205,8 @@ export function MaterialEditor(props: {
   // Part size (mm or in) and the stock suggested from it, in inches.
   let sizer: SizerApi | undefined
 
-  const save = createMutation(() => ({
-    mutationFn: (m: PartMaterial | null) => setPartMaterial(props.conceptId, m),
+  const saved = createMutation(() => ({
+    mutationFn: (m: PartMaterial | null) => setPartMaterial(props.conceptId!, m),
     onSuccess: () => {
       toast.success('Material guardado', props.partName)
       void qc.invalidateQueries({ queryKey: ['project-concepts', props.projectId] })
@@ -212,6 +216,17 @@ export function MaterialEditor(props: {
     },
     onError: (err) => toast.error('No se pudo guardar', humanizeError(err, 'Revisa las medidas')),
   }))
+  const save = {
+    get isPending() {
+      return saved.isPending
+    },
+    mutate: (m: PartMaterial | null) => {
+      if (!props.onSave) return saved.mutate(m)
+      props.onSave(m)
+      props.onClose()
+    },
+  }
+  const quoting = () => !!props.onSave
 
   // A round bar is asked for by diameter and length; it has no width.
   const round = () => shape() === 'redondo'
@@ -226,7 +241,7 @@ export function MaterialEditor(props: {
       material: material().trim() || null,
       shape: shape().trim() || null,
       ...dims,
-      ordered: ordered(),
+      ordered: quoting() ? false : ordered(),
       customer_supplied: supplied(),
       notes: notes().trim() || null,
     })
@@ -234,7 +249,13 @@ export function MaterialEditor(props: {
 
   const field = 'h-9 w-full rounded-lg border border-border bg-background px-2 text-sm text-foreground'
   return (
-    <Drawer open onOpenChange={(o) => !o && props.onClose()} title={`Material · ${props.partName}`} aside={<PartDrawingPanel conceptId={props.conceptId} part={props.partName} />} subtitle="Medidas del tocho por pieza; en mm se guardan en pulgadas">
+    <Drawer
+      open
+      onOpenChange={(o) => !o && props.onClose()}
+      title={`Material · ${props.partName}`}
+      aside={props.conceptId ? <PartDrawingPanel conceptId={props.conceptId} part={props.partName} /> : undefined}
+      subtitle="Medidas del tocho por pieza; en mm se guardan en pulgadas"
+    >
       <form
         class="space-y-3 p-4 text-sm"
         onSubmit={(e) => {
@@ -271,10 +292,12 @@ export function MaterialEditor(props: {
           ref={(api) => (sizer = api)}
         />
         <div class="flex flex-wrap gap-4">
-          <label class="inline-flex items-center gap-2">
-            <input type="checkbox" checked={ordered()} onChange={(e) => setOrdered(e.currentTarget.checked)} />
-            Ya se pidió
-          </label>
+          <Show when={!quoting()}>
+            <label class="inline-flex items-center gap-2">
+              <input type="checkbox" checked={ordered()} onChange={(e) => setOrdered(e.currentTarget.checked)} />
+              Ya se pidió
+            </label>
+          </Show>
           <label class="inline-flex items-center gap-2">
             <input type="checkbox" checked={supplied()} onChange={(e) => setSupplied(e.currentTarget.checked)} />
             Surtido por el cliente

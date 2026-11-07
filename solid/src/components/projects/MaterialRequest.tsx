@@ -42,14 +42,17 @@ export function stockLabel(m: PartMaterial): string {
   return [m.material, m.shape, section].filter(Boolean).join(' ')
 }
 
-interface Line {
-  concept: ProjectConcept
+/** One part in a request: what it is cut from and how much of it to order. */
+export interface StockLine {
+  id: string
+  name: string
   material: PartMaterial
   pieces: number
+  /** Inches of bar, or pieces for a plate cut to size. */
   total: number
 }
 
-interface Group {
+export interface Group {
   stock: string
   /** Plates: the supplier cuts them, so the group is pieces of one size. */
   cutToSize: boolean
@@ -58,13 +61,70 @@ interface Group {
   layout?: NestResult
   /** Straight cuts only (band saw, jigsaw). */
   guillotine?: boolean
-  lines: Line[]
+  lines: StockLine[]
   total: number
 }
 
-export function requestText(projectTitle: string, groups: Group[], date = new Date()): string {
+/** A part with its stock as one line of the request: bar length or plate pieces. */
+export function stockLine(id: string, name: string, material: PartMaterial, pieces: number): StockLine {
+  const total = isPlate(material) ? Math.ceil(pieces) : lengthToOrder(pieces, material.length ?? 0, kerfOf(material))
+  return { id, name, material, pieces, total }
+}
+
+/** The lines grouped as the supplier is asked: by stock section, plates by size, whole
+ * sheets nested together. Shared by Seguimiento and the quote editor. */
+export function groupStock(lines: StockLine[]): Group[] {
+  const map = new Map<string, Group>()
+  for (const l of lines) {
+    const plate = isPlate(l.material)
+    const sh = plate ? l.material.sheet : null
+    if (sh) {
+      // Whole sheets: every part of the same material, thickness and sheet shares them.
+      const stock = ['Placa', l.material.material, `${inch(l.material.thickness)}" x ${inch(sh.width)}" x ${inch(sh.length)}"`]
+        .filter(Boolean)
+        .join(' ')
+      const guillotine = isGuillotine(sh.process)
+      const key = `s|${stock.toLowerCase()}|${sh.kerf}|${sh.margin}|${guillotine}`
+      const g = map.get(key) ?? {
+        stock,
+        cutToSize: true,
+        sheet: { width: sh.width, length: sh.length, kerf: sh.kerf, margin: sh.margin },
+        guillotine,
+        lines: [],
+        total: 0,
+      }
+      g.lines.push(l)
+      map.set(key, g)
+      continue
+    }
+    const label = stockLabel(l.material) || 'Material sin asignar'
+    // Plates read as the shop asks for them: "Corte de placa Aluminio 6061 1" x 4" x 6"".
+    const stock = plate
+      ? ['Corte de placa', l.material.material, [l.material.thickness, l.material.width, l.material.length].map((d) => `${inch(d)}"`).join(' x ')]
+          .filter(Boolean)
+          .join(' ')
+      : label
+    const key = `${plate ? 'p' : 'b'}|${stock.toLowerCase()}`
+    const g = map.get(key) ?? { stock, cutToSize: plate, lines: [], total: 0 }
+    g.lines.push(l)
+    g.total += l.total
+    map.set(key, g)
+  }
+  for (const g of map.values()) {
+    if (!g.sheet) continue
+    g.layout = nest(
+      g.lines.map((l) => ({ id: l.id, label: l.name, width: l.material.width ?? 0, length: l.material.length ?? 0, quantity: l.pieces })),
+      g.sheet,
+      { guillotine: g.guillotine },
+    )
+    g.total = g.layout.sheets.length
+  }
+  return [...map.values()]
+}
+
+export function requestText(projectTitle: string, groups: Group[], date = new Date(), heading = 'Proyecto'): string {
   const day = date.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })
-  const out = ['*Solicitud de material — Sonora Precision*', `Proyecto: ${projectTitle}`, `Fecha: ${day}`, '']
+  const out = ['*Solicitud de material — Sonora Precision*', `${heading}: ${projectTitle}`, `Fecha: ${day}`, '']
   // Bars: the supplier does not cut, it only needs the section by the total length.
   // Plates: it cuts them, so it gets how many of each size.
   groups.forEach((g, i) => {
@@ -94,59 +154,10 @@ export function MaterialRequest(props: {
     const m = c.material
     return !!m && m.length != null && !m.ordered && !m.customer_supplied && c.material_status !== 'recibido' && c.material_status !== 'cortado'
   }
-  const lines = createMemo<Line[]>(() =>
-    props.concepts
-      .filter((c) => pending(c) && !skip().has(c.id))
-      .map((c) => ({ concept: c, material: c.material!, pieces: c.quantity, total: isPlate(c.material!) ? Math.ceil(c.quantity) : lengthToOrder(c.quantity, c.material!.length!, kerfOf(c.material!)) })),
+  const lines = createMemo<StockLine[]>(() =>
+    props.concepts.filter((c) => pending(c) && !skip().has(c.id)).map((c) => stockLine(c.id, c.name, c.material!, c.quantity)),
   )
-  const groups = createMemo<Group[]>(() => {
-    const map = new Map<string, Group>()
-    for (const l of lines()) {
-      const plate = isPlate(l.material)
-      const sh = plate ? l.material.sheet : null
-      if (sh) {
-        // Whole sheets: every part of the same material, thickness and sheet shares them.
-        const stock = ['Placa', l.material.material, `${inch(l.material.thickness)}" x ${inch(sh.width)}" x ${inch(sh.length)}"`]
-          .filter(Boolean)
-          .join(' ')
-        const guillotine = isGuillotine(sh.process)
-        const key = `s|${stock.toLowerCase()}|${sh.kerf}|${sh.margin}|${guillotine}`
-        const g = map.get(key) ?? {
-          stock,
-          cutToSize: true,
-          sheet: { width: sh.width, length: sh.length, kerf: sh.kerf, margin: sh.margin },
-          guillotine,
-          lines: [],
-          total: 0,
-        }
-        g.lines.push(l)
-        map.set(key, g)
-        continue
-      }
-      const label = stockLabel(l.material) || 'Material sin asignar'
-      // Plates read as the shop asks for them: "Corte de placa Aluminio 6061 1" x 4" x 6"".
-      const stock = plate
-        ? ['Corte de placa', l.material.material, [l.material.thickness, l.material.width, l.material.length].map((d) => `${inch(d)}"`).join(' x ')]
-            .filter(Boolean)
-            .join(' ')
-        : label
-      const key = `${plate ? 'p' : 'b'}|${stock.toLowerCase()}`
-      const g = map.get(key) ?? { stock, cutToSize: plate, lines: [], total: 0 }
-      g.lines.push(l)
-      g.total += l.total
-      map.set(key, g)
-    }
-    for (const g of map.values()) {
-      if (!g.sheet) continue
-      g.layout = nest(
-        g.lines.map((l) => ({ id: l.concept.id, label: l.concept.name, width: l.material.width ?? 0, length: l.material.length ?? 0, quantity: l.pieces })),
-        g.sheet,
-        { guillotine: g.guillotine },
-      )
-      g.total = g.layout.sheets.length
-    }
-    return [...map.values()]
-  })
+  const groups = createMemo<Group[]>(() => groupStock(lines()))
   const text = () => requestText(props.projectTitle, groups())
 
   const copy = async () => {
@@ -163,7 +174,7 @@ export function MaterialRequest(props: {
     mutationFn: async () => {
       for (const g of groups())
         for (const l of g.lines)
-          await setPartMaterial(l.concept.id, {
+          await setPartMaterial(l.id, {
             ...l.material,
             ordered: true,
             bar_to_order:
@@ -381,8 +392,8 @@ function PartStockRow(props: {
 }
 
 /** The layout of a group of whole sheets: which part is which color, every sheet to scale. */
-function SheetLayouts(props: { group: Group }): JSX.Element {
-  const ids = () => props.group.lines.map((l) => l.concept.id)
+export function SheetLayouts(props: { group: Group }): JSX.Element {
+  const ids = () => props.group.lines.map((l) => l.id)
   const layout = () => props.group.layout!
   return (
     <div class="mt-4 space-y-2 border-t border-border pt-3">
@@ -397,8 +408,8 @@ function SheetLayouts(props: { group: Group }): JSX.Element {
         <For each={props.group.lines}>
           {(l) => (
             <span class="inline-flex items-center gap-1.5">
-              <span class="h-3 w-3 rounded-sm" style={{ background: colorOf(ids(), l.concept.id) }} />
-              {l.concept.name} · {inch(l.material.width)}" × {inch(l.material.length)}" · {Math.ceil(l.pieces)} pzs
+              <span class="h-3 w-3 rounded-sm" style={{ background: colorOf(ids(), l.id) }} />
+              {l.name} · {inch(l.material.width)}" × {inch(l.material.length)}" · {Math.ceil(l.pieces)} pzs
             </span>
           )}
         </For>

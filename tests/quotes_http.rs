@@ -195,14 +195,20 @@ async fn quote_document_from_project() {
     assert_eq!(sq["subtotal"], 6_900.0);
     let sq_id = sq["id"].as_str().unwrap().to_string();
 
-    // A revision with other lines keeps the folio base.
+    // A revision with other lines keeps the folio base. Its material is the full one from the
+    // editor (part size, saw cut, bar to order) and it reaches the part as it is.
+    let alu_full = serde_json::json!({
+        "material": "Aluminio 6061", "shape": "solera", "thickness": 0.5, "width": 2.0, "length": 3.0,
+        "part_thickness": 0.45, "part_width": 1.9, "part_length": 2.9, "saw_kerf": 0.125,
+        "bar_to_order": "1/2\" × 2\" × 31.25\"",
+    });
     let (status, body) = post(
         "/api/admin/quotes".into(),
         admin.clone(),
         serde_json::json!({
             "revision_of": sq_id,
             "lines": [
-                { "quantity": 10, "description": "PA-R261019-1B", "unit_price": 430, "material": alu, "multiplier": 4.0 },
+                { "quantity": 10, "description": "PA-R261019-1B", "unit_price": 430, "material": alu_full, "multiplier": 4.0 },
                 { "quantity": 2, "description": "PA-R261019-2", "unit_price": 1200 },
             ],
         }),
@@ -237,7 +243,11 @@ async fn quote_document_from_project() {
     parts.sort_by_key(|c| c.position);
     assert_eq!(parts.len(), 2);
     assert_eq!((parts[0].name.as_str(), parts[0].quantity, parts[0].unit_price), ("PA-R261019-1B", 10.0, Some(430.0)));
-    assert_eq!(parts[0].material.as_ref().and_then(|m| m.material.as_deref()), Some("Aluminio 6061"));
+    let m = parts[0].material.as_ref().unwrap();
+    assert_eq!(m.material.as_deref(), Some("Aluminio 6061"));
+    assert_eq!((m.part_thickness, m.part_length, m.saw_kerf), (Some(0.45), Some(2.9), Some(0.125)));
+    assert_eq!(m.bar_to_order.as_deref(), Some("1/2\" × 2\" × 31.25\""));
+    assert!(!m.ordered, "a quoted part still has its material to order");
     assert_eq!(parts[0].quote.as_ref().and_then(|q| q.multiplier), Some(4.0));
     assert!(parts[0].work_order_number.is_some());
     assert_eq!((parts[1].unit_price, parts[1].material.is_none()), (Some(1200.0), true));

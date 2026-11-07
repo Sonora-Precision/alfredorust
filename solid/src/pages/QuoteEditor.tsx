@@ -9,6 +9,8 @@ import { ArrowLeft, Plus, Trash2 } from 'lucide-solid'
 import { type JSX, For, Show, createEffect, createMemo, createSignal } from 'solid-js'
 import { createStore, produce } from 'solid-js/store'
 
+import { type Group, SheetLayouts, groupStock, requestText, stockLine } from '../components/projects/MaterialRequest'
+import { MaterialEditor, blankLabel } from '../components/projects/PartMaterialCell'
 import { PriceInput } from '../components/quotes/PriceInput'
 import { Button } from '../components/ui/Button'
 import { Card, CardContent } from '../components/ui/Card'
@@ -26,24 +28,18 @@ const SUGGESTED_NOTES = [
   'Todas las dimensiones son basadas en pieza muestra proporcionada por el cliente.',
   'Material proporcionado por el cliente.',
 ]
-const SHAPES = ['solera', 'placa', 'redondo', 'barra', 'tubo']
-
 interface Line {
   description: string
   quantity: string
-  material: string
-  shape: string
-  thickness: string
-  width: string
-  length: string
+  /** Same material as a part in Seguimiento (part size, stock, saw cut, sheet); it goes to
+   * the part when the quote becomes a project (Daniel, 2026-11-07). */
+  mat: PartMaterial | null
   weight: string
   multiplier: string
   price: string
 }
 
-const emptyLine = (): Line => ({
-  description: '', quantity: '1', material: '', shape: '', thickness: '', width: '', length: '', weight: '', multiplier: '', price: '',
-})
+const emptyLine = (): Line => ({ description: '', quantity: '1', mat: null, weight: '', multiplier: '', price: '' })
 const num = (s: string) => {
   const t = s.trim()
   if (t === '') return null
@@ -52,16 +48,7 @@ const num = (s: string) => {
 }
 const str = (v: number | null | undefined) => (v == null ? '' : String(v))
 
-function materialOf(l: Line): PartMaterial | null {
-  const m: PartMaterial = {
-    material: l.material.trim() || null,
-    shape: l.shape || null,
-    thickness: num(l.thickness),
-    width: l.shape === 'redondo' ? null : num(l.width),
-    length: num(l.length),
-  }
-  return Object.values(m).some((v) => v != null) ? m : null
-}
+const materialOf = (l: Line): PartMaterial | null => (l.mat ? { ...l.mat, ordered: false } : null)
 
 export default function QuoteEditor(): JSX.Element {
   const qc = useQueryClient()
@@ -118,11 +105,7 @@ export default function QuoteEditor(): JSX.Element {
       q.lines.map((l) => ({
         description: l.description,
         quantity: String(l.quantity),
-        material: l.material?.material ?? '',
-        shape: l.material?.shape ?? '',
-        thickness: str(l.material?.thickness),
-        width: str(l.material?.width),
-        length: str(l.material?.length),
+        mat: l.material ?? null,
         weight: str(l.weight_kg),
         multiplier: str(l.multiplier),
         price: String(l.unit_price),
@@ -157,9 +140,33 @@ export default function QuoteEditor(): JSX.Element {
   // "Acero 1045" and "1045" (as the invoice names it) are one material, like on the server.
   const materials = createMemo(() => {
     const seen = new Map<string, string>()
-    for (const l of lines) if (l.material.trim() && !seen.has(matKey(l.material))) seen.set(matKey(l.material), l.material.trim())
+    for (const l of lines) {
+      const name = l.mat?.material?.trim()
+      if (name && !seen.has(matKey(name))) seen.set(matKey(name), name)
+    }
     return [...seen.values()]
   })
+  // The material to order for the whole quote, grouped as in Seguimiento, with its cost.
+  const stock = createMemo(() =>
+    lines.flatMap((l, i) =>
+      l.mat && l.mat.length != null && !l.mat.customer_supplied && (num(l.quantity) ?? 0) > 0
+        ? [stockLine(String(i), l.description.trim() || `Partida ${i + 1}`, l.mat, num(l.quantity)!)]
+        : [],
+    ),
+  )
+  const stockGroups = createMemo(() => groupStock(stock()))
+  /** Material cost of a group (blank weight × $/kg × pieces), or null if a line has no price. */
+  const groupCost = (g: Group) => {
+    let sum = 0
+    for (const l of g.lines) {
+      const c = suggestions.data?.[+l.id]?.material_cost
+      if (c == null) return null
+      sum += c * l.pieces
+    }
+    return sum
+  }
+  const materialTotal = createMemo(() => stockGroups().reduce<number | null>((s, g) => (s == null || groupCost(g) == null ? null : s + groupCost(g)!), 0))
+  const [editing, setEditing] = createSignal<number | null>(null)
   const priceOf = (m: string) => prices.data?.find((p) => matKey(p.material) === matKey(m))
 
   // Daniel, 2026-11-06: remember each part, and what it was sold or quoted for, as a reference.
@@ -331,9 +338,7 @@ export default function QuoteEditor(): JSX.Element {
                   <th class="w-6 py-1">#</th>
                   <th class="py-1">No. de parte / descripción</th>
                   <th class="w-16 py-1">Cant.</th>
-                  <th class="w-32 py-1">Material</th>
-                  <th class="w-24 py-1">Forma</th>
-                  <th class="w-48 py-1">Tocho (esp × ancho × largo)</th>
+                  <th class="w-72 py-1">Material y tocho</th>
                   <th class="w-20 py-1">Peso SW kg</th>
                   <th class="w-14 py-1">×</th>
                   <th class="w-28 py-1 text-right">Sugerido</th>
@@ -362,22 +367,25 @@ export default function QuoteEditor(): JSX.Element {
                           <input class={`${cell} text-right`} inputmode="decimal" value={l.quantity} onInput={(e) => set(i(), 'quantity', e.currentTarget.value)} />
                         </td>
                         <td class="py-1.5 pr-1">
-                          <input class={cell} list="quote-materials" value={l.material} onInput={(e) => set(i(), 'material', e.currentTarget.value)} />
-                        </td>
-                        <td class="py-1.5 pr-1">
-                          <select class={cell} value={l.shape} onChange={(e) => set(i(), 'shape', e.currentTarget.value)}>
-                            <option value="">—</option>
-                            <For each={SHAPES}>{(sh) => <option value={sh} selected={l.shape === sh}>{sh}</option>}</For>
-                          </select>
-                        </td>
-                        <td class="py-1.5 pr-1">
-                          <div class="flex gap-1">
-                            <input class={`${cell} text-right`} inputmode="decimal" placeholder={l.shape === 'redondo' ? 'Ø' : 'esp'} value={l.thickness} onInput={(e) => set(i(), 'thickness', e.currentTarget.value)} />
-                            <Show when={l.shape !== 'redondo'}>
-                              <input class={`${cell} text-right`} inputmode="decimal" placeholder="ancho" value={l.width} onInput={(e) => set(i(), 'width', e.currentTarget.value)} />
+                          <button
+                            type="button"
+                            class="w-full rounded border border-dashed border-border px-2 py-1 text-left text-xs hover:bg-muted"
+                            onClick={() => setEditing(i())}
+                          >
+                            <Show when={l.mat} fallback={<span class="text-muted-foreground">+ Material</span>}>
+                              {(m) => (
+                                <>
+                                  <span class="block truncate text-foreground">
+                                    {[m().material, m().shape].filter(Boolean).join(' ') || 'Sin material'}
+                                    <Show when={blankLabel(m())}> · {blankLabel(m())}</Show>
+                                  </span>
+                                  <span class="block truncate text-muted-foreground">
+                                    {m().customer_supplied ? 'Surtido por el cliente' : m().bar_to_order ? `A pedir: ${m().bar_to_order}` : 'Falta el stock'}
+                                  </span>
+                                </>
+                              )}
                             </Show>
-                            <input class={`${cell} text-right`} inputmode="decimal" placeholder="largo" value={l.length} onInput={(e) => set(i(), 'length', e.currentTarget.value)} />
-                          </div>
+                          </button>
                         </td>
                         <td class="py-1.5 pr-1">
                           <input class={`${cell} text-right`} inputmode="decimal" value={l.weight} onInput={(e) => set(i(), 'weight', e.currentTarget.value)} />
@@ -423,10 +431,18 @@ export default function QuoteEditor(): JSX.Element {
             <datalist id="quote-parts">
               <For each={partNames.data ?? []}>{(n) => <option value={n} />}</For>
             </datalist>
-            <datalist id="quote-materials">
-              <For each={prices.data ?? []}>{(p) => <option value={p.material} />}</For>
-            </datalist>
           </div>
+          <Show when={editing() != null && lines[editing()!]}>
+            {(l) => (
+              <MaterialEditor
+                partName={l().description.trim() || `Partida ${editing()! + 1}`}
+                material={l().mat ?? {}}
+                pieces={num(l().quantity) ?? 1}
+                onClose={() => setEditing(null)}
+                onSave={(m) => setLines(editing()!, 'mat', m)}
+              />
+            )}
+          </Show>
           <div class="flex flex-wrap items-center justify-between gap-3">
             <Button variant="outline" onClick={() => setLines(lines.length, emptyLine())}>
               <Plus class="h-4 w-4" /> Agregar partida
@@ -439,6 +455,60 @@ export default function QuoteEditor(): JSX.Element {
           </div>
         </CardContent>
       </Card>
+
+      <Show when={stockGroups().length > 0}>
+        <Card glass glow={false}>
+          <CardContent class="space-y-3 p-4">
+            <div class="flex flex-wrap items-baseline justify-between gap-2">
+              <p class="text-sm font-semibold text-foreground">Material a cotizar</p>
+              <p class="text-xs text-muted-foreground">
+                Lo mismo que se pedirá en el proyecto. Costo = peso del tocho × $/kg × piezas (sin el corte de sierra).
+              </p>
+            </div>
+            <table class="w-full text-sm">
+              <thead class="text-left text-xs text-muted-foreground">
+                <tr>
+                  <th class="py-1">Stock</th>
+                  <th class="py-1">Partidas</th>
+                  <th class="w-32 py-1 text-right">A pedir</th>
+                  <th class="w-32 py-1 text-right">Costo material</th>
+                </tr>
+              </thead>
+              <tbody>
+                <For each={stockGroups()}>
+                  {(g) => (
+                    <tr class="border-t border-border align-top">
+                      <td class="py-1.5 pr-2 text-foreground">{g.stock}</td>
+                      <td class="py-1.5 pr-2 text-xs text-muted-foreground">{g.lines.map((l) => `${l.name} (${l.pieces})`).join(', ')}</td>
+                      <td class="py-1.5 text-right tabular-nums">
+                        {g.sheet || g.cutToSize ? `${g.total} ${g.total === 1 ? 'pz' : 'pzs'}` : `${+g.total.toFixed(3)}"`}
+                      </td>
+                      <td class="py-1.5 text-right tabular-nums">
+                        <Show when={groupCost(g) != null} fallback={<span class="text-xs text-muted-foreground">Falta precio o peso</span>}>
+                          {money(groupCost(g)!)}
+                        </Show>
+                      </td>
+                    </tr>
+                  )}
+                </For>
+              </tbody>
+              <tfoot>
+                <tr class="border-t-2 border-border">
+                  <td colspan={3} class="py-1.5 text-right text-xs text-muted-foreground">Material de la cotización</td>
+                  <td class="py-1.5 text-right font-semibold tabular-nums">{materialTotal() == null ? '—' : money(materialTotal()!)}</td>
+                </tr>
+              </tfoot>
+            </table>
+            <For each={stockGroups().filter((g) => g.layout)}>{(g) => <SheetLayouts group={g} />}</For>
+            <details class="text-xs">
+              <summary class="cursor-pointer text-muted-foreground">Ver solicitud para el proveedor</summary>
+              <pre class="mt-2 whitespace-pre-wrap rounded-lg bg-muted/50 p-3 font-sans text-sm text-foreground">
+                {requestText(client()?.abbreviation ?? sortedContacts().find((c) => c.id === contactId())?.name ?? 'Nueva cotización', stockGroups(), new Date(), 'Cotización')}
+              </pre>
+            </details>
+          </CardContent>
+        </Card>
+      </Show>
 
       <Show when={materials().length > 0}>
         <Card glass glow={false}>
