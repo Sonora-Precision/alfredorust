@@ -576,7 +576,7 @@ pub async fn api_material_receipt_assign(
     Path((id, line)): Path<(String, i32)>,
     Json(payload): Json<AssignPayload>,
 ) -> Response {
-    if !can_manage(&session_user) {
+    if !(can_manage(&session_user) || session_user.has_permission(UserPermission::TakeWorkOrders)) {
         return StatusCode::FORBIDDEN.into_response();
     }
     let company_id = require_active_company(&session_user);

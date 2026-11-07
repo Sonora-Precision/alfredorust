@@ -58,7 +58,7 @@ export default function MaterialReceipts(): JSX.Element {
           </Show>
         </div>
         <Show when={current()} fallback={<span />}>
-          {(id) => <ReceiptDetail id={id()} canManage={canManage()} isAdmin={auth.isAdmin()} />}
+          {(id) => <ReceiptDetail id={id()} canManage={canManage() || auth.hasPermission('take_work_orders')} isAdmin={auth.isAdmin()} />}
         </Show>
       </div>
     </div>

@@ -196,13 +196,14 @@ async fn material_receipt_matches_and_assigns_bars() {
         .await;
         assert_eq!(status, StatusCode::OK, "body: {body}");
     }
+    // The programmer (take_work_orders) may assign bars too (Daniel, 2026-11-06).
     let (status, _) = post(
         format!("/api/production/material_receipts/{receipt}/lines/3/assign"),
         jose.clone(),
-        serde_json::json!({ "concept_ids": [p296.to_hex()] }),
+        serde_json::json!({ "concept_ids": [] }),
     )
     .await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(status, StatusCode::OK);
     let (_, body) = get(format!("/api/production/material_receipts/{receipt}"), admin.clone()).await;
     let r = json(&body);
     let cover = r["parts"].as_array().unwrap();
