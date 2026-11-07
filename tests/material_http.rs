@@ -130,6 +130,34 @@ async fn material_receipt_matches_and_assigns_bars() {
     assert_eq!(c289["material"]["part_thickness"], 0.748);
     assert_eq!(c289["material"]["thickness"], 0.1875);
     assert_eq!(c289["material"]["saw_kerf"], 0.125);
+
+    // A part nested on whole sheets keeps the sheet, its cut and edge (G10 comes 12 × 24).
+    let (status, body) = post(
+        format!("/api/admin/project_concepts/{}/material", p289.to_hex()),
+        jose.clone(),
+        serde_json::json!({
+            "material": "G10", "shape": "placa", "thickness": 1.0, "width": 1.75, "length": 4.75,
+            "sheet": { "width": 12.0, "length": 24.0, "kerf": 0.125, "margin": 0.25, "process": "Sierra cinta vertical" },
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let list = concepts(jose.clone()).await;
+    let c289 = list.as_array().unwrap().iter().find(|c| c["name"] == "CG-15289-A").unwrap().clone();
+    assert_eq!(c289["material"]["sheet"]["length"], 24.0);
+    assert_eq!(c289["material"]["sheet"]["process"], "Sierra cinta vertical");
+    let (status, _) = post(
+        format!("/api/admin/project_concepts/{}/material", p289.to_hex()),
+        jose.clone(),
+        serde_json::json!({ "material": "G10", "sheet": { "width": 12.0, "length": 24.0, "kerf": 3.0 } }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    // Back to the bar it is cut from in the rest of this test.
+    let mut bar = material(0.1875, 1.5, 5.0);
+    bar["saw_kerf"] = serde_json::json!(0.125);
+    let (status, _) = post(format!("/api/admin/project_concepts/{}/material", p289.to_hex()), jose.clone(), bar).await;
+    assert_eq!(status, StatusCode::OK);
     let (status, _) = post(
         format!("/api/admin/project_concepts/{}/material", p289.to_hex()),
         jose.clone(),

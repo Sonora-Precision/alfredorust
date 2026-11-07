@@ -92,6 +92,22 @@ pub async fn api_part_material_set(
                     }
                     other => other,
                 },
+                sheet: match m.sheet {
+                    Some(s) => {
+                        let ok = |v: f64, max: f64| v.is_finite() && (0.0..=max).contains(&v);
+                        if !(ok(s.width, 200.0) && ok(s.length, 200.0) && s.width > 0.0 && s.length > 0.0)
+                            || !ok(s.kerf, 1.0)
+                            || !ok(s.margin, 6.0)
+                        {
+                            return json_error(
+                                StatusCode::BAD_REQUEST,
+                                "la placa va en pulgadas: medidas hasta 200, corte de 0 a 1 y orilla de 0 a 6",
+                            );
+                        }
+                        Some(crate::models::SheetSpec { process: clean_text(s.process, 40), ..s })
+                    }
+                    None => None,
+                },
                 bar_to_order: clean_text(m.bar_to_order, 120),
                 customer_supplied: m.customer_supplied,
                 ordered: m.ordered,

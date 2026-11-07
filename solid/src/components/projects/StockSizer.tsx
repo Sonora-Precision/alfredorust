@@ -2,10 +2,12 @@
 // drawing, in mm or in, and shown in inches; below, the stock to order is suggested in
 // inches (a little over the part, up to the next 1/4") and stays editable:
 // 19 × 50 × 60 mm → .748 × 1.969 × 2.362" → 1" × 2" × 2.5".
-import { type JSX, Show, createSignal } from 'solid-js'
+import { type JSX, For, Show, createMemo, createSignal } from 'solid-js'
 
 import { type LengthUnit, UnitToggle, convertField, parseInches, parseLength } from './PartMaterialCell'
-import type { PartMaterial } from '../../lib/api/types'
+import { NestingView } from './NestingView'
+import type { PartMaterial, SheetSpec } from '../../lib/api/types'
+import { CUT_PROCESSES, type NestSheet, SHEET_SIZES, isGuillotine, nest } from '../../lib/nesting'
 
 /** Cleanup over the part on each dimension before rounding up. */
 export const STOCK_ALLOWANCE = 1 / 32
@@ -46,6 +48,10 @@ export interface SizerApi {
   /** After a save: show what was saved, in inches. */
   saved: () => void
 }
+
+/** Comparable form of a sheet (the server leaves out a missing process). */
+const sheetKey = (s: SheetSpec | null | undefined) =>
+  s ? [s.width, s.length, s.kerf, s.margin, s.process ?? ''].join('|') : ''
 
 export function StockSizer(props: {
   material: PartMaterial
@@ -101,6 +107,36 @@ export function StockSizer(props: {
   }
 
   const kerfIn = () => parseInches(kerf()) ?? 0
+
+  // A plate is bought cut to size or as whole sheets the blanks are nested on (G10 comes
+  // 12 × 24 in a given thickness; Daniel, 2026-11-06).
+  const s0 = m().sheet
+  const [sheetOn, setSheetOn] = createSignal(s0 != null)
+  const [sheetW, setSheetW] = createSignal(inch(s0?.width ?? 12))
+  const [sheetL, setSheetL] = createSignal(inch(s0?.length ?? 24))
+  const [process, setProcess] = createSignal(s0?.process ?? CUT_PROCESSES[0]!.name)
+  const [sheetKerf, setSheetKerf] = createSignal(inch(s0?.kerf ?? CUT_PROCESSES[0]!.kerf))
+  const [margin, setMargin] = createSignal(inch(s0?.margin ?? 0.25))
+  const nested = () => props.cutToSize && sheetOn()
+  /** The sheet as typed, or null when off or not valid. */
+  const sheet = createMemo<NestSheet | null>(() => {
+    if (!nested()) return null
+    const [w, l, k, mg] = [sheetW(), sheetL(), sheetKerf(), margin()].map(parseInches)
+    if ([w, l, k, mg].some((v) => v == null || Number.isNaN(v)) || !(w! > 0 && l! > 0)) return null
+    return { width: w!, length: l!, kerf: k!, margin: mg! }
+  })
+  const layout = createMemo(() => {
+    const sh = sheet()
+    const w = stockIn(sw())
+    const l = stockIn(sl())
+    if (!sh || w == null || l == null || Number.isNaN(w) || Number.isNaN(l)) return null
+    return nest([{ id: 'p', label: '', width: w, length: l, quantity: props.pieces }], sh, { guillotine: isGuillotine(process()) })
+  })
+  const sheetValue = (): SheetSpec | null => {
+    const sh = sheet()
+    return sh ? { ...sh, process: process() || null } : null
+  }
+
   /** "1.25\" × 3\" × 31.125\"": the stock section by pieces × (length + saw cut). */
   const autoBar = () => {
     const t = stockIn(st())
@@ -108,6 +144,11 @@ export function StockSizer(props: {
     const l = stockIn(sl())
     const k = kerfIn()
     if (t == null || l == null || [t, l, k, w ?? 0].some(Number.isNaN)) return ''
+    const sh = sheet()
+    if (sh) {
+      const n = layout()?.sheets.length ?? 0
+      return `Placa ${inch(t)}" x ${inch(sh.width)}" x ${inch(sh.length)}" - ${n} ${n === 1 ? 'pz' : 'pzs'}`
+    }
     if (props.cutToSize) {
       const n = Math.max(0, Math.ceil(props.pieces))
       return `Corte de placa ${inch(t)}" x ${w == null ? '?' : inch(w)}" x ${inch(l)}" - ${n} ${n === 1 ? 'pz' : 'pzs'}`
@@ -135,6 +176,7 @@ export function StockSizer(props: {
       ]
       const bad = vals.find(([, v]) => v != null && Number.isNaN(v))
       if (bad) return bad[0]
+      if (nested() && !sheet()) return 'Medidas de la placa'
       const [a, b, c, d, e, f, k] = vals.map(([, v]) => v)
       return {
         part_thickness: a,
@@ -144,6 +186,7 @@ export function StockSizer(props: {
         width: e,
         length: f,
         saw_kerf: k ?? DEFAULT_KERF,
+        sheet: sheetValue(),
         bar_to_order: barValue().trim() || null,
       }
     },
@@ -155,6 +198,7 @@ export function StockSizer(props: {
       (!props.round && !same(stockIn(sw()), m().width)) ||
       !same(stockIn(sl()), m().length) ||
       kerfIn() !== (m().saw_kerf ?? DEFAULT_KERF) ||
+      sheetKey(sheetValue()) !== sheetKey(m().sheet) ||
       (barValue().trim() || null) !== savedBar(),
     kerf: kerfIn,
     cutLength: () => {
@@ -239,6 +283,26 @@ export function StockSizer(props: {
       <p class="text-[11px] text-muted-foreground">
         Sugerido: la pieza + 1/32" redondeado al siguiente 1/4". Puedes cambiarlo.
       </p>
+      <Show when={props.cutToSize}>
+        <SheetFields
+          on={sheetOn()}
+          setOn={setSheetOn}
+          disabled={props.disabled}
+          sheetW={sheetW}
+          setSheetW={setSheetW}
+          sheetL={sheetL}
+          setSheetL={setSheetL}
+          process={process}
+          setProcess={setProcess}
+          kerf={sheetKerf}
+          setKerf={setSheetKerf}
+          margin={margin}
+          setMargin={setMargin}
+          sheet={sheet()}
+          layout={layout()}
+          pieces={props.pieces}
+        />
+      </Show>
       <div class="grid grid-cols-3 gap-2 pt-1">
         <Show when={!props.cutToSize}>
           <label class="space-y-1">
@@ -248,7 +312,7 @@ export function StockSizer(props: {
         </Show>
         <label class={`${props.cutToSize ? 'col-span-3' : 'col-span-2'} space-y-1`}>
           <span class="flex items-center justify-between text-xs text-muted-foreground">
-            {props.cutToSize ? 'Placas a pedir (cortadas a la medida)' : 'Barra a pedir'}
+            {nested() ? 'Placas a pedir (completas)' : props.cutToSize ? 'Placas a pedir (cortadas a la medida)' : 'Barra a pedir'}
             <Show when={!barTouched() && savedBar() && savedBar() !== autoBar() && !props.disabled}>
               <button
                 type="button"
@@ -285,6 +349,116 @@ export function StockSizer(props: {
           {Math.ceil(props.pieces)} {Math.ceil(props.pieces) === 1 ? 'pza' : 'pzas'} × ({inch(stockIn(sl()))}" + {inch(kerfIn())}" de sierra) ={' '}
           <b class="text-foreground">{inch(+barLength(props.pieces, stockIn(sl())!, kerfIn()).toFixed(3))}"</b> de largo
         </p>
+      </Show>
+    </div>
+  )
+}
+
+/** Cut to size or whole sheets: the sheet, how it is cut and the layout of this part. */
+function SheetFields(props: {
+  on: boolean
+  setOn: (on: boolean) => void
+  disabled?: boolean
+  sheetW: () => string
+  setSheetW: (v: string) => void
+  sheetL: () => string
+  setSheetL: (v: string) => void
+  process: () => string
+  setProcess: (v: string) => void
+  kerf: () => string
+  setKerf: (v: string) => void
+  margin: () => string
+  setMargin: (v: string) => void
+  sheet: NestSheet | null
+  layout: ReturnType<typeof nest> | null
+  pieces: number
+}): JSX.Element {
+  const field = 'h-9 w-full rounded-lg border border-border bg-background px-2 text-sm text-foreground disabled:opacity-70'
+  const btn = (active: boolean) =>
+    `flex-1 px-3 py-1.5 text-xs font-medium ${active ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`
+  const size = () => `${props.sheetW()}x${props.sheetL()}`
+  const known = () => SHEET_SIZES.some(([w, l]) => `${w}x${l}` === size())
+  const perSheet = () => props.layout?.sheets[0]?.length ?? 0
+  return (
+    <div class="space-y-2 rounded-lg border border-border p-2">
+      <div class="flex overflow-hidden rounded-md border border-border" role="group" aria-label="Cómo se compra la placa">
+        <button type="button" class={btn(!props.on)} disabled={props.disabled} aria-pressed={!props.on} onClick={() => props.setOn(false)}>
+          Cortada a la medida
+        </button>
+        <button type="button" class={btn(props.on)} disabled={props.disabled} aria-pressed={props.on} onClick={() => props.setOn(true)}>
+          Placa completa (nesting)
+        </button>
+      </div>
+      <Show when={props.on}>
+        <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <label class="col-span-2 space-y-1">
+            <span class="text-xs text-muted-foreground">Placa (in)</span>
+            <div class="flex gap-1">
+              <select
+                class={field}
+                disabled={props.disabled}
+                value={known() ? size() : 'otra'}
+                onChange={(e) => {
+                  const v = e.currentTarget.value
+                  if (v === 'otra') return
+                  const [w, l] = v.split('x')
+                  props.setSheetW(w!)
+                  props.setSheetL(l!)
+                }}
+              >
+                <For each={SHEET_SIZES}>{([w, l]) => <option value={`${w}x${l}`}>{`${w} × ${l}`}</option>}</For>
+                <option value="otra">Otra…</option>
+              </select>
+              <Show when={!known()}>
+                <input class={field} aria-label="Ancho de la placa" disabled={props.disabled} value={props.sheetW()} onInput={(e) => props.setSheetW(e.currentTarget.value)} />
+                <input class={field} aria-label="Largo de la placa" disabled={props.disabled} value={props.sheetL()} onInput={(e) => props.setSheetL(e.currentTarget.value)} />
+              </Show>
+            </div>
+          </label>
+          <label class="col-span-2 space-y-1">
+            <span class="text-xs text-muted-foreground">Se corta con</span>
+            <select
+              class={field}
+              disabled={props.disabled}
+              value={props.process()}
+              onChange={(e) => {
+                const p = CUT_PROCESSES.find((c) => c.name === e.currentTarget.value)
+                props.setProcess(e.currentTarget.value)
+                if (p) props.setKerf(String(p.kerf).replace(/^0\./, '.'))
+              }}
+            >
+              <For each={CUT_PROCESSES}>{(c) => <option value={c.name}>{c.name}</option>}</For>
+            </select>
+          </label>
+          <label class="space-y-1">
+            <span class="text-xs text-muted-foreground">Corte (in)</span>
+            <input class={field} disabled={props.disabled} value={props.kerf()} onInput={(e) => props.setKerf(e.currentTarget.value)} />
+          </label>
+          <label class="space-y-1">
+            <span class="text-xs text-muted-foreground">Orilla (in)</span>
+            <input class={field} disabled={props.disabled} value={props.margin()} onInput={(e) => props.setMargin(e.currentTarget.value)} />
+          </label>
+        </div>
+        <Show
+          when={props.sheet && props.layout}
+          fallback={<p class="text-xs text-muted-foreground">Captura el ancho y largo del stock por pieza para acomodarlas.</p>}
+        >
+          {(_) => (
+            <div class="space-y-1">
+              <p class="text-sm text-foreground">
+                <b>{perSheet()}</b> pzs por placa · <b>{props.layout!.sheets.length}</b>{' '}
+                {props.layout!.sheets.length === 1 ? 'placa' : 'placas'} para {Math.ceil(props.pieces)} pzs
+                <span class="text-xs text-muted-foreground"> · aprovechamiento {Math.round(props.layout!.usage * 100)}%</span>
+              </p>
+              <Show when={props.layout!.tooBig.length}>
+                <p class="text-xs text-destructive">La pieza no cabe en esta placa.</p>
+              </Show>
+              <Show when={props.layout!.sheets[0]}>
+                {(first) => <NestingView sheet={props.sheet!} placements={first()} ids={['p']} />}
+              </Show>
+            </div>
+          )}
+        </Show>
       </Show>
     </div>
   )

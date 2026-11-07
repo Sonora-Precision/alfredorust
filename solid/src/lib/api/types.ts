@@ -1125,6 +1125,15 @@ export type TimelineMode = 'day' | 'week' | 'month' | 'year'
 
 export type MaterialStatus = 'surtido_por_cliente' | 'cortado' | 'recibido' | 'pedido' | 'pendiente'
 
+/** A whole sheet a part is nested on (inches). */
+export interface SheetSpec {
+  width: number
+  length: number
+  kerf: number
+  margin: number
+  process?: string | null
+}
+
 export interface PartMaterial {
   material?: string | null
   shape?: string | null
@@ -1138,6 +1147,8 @@ export interface PartMaterial {
   part_length?: number | null
   /** What the saw takes per piece, inches (1/8" when missing). */
   saw_kerf?: number | null
+  /** Bought as whole sheets and nested; the blanks are cut in the shop. */
+  sheet?: SheetSpec | null
   bar_to_order?: string | null
   customer_supplied?: boolean
   ordered?: boolean
