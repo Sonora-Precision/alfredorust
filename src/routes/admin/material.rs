@@ -58,7 +58,7 @@ pub async fn api_part_material_set(
     Path(id): Path<String>,
     Json(payload): Json<Option<PartMaterial>>,
 ) -> Response {
-    if !can_manage(&session_user) {
+    if !(can_manage(&session_user) || session_user.has_permission(UserPermission::TakeWorkOrders)) {
         return StatusCode::FORBIDDEN.into_response();
     }
     let company_id = require_active_company(&session_user);

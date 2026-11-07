@@ -13,6 +13,7 @@ import { Button } from '../components/ui/Button'
 import { Card, CardContent } from '../components/ui/Card'
 import { Input } from '../components/ui/Input'
 import { Modal } from '../components/ui/Modal'
+import { MaterialRequest } from '../components/projects/MaterialRequest'
 import { PartTracking } from '../components/projects/PartTracking'
 import { ProjectSourceQuote } from '../components/projects/ProjectSourceQuote'
 import { PageHeader } from '../components/ui/PageHeader'
@@ -340,6 +341,18 @@ export default function ProjectDetail(): JSX.Element {
                         canSeeAssignees={isAdmin() || auth.hasPermission('view_production_board')}
                         canAssign={isAdmin() || auth.hasPermission('manage_production_board')}
                         canUploadFiles={isAdmin()}
+                      />
+                    ),
+                  },
+                  {
+                    value: 'material',
+                    label: 'Material a pedir',
+                    content: (
+                      <MaterialRequest
+                        projectId={params.id}
+                        projectTitle={projectQuery.data?.title ?? ''}
+                        concepts={conceptsQuery.data ?? []}
+                        canEdit={isAdmin() || auth.hasPermission('take_work_orders') || auth.hasPermission('manage_production_board')}
                       />
                     ),
                   },
