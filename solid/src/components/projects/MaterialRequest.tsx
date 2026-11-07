@@ -9,6 +9,7 @@ import { type JSX, For, Show, createMemo, createSignal } from 'solid-js'
 import { Button } from '../ui/Button'
 import { toast } from '../ui/Toast'
 import { folioOf } from '../production/WorkOrderSearch'
+import { PartName } from '../production/PartName'
 import { MATERIAL_STATUS } from './PartMaterialCell'
 import { DEFAULT_KERF, SHAPES, type SizerApi, StockSizer, barLength } from './StockSizer'
 import { humanizeError } from '../../lib/api/client'
@@ -269,7 +270,7 @@ function PartStockRow(props: {
         <Show when={props.concept.work_order_number != null}>
           <span class="tnum text-xs text-muted-foreground">{folioOf(props.concept.work_order_number)}</span>
         </Show>
-        <span class="font-medium text-foreground">{props.concept.name}</span>
+        <PartName conceptId={props.concept.id} part={props.concept.name} class="font-medium text-foreground" />
         <span class="tnum text-xs text-muted-foreground">{props.concept.quantity} pzas</span>
         <Show when={props.concept.material_status}>
           {(s) => <span class={`rounded px-1.5 py-px text-[11px] font-medium ${MATERIAL_STATUS[s()].class}`}>{MATERIAL_STATUS[s()].label}</span>}

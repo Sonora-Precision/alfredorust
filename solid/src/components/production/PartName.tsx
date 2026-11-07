@@ -71,3 +71,37 @@ export function PartName(props: { conceptId: string; part: string; class?: strin
     </Show>
   )
 }
+
+/** The drawing of a part filling its box, with the PDF viewer's zoom, beside a form that
+ * takes measures from it (Daniel, 2026-11-06). */
+export function PartDrawingPanel(props: { conceptId: string; part: string }): JSX.Element {
+  const drawings = usePartDrawings()
+  const file = () => drawings().get(props.conceptId)
+  return (
+    <div class="flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
+      <div class="flex items-center justify-between gap-2 border-b border-border px-4 py-2 text-sm">
+        <span class="inline-flex min-w-0 items-center gap-2 font-semibold text-foreground">
+          <FileText class="h-4 w-4 shrink-0" />
+          <span class="truncate">Plano · {props.part}</span>
+        </span>
+        <Show when={file()}>
+          {(f) => (
+            <a href={f().url} target="_blank" rel="noopener" class="shrink-0 text-xs text-sky-600 hover:underline">
+              Abrir en otra pestaña
+            </a>
+          )}
+        </Show>
+      </div>
+      <Show
+        when={file()}
+        fallback={
+          <div class="grid flex-1 place-items-center p-6 text-center text-sm text-muted-foreground">
+            Esta parte todavía no tiene plano. Súbelo desde Seguimiento (Plano).
+          </div>
+        }
+      >
+        {(f) => <iframe src={`${f().url}#navpanes=0&view=Fit`} title={`Plano de ${props.part}`} class="h-full w-full flex-1 bg-white" />}
+      </Show>
+    </div>
+  )
+}
