@@ -26,6 +26,7 @@ import { PartDrawing } from './PartDrawing'
 import { PartCost } from './PartCost'
 import { PartComments } from './PartComments'
 import { SetupProgress, activeCounts, isCountOp, isSetupOp, programaDone, stepPieces } from './SetupProgress'
+import { GAP_LABEL, type Gap, GapBar, QuickPrices, gapsOf } from './PartGaps'
 import { getProjectQuote } from '../../lib/api/quoting'
 import { PartMaterialCell } from './PartMaterialCell'
 import { listPartComments } from '../../lib/api/notes'
@@ -362,9 +363,31 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
   // Grouped by material with a band naming it, to find the parts of each material at a
   // glance (Daniel, 2026-11-06). Remembered on this device.
   const [byMaterial, setByMaterial] = createSignal(readByMaterial())
+  // What each part still lacks (price, material, sizes, drawing), to fill it in here.
+  const gapsMap = createMemo(() => {
+    const out = new Map<string, Gap[]>()
+    // Before the files load, "sin plano" would flash on every part.
+    const filesReady = filesQuery.isSuccess
+    for (const c of counted()) {
+      const g = gapsOf(c, { money: !!props.canSeeMoney, hasDrawing: !filesReady || drawingOf().has(c.id) })
+      if (g.length) out.set(c.id, g)
+    }
+    return out
+  })
+  const gapCounts = createMemo(() => {
+    const counts: Record<Gap, number> = { precio: 0, material: 0, medidas: 0, plano: 0 }
+    for (const g of gapsMap().values()) for (const k of g) counts[k]++
+    return counts
+  })
+  const [gapFilter, setGapFilter] = createSignal<Gap | null>(null)
+  // A fixed list while typing prices: a saved part must not jump out from under the cursor.
+  const [quickPrices, setQuickPrices] = createSignal<ProjectConcept[] | null>(null)
   const visibleConcepts = createMemo(() => {
-    const list = props.concepts.filter((c) =>
-      matchesWorkOrder({ folio: folioOf(c.work_order_number), part: c.name }, filter()),
+    const gf = gapFilter()
+    const list = props.concepts.filter(
+      (c) =>
+        matchesWorkOrder({ folio: folioOf(c.work_order_number), part: c.name }, filter()) &&
+        (!gf || (gapsMap().get(c.id) ?? []).includes(gf)),
     )
     if (!byMaterial()) return list
     return [...list].sort((a, b) => {
@@ -507,6 +530,16 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
             />
             Ordenar por material
           </label>
+          <Show when={props.canEdit}>
+            <GapBar
+              counts={gapCounts()}
+              active={gapFilter()}
+              onPick={setGapFilter}
+              onQuickPrices={
+                props.canSeeMoney ? () => setQuickPrices(counted().filter((c) => c.unit_price == null)) : undefined
+              }
+            />
+          </Show>
         </div>
         <div class="overflow-x-auto">
           <Table>
@@ -532,7 +565,7 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
               </TableRow>
             </TableHead>
             <TableBody>
-              <Show when={filter() && visibleConcepts().length === 0}>
+              <Show when={(filter() || gapFilter()) && visibleConcepts().length === 0}>
                 <TableRow>
                   <TableCell class="text-sm text-muted-foreground">Ningún número de parte coincide.</TableCell>
                 </TableRow>
@@ -561,6 +594,13 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
                       <p class="font-medium text-foreground">{c.name}</p>
                       <Show when={c.work_order_number != null}>
                         <p class="tnum text-xs text-muted-foreground">{folioOf(c.work_order_number)}</p>
+                      </Show>
+                      <Show when={props.canEdit && gapsMap().get(c.id)}>
+                        {(g) => (
+                          <p class="text-xs font-medium text-amber-700 dark:text-amber-300">
+                            Falta: {g().map((k) => GAP_LABEL[k].replace(/^sin |^faltan /, '')).join(' · ')}
+                          </p>
+                        )}
                       </Show>
                       <PartDrawing
                         projectId={props.projectId}
@@ -718,6 +758,9 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
       </Card>
 
       <ProcessOperationsModal open={configOpen()} onOpenChange={setConfigOpen} operations={opsQuery.data ?? []} />
+      <Show when={quickPrices()}>
+        {(parts) => <QuickPrices projectId={props.projectId} parts={parts()} onClose={() => setQuickPrices(null)} />}
+      </Show>
       <Show when={(props.concepts ?? []).find((x) => x.id === progressOf())}>
         {(c) => (
           <SetupProgress
