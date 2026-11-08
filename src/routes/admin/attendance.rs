@@ -614,7 +614,7 @@ fn shop_ms(at: DateTime) -> i64 {
     at.timestamp_millis() + SHOP_UTC_OFFSET_MS
 }
 
-fn shop_date(at: DateTime) -> NaiveDate {
+pub(crate) fn shop_date(at: DateTime) -> NaiveDate {
     chrono::DateTime::from_timestamp_millis(shop_ms(at))
         .map(|d| d.date_naive())
         .unwrap_or_default()
@@ -626,7 +626,7 @@ fn shop_minute(at: DateTime) -> i64 {
 }
 
 /// UTC instant of shop midnight starting `date`.
-fn shop_midnight(date: NaiveDate) -> DateTime {
+pub(crate) fn shop_midnight(date: NaiveDate) -> DateTime {
     let ms = date.and_time(NaiveTime::MIN).and_utc().timestamp_millis() - SHOP_UTC_OFFSET_MS;
     DateTime::from_millis(ms)
 }

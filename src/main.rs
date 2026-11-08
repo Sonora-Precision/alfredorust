@@ -760,6 +760,7 @@ async fn main() {
             get(routes::api_production_weekly_pieces),
         )
         .route("/api/production/plant", get(routes::api_production_plant))
+        .route("/api/production/floor", get(routes::api_production_floor))
         .route(
             "/api/production/plant_layout",
             post(routes::api_plant_layout_save),

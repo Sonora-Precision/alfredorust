@@ -14,6 +14,7 @@ import {
   Lightbulb,
   Map as MapIcon,
   Route as RouteIcon,
+  Activity,
   Rocket,
   Scissors,
   ShieldCheck,
@@ -71,7 +72,15 @@ export const NAV: NavEntry[] = [
   // Staff land on their first module (see Dashboard.tsx), so Inicio is admin-only.
   { id: 'home', label: 'Inicio', icon: Home, href: '/', can: admin },
   { id: 'onboarding', label: 'Configuración inicial', icon: Rocket, href: '/onboarding', can: admin },
-  // Where every part is, stage by stage (Daniel, 2026-11-08): the screen to start from.
+  // The shop right now (Daniel, 2026-11-08): machines, people and what is held up.
+  {
+    id: 'taller',
+    label: 'Taller ahora',
+    icon: Activity,
+    href: '/produccion/taller',
+    can: adminOr('view_production_board'),
+  },
+  // Where every part is, stage by stage (Daniel, 2026-11-08).
   {
     id: 'traveler',
     label: 'Traveler',

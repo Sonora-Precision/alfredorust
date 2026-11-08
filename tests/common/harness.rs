@@ -493,6 +493,9 @@ pub fn build_app(state: Arc<AppState>) -> Router {
             get(routes::api_production_weekly_pieces),
         )
         .route("/api/production/plant", get(routes::api_production_plant))
+        .route("/api/production/floor", get(routes::api_production_floor))
+        .route("/api/admin/attendance/employees", get(routes::api_attendance_employees).post(routes::api_attendance_employee_save))
+        .route("/api/admin/attendance/manual", post(routes::api_attendance_manual_add))
         .route(
             "/api/production/plant_layout",
             post(routes::api_plant_layout_save),

@@ -2,6 +2,7 @@ import { apiGet, apiPost } from './client'
 import type {
   BoardMemberLoad,
   MachineStatePayload,
+  FloorData,
   PlantView,
   QualityItem,
   QualityPayload,
@@ -30,6 +31,7 @@ export const moveWorkOrder = (id: string, payload: SequenceMovePayload) =>
   action(id, 'sequence', payload)
 
 export const getPlant = () => apiGet<PlantView>('/api/production/plant')
+export const getFloor = () => apiGet<FloorData>('/api/production/floor')
 export const getWeeklyPieces = () => apiGet<WeeklyPieces>('/api/production/weekly_pieces')
 export const searchWorkOrders = (q: string) =>
   apiGet<WorkOrderSearchHit[]>('/api/production/search', { q })

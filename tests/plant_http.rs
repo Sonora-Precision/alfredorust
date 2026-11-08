@@ -555,5 +555,45 @@ async fn machine_queue_setups_two_machines_and_finish() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(json(&body)["projects"].as_array().unwrap().len(), 0, "another company sees nothing");
 
+
+    // Shop right now: people with today's checks (admins only) and what each holds.
+    let today = (chrono::Utc::now() - chrono::Duration::hours(7)).format("%Y-%m-%d").to_string();
+    let (status, body) = post(
+        "/api/admin/attendance/employees".to_string(),
+        admin.clone(),
+        serde_json::json!({ "employee_no": "0004", "name": "José M", "user_id": jose_id.to_hex() }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let (status, body) = post(
+        "/api/admin/attendance/manual".to_string(),
+        admin.clone(),
+        serde_json::json!({ "employee_no": "0004", "date": today, "time": "00:00", "note": "prueba" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let floor = |tok: String, host: &'static str| {
+        let shared = shared.clone();
+        async move {
+            let (status, body) = get_with_cookie(build_app(shared), host, "/api/production/floor", &tok).await;
+            assert_eq!(status, StatusCode::OK, "body: {body}");
+            json(&body)
+        }
+    };
+    let f = floor(admin.clone(), host).await;
+    assert_eq!(f["date"], today);
+    assert_eq!(f["with_attendance"], true);
+    let people = f["people"].as_array().unwrap();
+    let jose_row = people.iter().find(|p| p["user_id"] == jose_id.to_hex()).unwrap_or_else(|| panic!("{f}"));
+    assert_eq!(jose_row["in_clock"], true);
+    assert_eq!(jose_row["attendance"]["checks"][0], "00:00");
+    assert!(people.iter().any(|p| p["user_id"] == admin_id.to_hex() && p["in_clock"] == false), "{f}");
+    assert!(!people.iter().any(|p| p["user_id"] == bere_id.to_hex()), "quality holds no orders: {f}");
+    // A programmer sees who holds what, not who came and when.
+    let f = floor(jose.clone(), host).await;
+    assert_eq!(f["with_attendance"], false);
+    assert!(f["people"].as_array().unwrap().iter().all(|p| p["attendance"].is_null()), "{f}");
+    let f = floor(outsider.clone(), "queue-b.miapp.local").await;
+    assert!(!f.to_string().contains(&jose_id.to_hex()), "another company: {f}");
     common::teardown(Some(ctx)).await;
 }
