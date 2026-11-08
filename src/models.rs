@@ -1425,6 +1425,25 @@ pub struct PartStep {
     /// Why a blocked step is held up: "falta machuelo 1/4-20".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+
+    /// Pieces through this step so far (cut 12/30, Setup 1 6/30), counted by the part's
+    /// programmer (Daniel, 2026-11-08). Reaching the part's quantity marks the step done.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pieces: Option<f64>,
+
+    /// A setup whose program is ready: it may go to a machine queue (Daniel, 2026-11-08).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub programmed: bool,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub programmed_by: Option<String>,
+}
+
+impl PartStep {
+    /// "Setup 1", "setup 2"…: machine operations, each with its program and queue.
+    pub fn is_setup(&self) -> bool {
+        self.name.trim().to_lowercase().starts_with("setup")
+    }
 }
 
 /// Production-board queue an operation belongs to. Operations without a queue (e.g.

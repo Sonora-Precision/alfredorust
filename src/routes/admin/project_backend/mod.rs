@@ -161,6 +161,13 @@ pub struct PartStepData {
     /// What holds a blocked step up.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// Pieces through this step (cut, each setup).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pieces: Option<f64>,
+    /// A setup whose program is ready.
+    pub programmed: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub programmed_by: Option<String>,
 }
 
 pub(crate) fn project_concept_data(c: ProjectConcept) -> Option<ProjectConceptData> {
@@ -196,6 +203,9 @@ pub(crate) fn project_concept_data(c: ProjectConcept) -> Option<ProjectConceptDa
                 updated_at: s.updated_at.map(iso),
                 assignee_user_id: s.assignee_user_id.map(|id| id.to_hex()),
                 note: s.note,
+                pieces: s.pieces,
+                programmed: s.programmed,
+                programmed_by: s.programmed_by,
             })
             .collect(),
         created_at: c.created_at.map(iso),

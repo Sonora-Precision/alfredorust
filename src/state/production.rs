@@ -317,6 +317,9 @@ pub async fn set_step_assignee(
         assignee_user_id: assignee,
         assigned_at: Some(now),
         note: None,
+        pieces: None,
+        programmed: false,
+        programmed_by: None,
     })?;
     let pushed = state
         .project_concepts

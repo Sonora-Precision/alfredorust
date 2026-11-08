@@ -25,6 +25,7 @@ import { type PartFile, listProjectPartFiles } from '../../lib/api/partFiles'
 import { PartDrawing } from './PartDrawing'
 import { PartCost } from './PartCost'
 import { PartComments } from './PartComments'
+import { SetupProgress, activeCounts, isCountOp, isSetupOp, programaDone, stepPieces } from './SetupProgress'
 import { getProjectQuote } from '../../lib/api/quoting'
 import { PartMaterialCell } from './PartMaterialCell'
 import { listPartComments } from '../../lib/api/notes'
@@ -296,6 +297,8 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
   }
 
   const [configOpen, setConfigOpen] = createSignal(false)
+  // The part whose cut and setup counts are open (Daniel, 2026-11-08).
+  const [progressOf, setProgressOf] = createSignal<string | null>(null)
   // Newest PDF drawing per part.
   const filesQuery = createQuery(() => ({
     queryKey: ['part-files', props.projectId],
@@ -591,6 +594,24 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
                           </p>
                         )}
                       </For>
+                      {/* Active stages with their counts: "Corte 12/30 · Setup 1 6/30". */}
+                      <button
+                        type="button"
+                        class="mt-0.5 flex max-w-[20rem] flex-wrap items-center gap-x-2 gap-y-0.5 text-left text-xs text-muted-foreground hover:text-foreground"
+                        title="Avance por setup: piezas cortadas, por setup y programas"
+                        onClick={() => setProgressOf(c.id)}
+                      >
+                        <For
+                          each={activeCounts(c, activeOps()).filter((s) => s.pieces > 0 && s.pieces < c.quantity)}
+                          fallback={<span class="text-sky-600 dark:text-sky-400">Avance por setup</span>}
+                        >
+                          {(s) => (
+                            <span class="tnum">
+                              {s.label} <b class="text-foreground">{s.pieces}</b>/{c.quantity}
+                            </span>
+                          )}
+                        </For>
+                      </button>
                       <PartComments
                         projectId={props.projectId}
                         conceptId={c.id}
@@ -697,6 +718,17 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
       </Card>
 
       <ProcessOperationsModal open={configOpen()} onOpenChange={setConfigOpen} operations={opsQuery.data ?? []} />
+      <Show when={(props.concepts ?? []).find((x) => x.id === progressOf())}>
+        {(c) => (
+          <SetupProgress
+            projectId={props.projectId}
+            concept={c()}
+            ops={activeOps()}
+            canEdit={tickable(c())}
+            onClose={() => setProgressOf(null)}
+          />
+        )}
+      </Show>
     </div>
   )
 }
@@ -730,10 +762,14 @@ function StepCell(props: {
     }, 600)
   }
   const release = () => clearTimeout(timer)
+  const programmed = () => isSetupOp(props.op.name) && (!!step()?.programmed || programaDone(props.concept))
+  const pieces = () => stepPieces(props.concept, step())
+  const partial = () => isCountOp(props.op.name) && pieces() > 0 && pieces() < props.concept.quantity
   return (
+    <>
     <button
       type="button"
-      title={title()}
+      title={title() + (programmed() ? '\nProgramado' : '') + (partial() ? `\n${pieces()}/${props.concept.quantity} piezas` : '')}
       aria-label={title()}
       disabled={!props.canEdit}
       onClick={() => {
@@ -760,11 +796,19 @@ function StepCell(props: {
         state() === 'not_applicable' && 'border-border bg-muted text-muted-foreground',
         state() === 'blocked' && 'border-orange-500 bg-orange-500 text-white',
         state() === 'pending' && 'border-input bg-background text-transparent',
-        props.canEdit && state() === 'pending' && 'hover:border-emerald-400',
+        // A programmed setup waiting for the machine: violet frame (Daniel, 2026-11-08).
+        state() === 'pending' && programmed() && 'border-2 border-violet-500',
+        props.canEdit && state() === 'pending' && !programmed() && 'hover:border-emerald-400',
       )}
     >
       {state() === 'done' ? '✔' : state() === 'not_applicable' ? 'N/A' : state() === 'blocked' ? '!' : '·'}
     </button>
+    <Show when={partial()}>
+      <span class="tnum mt-0.5 block text-[10px] leading-none text-muted-foreground">
+        {pieces()}/{props.concept.quantity}
+      </span>
+    </Show>
+    </>
   )
 }
 

@@ -247,6 +247,12 @@ pub struct PartProgressPayload {
     /// What holds a blocked step up ("falta machuelo 1/4-20").
     #[serde(default)]
     pub note: Option<String>,
+    /// Pieces through the step of `operation_id` (cut 12/30, Setup 1 6/30).
+    #[serde(default)]
+    pub pieces: Option<f64>,
+    /// The setup of `operation_id` has its program ready.
+    #[serde(default)]
+    pub programmed: Option<bool>,
 }
 
 #[utoipa::path(
@@ -281,8 +287,21 @@ pub async fn api_project_concept_progress(
         Ok(id) => id,
         Err(resp) => return resp,
     };
+    // Pieces and "programmed" go on one step, with or without a state.
+    let extra_op = if payload.pieces.is_some() || payload.programmed.is_some() {
+        let Some(op) = payload.operation_id.as_deref() else {
+            return json_error(StatusCode::BAD_REQUEST, "pieces and programmed need operation_id");
+        };
+        match parse_oid(op) {
+            Ok(op) => Some(op),
+            Err(resp) => return resp,
+        }
+    } else {
+        None
+    };
     let step = match (payload.operation_id.as_deref(), payload.state.as_deref()) {
         (None, None) => None,
+        (Some(_), None) if extra_op.is_some() => None,
         (Some(op), Some(st)) => {
             let op = match parse_oid(op) {
                 Ok(op) => op,
@@ -303,7 +322,7 @@ pub async fn api_project_concept_progress(
             );
         }
     };
-    if step.is_none() && payload.completed_quantity.is_none() {
+    if step.is_none() && payload.completed_quantity.is_none() && extra_op.is_none() {
         return json_error(StatusCode::BAD_REQUEST, "nothing to update");
     }
     let username = session_user.user().username.clone();
@@ -316,6 +335,8 @@ pub async fn api_project_concept_progress(
         completed_quantity: payload.completed_quantity,
         step,
         note,
+        pieces: extra_op.zip(payload.pieces),
+        programmed: extra_op.zip(payload.programmed),
     };
     let before = get_project_concept_by_id_for_company(&state, &id, &company_id)
         .await
