@@ -49,3 +49,6 @@ export const moveQueueEntryTo = (id: string, to: number) =>
 export const moveQueueEntry = (id: string, up: boolean) =>
   apiPost<void>(`/api/production/machine_queue/${id}/move`, { up })
 export const startQueueEntry = (id: string) => apiPost<void>(`/api/production/machine_queue/${id}/start`, {})
+
+/** Every open project with its parts, for the traveler (no money). */
+export const getTraveler = () => apiGet<import('./types').TravelerData>('/api/admin/traveler')

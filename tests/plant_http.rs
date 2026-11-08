@@ -536,5 +536,24 @@ async fn machine_queue_setups_two_machines_and_finish() {
     let p = plant().await;
     assert_eq!(queue_of(machine(&p, "VF-3")), ["Setup 2"]);
 
+    // Traveler: every open project with its parts and their counts, never money.
+    let (status, body) = get_with_cookie(build_app(shared.clone()), host, "/api/admin/traveler", &jose).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    for leak in ["4500", "9000"] {
+        assert!(!body.contains(leak), "traveler leaked {leak}: {body}");
+    }
+    let t = json(&body);
+    assert!(t["operations"].as_array().unwrap().iter().any(|o| o["name"] == "Setup 1"));
+    let proj = &t["projects"][0];
+    assert_eq!(proj["title"], "Pallets");
+    let tp = &proj["parts"][0];
+    assert_eq!((tp["name"].as_str(), tp["quantity"].as_f64()), (Some("CG-16587"), Some(20.0)));
+    assert!(tp["unit_price"].is_null());
+    assert!(tp["process_steps"].as_array().unwrap().iter().any(|s| s["name"] == "Setup 1" && s["programmed"] == true));
+    let (status, body) =
+        get_with_cookie(build_app(shared.clone()), "queue-b.miapp.local", "/api/admin/traveler", &outsider).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json(&body)["projects"].as_array().unwrap().len(), 0, "another company sees nothing");
+
     common::teardown(Some(ctx)).await;
 }

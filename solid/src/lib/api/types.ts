@@ -1287,3 +1287,20 @@ export interface Suggestion {
   created_at: string
   updated_at?: string | null
 }
+
+// --- traveler (no money) -----------------------------------------------------------------
+export interface TravelerProject {
+  id: string
+  title: string
+  client: string | null
+  priority: string
+  priority_label: string
+  /** Delivery date. */
+  scheduled_at: string | null
+  parts: ProjectConcept[]
+}
+
+export interface TravelerData {
+  operations: ProcessOperation[]
+  projects: TravelerProject[]
+}
