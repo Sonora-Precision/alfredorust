@@ -2179,4 +2179,8 @@ pub struct MaterialQuoteLine {
     /// The supplier's price for this line, when it gave one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quoted: Option<f64>,
+    /// "Acero 4140": to compare suppliers material by material. A line can stand for a whole
+    /// material when the quote was captured by material instead of by line.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub material: Option<String>,
 }

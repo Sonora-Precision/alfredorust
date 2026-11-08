@@ -179,7 +179,11 @@ pub async fn api_project_material_quote_create(
     let lines = payload
         .lines
         .into_iter()
-        .map(|l| MaterialQuoteLine { stock: l.stock.trim().chars().take(200).collect(), ..l })
+        .map(|l| MaterialQuoteLine {
+            stock: l.stock.trim().chars().take(200).collect(),
+            material: l.material.map(|m| m.trim().chars().take(120).collect::<String>()).filter(|m| !m.is_empty()),
+            ..l
+        })
         .collect();
     let u = session_user.user();
     let q = MaterialQuote {
