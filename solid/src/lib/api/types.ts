@@ -1304,3 +1304,36 @@ export interface TravelerData {
   operations: ProcessOperation[]
   projects: TravelerProject[]
 }
+
+/** Shop right now (Daniel, 2026-11-08): people today and the orders each holds. */
+export interface FloorOrder {
+  id: string
+  folio: string
+  part: string
+  project: string
+  project_id: string
+  step: string
+  queue: string
+}
+export interface FloorAttendance {
+  /** "HH:MM" of every check today. */
+  checks: string[]
+  /** As in the attendance report: ok, retardo, falta, pendiente, incompleto, descanso, extra, sin_horario. */
+  status: string
+  /** "HH:MM–HH:MM" of today's shift. */
+  window: string | null
+  late_min: number
+}
+export interface FloorPerson {
+  user_id: string | null
+  name: string
+  in_clock: boolean
+  attendance: FloorAttendance | null
+  orders: FloorOrder[]
+}
+export interface FloorData {
+  date: string
+  /** Admins see the checks. */
+  with_attendance: boolean
+  people: FloorPerson[]
+}

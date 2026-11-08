@@ -49,17 +49,17 @@ const fmtDate = (iso: string | null) =>
 const pctOf = (done: number, total: number) => (total > 0 ? Math.round((100 * done) / total) : 0)
 
 const STAGE_CLASS: Record<Stage['state'], string> = {
-  done: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
-  active: 'bg-sky-500/15 text-sky-700 dark:text-sky-300',
-  waiting: 'bg-amber-500/15 text-amber-800 dark:text-amber-200',
-  blocked: 'bg-red-500/15 text-red-700 dark:text-red-300',
+  done: 'bg-emerald-500/15 text-emerald-500',
+  active: 'bg-sky-500/15 text-sky-500',
+  waiting: 'bg-amber-500/15 text-amber-500',
+  blocked: 'bg-red-500/15 text-red-500',
   pending: 'bg-muted text-muted-foreground',
 }
 
 function dueClass(days: number | null, finished: boolean): string {
   if (days == null || finished) return 'text-muted-foreground'
-  if (days < 0) return 'font-medium text-red-600 dark:text-red-400'
-  if (days <= 3) return 'font-medium text-amber-700 dark:text-amber-300'
+  if (days < 0) return 'font-medium text-red-500'
+  if (days <= 3) return 'font-medium text-amber-500'
   return 'text-muted-foreground'
 }
 function dueText(iso: string | null, days: number | null): string {
@@ -148,14 +148,14 @@ export default function Traveler(): JSX.Element {
   const tone = (t: 'red' | 'amber' | 'muted', on: boolean) =>
     on
       ? t === 'red'
-        ? 'border-red-500 bg-red-500/15 text-red-700 dark:text-red-300'
+        ? 'border-red-500 bg-red-500/15 text-red-500'
         : t === 'amber'
-          ? 'border-amber-500 bg-amber-500/15 text-amber-800 dark:text-amber-200'
+          ? 'border-amber-500 bg-amber-500/15 text-amber-500'
           : 'border-foreground/40 bg-muted text-foreground'
       : t === 'red'
-        ? 'border-red-500/40 text-red-700 dark:text-red-300'
+        ? 'border-red-500/40 text-red-500'
         : t === 'amber'
-          ? 'border-amber-500/40 text-amber-800 dark:text-amber-200'
+          ? 'border-amber-500/40 text-amber-500'
           : 'border-border text-muted-foreground'
   const tab = (on: boolean) => `rounded-full border px-3 py-1.5 text-sm ${on ? 'border-primary bg-primary/10 text-foreground' : 'border-border text-muted-foreground hover:bg-muted'}`
 
@@ -315,10 +315,10 @@ function ByStage(props: { rows: Row[]; filtering: boolean; onOpen: (id: string) 
 
 function bucketChip(b: Bucket): string {
   return b === 'terminada'
-    ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+    ? 'bg-emerald-500/15 text-emerald-500'
     : b === 'material' || b === 'programa'
-      ? 'bg-amber-500/15 text-amber-800 dark:text-amber-200'
-      : 'bg-sky-500/10 text-sky-700 dark:text-sky-300'
+      ? 'bg-amber-500/15 text-amber-500'
+      : 'bg-sky-500/10 text-sky-500'
 }
 
 /** Level 2: the parts grouped by stage; finished ones folded. */
@@ -383,7 +383,7 @@ function PartRow(props: { row: Row; showProject: boolean; onOpen: (id: string) =
         </For>
       </div>
       <Show when={r().places.length}>
-        <p class="mt-1 text-xs text-sky-700 dark:text-sky-300">
+        <p class="mt-1 text-xs text-sky-500">
           {r()
             .places.map((p) => (p.running ? `▶ corriendo en ${p.machine}` : `#${p.position} en fila de ${p.machine}`) + (p.label ? ` · ${p.label}` : ''))
             .join(' · ')}
@@ -391,7 +391,7 @@ function PartRow(props: { row: Row; showProject: boolean; onOpen: (id: string) =
       </Show>
       <For each={r().blocked}>
         {(b) => (
-          <p class="mt-0.5 text-xs font-medium text-red-600 dark:text-red-400">
+          <p class="mt-0.5 text-xs font-medium text-red-500">
             ⏸ {b.name}: {b.note ?? 'detenido'}
           </p>
         )}
@@ -419,7 +419,7 @@ function PartDetail(props: { row: Row; canCount: boolean; onCount: () => void; o
                   <span class="font-medium text-foreground">{st.label}</span>
                   <span class="tnum text-muted-foreground">
                     <Show when={st.note && st.state !== 'done'}>
-                      <span class={st.state === 'blocked' ? 'text-red-600 dark:text-red-400' : 'text-amber-700 dark:text-amber-300'}>{st.note} · </span>
+                      <span class={st.state === 'blocked' ? 'text-red-500' : 'text-amber-500'}>{st.note} · </span>
                     </Show>
                     {st.pieces}/{st.total}
                   </span>
@@ -439,7 +439,7 @@ function PartDetail(props: { row: Row; canCount: boolean; onCount: () => void; o
             <p class="text-xs font-medium text-muted-foreground">Máquinas</p>
             <For each={r().places}>
               {(p) => (
-                <p class="text-sky-700 dark:text-sky-300">
+                <p class="text-sky-500">
                   {p.running ? `▶ Corriendo en ${p.machine}` : `#${p.position} en fila de ${p.machine}`}
                   {p.label ? ` · ${p.label}` : ''}
                 </p>
@@ -448,7 +448,7 @@ function PartDetail(props: { row: Row; canCount: boolean; onCount: () => void; o
           </div>
         </Show>
         <Show when={r().gaps.length}>
-          <p class="text-xs font-medium text-amber-700 dark:text-amber-300">Le falta: {r().gaps.join(' · ')}. Se llena en Seguimiento.</p>
+          <p class="text-xs font-medium text-amber-500">Le falta: {r().gaps.join(' · ')}. Se llena en Seguimiento.</p>
         </Show>
         <div class="flex flex-wrap gap-2">
           <Show when={props.canCount}>
