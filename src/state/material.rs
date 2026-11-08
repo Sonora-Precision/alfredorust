@@ -37,7 +37,7 @@ pub async fn mark_step_by_name(
     else {
         return Ok(false);
     };
-    let update = super::PartProgressUpdate { completed_quantity: None, step: Some((operation_id, step_state)), note: None };
+    let update = super::PartProgressUpdate { completed_quantity: None, step: Some((operation_id, step_state)), note: None, ..Default::default() };
     Ok(super::update_part_progress(state, concept_id, company_id, update, username).await?.is_some())
 }
 

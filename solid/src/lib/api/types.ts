@@ -497,6 +497,11 @@ export interface PartStep {
   assignee_user_id?: string | null
   /** What holds a blocked step up. */
   note?: string | null
+  /** Pieces through this step (cut 12/30, Setup 1 6/30). */
+  pieces?: number | null
+  /** A setup whose program is ready. */
+  programmed?: boolean
+  programmed_by?: string | null
 }
 
 export type WorkQueue = 'programming' | 'setup' | 'machining' | 'finishing'
@@ -710,6 +715,10 @@ export interface PartProgressPayload {
   state?: StepState
   /** What holds a blocked step up (required with `blocked`). */
   note?: string
+  /** Pieces through the step of `operation_id`. */
+  pieces?: number
+  /** The setup of `operation_id` has its program ready. */
+  programmed?: boolean
 }
 
 // --- machine time from the shop floor (DNC runs pushed by taller-vision) -------------

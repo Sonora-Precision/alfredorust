@@ -114,6 +114,10 @@ pub struct PartProgressUpdate {
     pub step: Option<(ObjectId, StepState)>,
     /// Why a blocked step is held up; cleared for any other state.
     pub note: Option<String>,
+    /// Pieces through one step (cut 12/30, Setup 1 6/30).
+    pub pieces: Option<(ObjectId, f64)>,
+    /// A setup whose program is ready (or not).
+    pub programmed: Option<(ObjectId, bool)>,
 }
 
 /// Records finished pieces and/or one step state and returns the updated part, or `None` when
@@ -210,6 +214,9 @@ pub async fn update_part_progress(
                 assignee_user_id: None,
                 assigned_at: None,
                 note: note.clone(),
+                pieces: None,
+                programmed: false,
+                programmed_by: None,
             })?;
             let mut not_on_part = part.clone();
             not_on_part.insert("process_steps.operation_id", doc! { "$ne": operation_id });
@@ -227,5 +234,108 @@ pub async fn update_part_progress(
         }
     }
 
+    if let Some((operation_id, pieces)) = update.pieces {
+        let ceiling = concept.quantity + concept.rejected_quantity;
+        if !pieces.is_finite() || pieces < 0.0 || pieces > ceiling {
+            bail!("las piezas deben estar entre 0 y {ceiling}");
+        }
+        ensure_step(state, &concept, operation_id, now).await?;
+        // All pieces through it: the step is done. Fewer: still going (unless held up).
+        let current = concept.process_steps.iter().find(|s| s.operation_id == operation_id).map(|s| s.state);
+        let new_state = if pieces >= concept.quantity {
+            StepState::Done
+        } else if current == Some(StepState::Blocked) {
+            StepState::Blocked
+        } else {
+            StepState::Pending
+        };
+        let mut on_part = part.clone();
+        on_part.insert("process_steps.operation_id", operation_id);
+        let mut set = doc! {
+            "process_steps.$.pieces": pieces,
+            "process_steps.$.state": new_state.as_str(),
+            "process_steps.$.updated_by": username,
+            "process_steps.$.updated_at": now,
+            "updated_at": now,
+        };
+        if new_state != StepState::Blocked {
+            set.insert("process_steps.$.note", bson::Bson::Null);
+        }
+        state.project_concepts.update_one(on_part, doc! { "$set": set }).await?;
+    }
+
+    if let Some((operation_id, programmed)) = update.programmed {
+        ensure_step(state, &concept, operation_id, now).await?;
+        let mut on_part = part.clone();
+        on_part.insert("process_steps.operation_id", operation_id);
+        state
+            .project_concepts
+            .update_one(
+                on_part,
+                doc! { "$set": {
+                    "process_steps.$.programmed": programmed,
+                    "process_steps.$.programmed_by": if programmed { Some(username) } else { None },
+                    "updated_at": now,
+                } },
+            )
+            .await?;
+    }
+
     get_project_concept_by_id_for_company(state, id, company_id).await
+}
+
+/// Adds a catalog step to the part as pending when nobody marked it yet.
+async fn ensure_step(state: &AppState, concept: &ProjectConcept, operation_id: ObjectId, now: DateTime) -> Result<()> {
+    if concept.process_steps.iter().any(|s| s.operation_id == operation_id) {
+        return Ok(());
+    }
+    let op = state
+        .process_operations
+        .find_one(doc! { "_id": operation_id, "company_id": concept.company_id })
+        .await?
+        .context("process operation not found for company")?;
+    let step = bson::to_bson(&PartStep {
+        operation_id,
+        name: op.name,
+        state: StepState::Pending,
+        updated_by: None,
+        updated_at: None,
+        assignee_user_id: None,
+        assigned_at: None,
+        note: None,
+        pieces: None,
+        programmed: false,
+        programmed_by: None,
+    })?;
+    // `$ne` keeps a step someone added in between from being doubled.
+    state
+        .project_concepts
+        .update_one(
+            doc! { "_id": concept.id, "company_id": concept.company_id, "process_steps.operation_id": { "$ne": operation_id } },
+            doc! { "$push": { "process_steps": step }, "$set": { "updated_at": now } },
+        )
+        .await?;
+    Ok(())
+}
+
+/// Whether one setup of the part may go to a machine: its own program is ready, or the
+/// "Programa" step is done (every setup programmed, as before setups were counted).
+pub fn setup_programmed(concept: &ProjectConcept, setup: Option<&str>) -> bool {
+    let all_done = concept
+        .process_steps
+        .iter()
+        .any(|s| s.name.trim().eq_ignore_ascii_case("programa") && s.state == StepState::Done);
+    if all_done {
+        return true;
+    }
+    let applies = |s: &&PartStep| s.is_setup() && s.state != StepState::NotApplicable;
+    let wanted = setup.map(|l| l.trim().to_lowercase()).filter(|l| !l.is_empty());
+    // The setup the queue entry names ("Setup 2"); one nobody marked is not programmed.
+    if let Some(name) = wanted.as_deref().filter(|n| n.starts_with("setup")) {
+        return concept.process_steps.iter().any(|s| s.name.trim().to_lowercase() == name && s.programmed);
+    }
+    // Any other label (or none): the first setup that applies.
+    let mut setups: Vec<&PartStep> = concept.process_steps.iter().filter(applies).collect();
+    setups.sort_by_key(|s| s.name.trim().to_lowercase());
+    setups.first().is_some_and(|s| s.programmed)
 }

@@ -382,6 +382,64 @@ async fn machine_queue_setups_two_machines_and_finish() {
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 
+    // A setup reaches a machine only with its program ready (Daniel, 2026-11-08).
+    let mut setup_ops = Vec::new();
+    for (i, name) in ["Setup 1", "Setup 2", "Setup 3"].into_iter().enumerate() {
+        setup_ops.push(alfredodev::state::create_process_operation(&state, &company, name, 4 + i as i32, None).await.unwrap());
+    }
+    let queue_setup = |label: &'static str| {
+        let post = post.clone();
+        let admin = admin.clone();
+        async move {
+            post(
+                format!("/api/production/machines/{}/queue", vf3.to_hex()),
+                admin,
+                serde_json::json!({ "concept_id": part.to_hex(), "label": label }),
+            )
+            .await
+        }
+    };
+    let (status, body) = queue_setup("Setup 1").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "body: {body}");
+    assert!(body.contains("programa"), "{body}");
+    let progress = format!("/api/admin/project_concepts/{}/progress", part.to_hex());
+    let (status, body) = post(
+        progress.clone(),
+        admin.clone(),
+        serde_json::json!({ "operation_id": setup_ops[0].to_hex(), "programmed": true }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let step = |body: &str, name: &str| {
+        json(body)["process_steps"].as_array().unwrap().iter().find(|s| s["name"] == name).unwrap().clone()
+    };
+    assert_eq!(step(&body, "Setup 1")["programmed"], true);
+    // Setup 2 is not programmed yet: Setup 1 goes, Setup 2 waits (programming op by op).
+    let (status, _) = queue_setup("Setup 2").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    for op in &setup_ops[1..] {
+        let (status, _) =
+            post(progress.clone(), admin.clone(), serde_json::json!({ "operation_id": op.to_hex(), "programmed": true })).await;
+        assert_eq!(status, StatusCode::OK);
+    }
+
+    // The programmer counts pieces per setup: 6/20 keeps it going, 20/20 is done.
+    let (status, body) =
+        post(progress.clone(), admin.clone(), serde_json::json!({ "operation_id": setup_ops[0].to_hex(), "pieces": 6 })).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    assert_eq!((step(&body, "Setup 1")["pieces"].as_f64(), step(&body, "Setup 1")["state"].as_str()), (Some(6.0), Some("pending")));
+    let (_, body) =
+        post(progress.clone(), admin.clone(), serde_json::json!({ "operation_id": setup_ops[0].to_hex(), "pieces": 20 })).await;
+    assert_eq!(step(&body, "Setup 1")["state"], "done");
+    let (status, _) =
+        post(progress.clone(), admin.clone(), serde_json::json!({ "operation_id": setup_ops[0].to_hex(), "pieces": 21 })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = post(progress.clone(), admin.clone(), serde_json::json!({ "pieces": 3 })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (_, body) =
+        post(progress, admin.clone(), serde_json::json!({ "operation_id": setup_ops[0].to_hex(), "pieces": 0 })).await;
+    assert_eq!(step(&body, "Setup 1")["state"], "pending");
+
     // José queues three setups of the same part on VF-3; the admin also queues it on VF-6.
     for label in ["Setup 1", "Setup 2", "Setup 3"] {
         let (status, body) = post(

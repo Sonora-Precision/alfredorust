@@ -582,6 +582,8 @@ async fn machine_exists(state: &AppState, company_id: &ObjectId, id: &ObjectId) 
     }
 }
 
+pub const NOT_PROGRAMMED: &str = "ese setup todavía no tiene programa: el programador lo marca como programado y entonces entra a la fila";
+
 #[derive(Debug, Deserialize)]
 pub struct QueueAddPayload {
     pub concept_id: String,
@@ -625,6 +627,10 @@ pub async fn api_machine_queue_add(
                 && !super::material::material_in_shop(&state, &company_id, &concept).await
             {
                 return json_error(StatusCode::BAD_REQUEST, super::material::NOT_IN_SHOP);
+            }
+            // A machine runs a setup only once its program is ready (Daniel, 2026-11-08).
+            if !on_saw && !crate::state::setup_programmed(&concept, payload.label.as_deref()) {
+                return json_error(StatusCode::BAD_REQUEST, NOT_PROGRAMMED);
             }
         }
         Err(_) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load order"),
