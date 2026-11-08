@@ -461,6 +461,7 @@ pub fn build_app(state: Arc<AppState>) -> Router {
         .route("/api/production/cut_list/{id}/done", axum::routing::post(routes::api_cut_done))
         .route("/api/production/cut_list/{id}/queue", axum::routing::post(routes::api_cut_queue))
         .route("/api/admin/projects/{id}/material_rates", get(routes::api_project_material_rates))
+        .route("/api/admin/traveler", get(routes::api_traveler))
         .route(
             "/api/admin/projects/{id}/material_quotes",
             get(routes::api_project_material_quotes).post(routes::api_project_material_quote_create),

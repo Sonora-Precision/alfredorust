@@ -59,6 +59,7 @@ export function SetupProgress(props: {
     onSuccess: (updated) => {
       qc.setQueryData<ProjectConcept[]>(['project-concepts', props.projectId], (list) => list?.map((x) => (x.id === updated.id ? updated : x)))
       void qc.invalidateQueries({ queryKey: ['project-concepts', props.projectId] })
+      void qc.invalidateQueries({ queryKey: ['traveler'] })
     },
     onError: (err) => toast.error('No se guardó', humanizeError(err, 'Intenta de nuevo')),
   }))
