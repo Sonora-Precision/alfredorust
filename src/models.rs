@@ -2124,3 +2124,40 @@ pub struct AttendanceEmployee {
     pub active: bool,
     pub updated_at: DateTime,
 }
+
+/// What a supplier quoted for a project's material, next to what the platform expected
+/// (Daniel, 2026-11-07: "para compararlo con una cotización y ver que efectivamente
+/// costeamos bien o mal"). The estimate is a snapshot of the request when it was saved.
+/// Admin only: it is money.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MaterialQuote {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub company_id: ObjectId,
+    pub project_id: ObjectId,
+    pub supplier: String,
+    /// What the supplier quoted, before VAT.
+    pub total: f64,
+    /// What the platform expected for the same request.
+    #[serde(default)]
+    pub estimate_total: f64,
+    #[serde(default)]
+    pub lines: Vec<MaterialQuoteLine>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    pub created_by: String,
+    pub created_at: DateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MaterialQuoteLine {
+    /// "Aluminio 6061 solera 1" × 2" × 36"", as the request read.
+    pub stock: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kg: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub estimate: Option<f64>,
+    /// The supplier's price for this line, when it gave one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quoted: Option<f64>,
+}

@@ -162,5 +162,43 @@ async fn quote_from_blank_weight_and_apply() {
     let q = quote().await;
     assert_eq!(line(&q, "CG-15253-A")["unit_price"], 585.0);
 
+    // Expected material cost (Daniel, 2026-11-07): density and $/kg of the project's materials.
+    let rates_path = format!("/api/admin/projects/{}/material_rates", project.to_hex());
+    let (status, _) = get(rates_path.clone(), jose.clone()).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, body) = get(rates_path, admin.clone()).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let rates = json(&body);
+    let rate = |m: &str| rates.as_array().unwrap().iter().find(|r| r["material"] == m).unwrap().clone();
+    assert_eq!((rate("Aluminio 6061")["density_g_cm3"].as_f64(), rate("Aluminio 6061")["price_per_kg"].as_f64()), (Some(2.7), Some(250.0)));
+    assert!(rate("4140")["price_per_kg"].is_null());
+    assert_eq!(rate("4140")["density_g_cm3"], 7.85);
+
+    // What the supplier quoted, saved next to the estimate.
+    let quotes_path = format!("/api/admin/projects/{}/material_quotes", project.to_hex());
+    let quote_body = serde_json::json!({
+        "supplier": "HG Aceros", "total": 1800, "estimate_total": 1500,
+        "lines": [{ "stock": "Aluminio 6061 solera 1\" × 1.5\" × 49.5\"", "kg": 1.2, "estimate": 300, "quoted": 360 }],
+    });
+    let (status, _) = post(quotes_path.clone(), jose.clone(), quote_body.clone()).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _) = post(quotes_path.clone(), admin.clone(), serde_json::json!({ "supplier": "", "total": 10 })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = post(quotes_path.clone(), admin.clone(), serde_json::json!({ "supplier": "HG", "total": 0 })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, body) = post(quotes_path.clone(), admin.clone(), quote_body).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let (status, body) = get(quotes_path.clone(), admin.clone()).await;
+    assert_eq!(status, StatusCode::OK);
+    let list = json(&body);
+    assert_eq!((list[0]["supplier"].as_str(), list[0]["total"].as_f64(), list[0]["lines"][0]["quoted"].as_f64()), (Some("HG Aceros"), Some(1800.0), Some(360.0)));
+    let qid = list[0]["id"].as_str().unwrap().to_string();
+    let (status, _) = get(quotes_path.clone(), jose.clone()).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _) = post(format!("/api/admin/material_quotes/{qid}/delete"), admin.clone(), serde_json::json!({})).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, body) = get(quotes_path, admin.clone()).await;
+    assert_eq!(json(&body).as_array().unwrap().len(), 0);
+
     common::teardown(Some(ctx)).await;
 }

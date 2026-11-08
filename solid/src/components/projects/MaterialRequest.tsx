@@ -11,6 +11,7 @@ import { toast } from '../ui/Toast'
 import { folioOf } from '../production/WorkOrderSearch'
 import { PartName } from '../production/PartName'
 import { MaterialNames } from './MaterialNames'
+import { MaterialCost } from './MaterialCost'
 import { NestingView, colorOf } from './NestingView'
 import { type NestResult, type NestSheet, isGuillotine, nest } from '../../lib/nesting'
 import { MATERIAL_STATUS } from './PartMaterialCell'
@@ -162,6 +163,8 @@ export function MaterialRequest(props: {
   projectTitle: string
   concepts: ProjectConcept[]
   canEdit: boolean
+  /** Admin: the expected cost of the material and the supplier quotes. */
+  canSeeMoney?: boolean
 }): JSX.Element {
   const qc = useQueryClient()
   // Parts picked for the request; by default those with stock and not yet ordered.
@@ -196,6 +199,14 @@ export function MaterialRequest(props: {
   )
   const groups = createMemo<Group[]>(() => groupStock(lines()))
   const text = () => requestText(props.projectTitle, groups())
+  // Every part with its stock, ordered or not (customer material is not bought).
+  const allGroups = createMemo<Group[]>(() =>
+    groupStock(
+      props.concepts
+        .filter((c) => c.material?.length != null && !c.material.customer_supplied)
+        .map((c) => stockLine(c.id, c.name, c.material!, c.quantity)),
+    ),
+  )
 
   const copy = async () => {
     try {
@@ -324,6 +335,10 @@ export function MaterialRequest(props: {
           </For>
         </Show>
       </div>
+
+      <Show when={props.canSeeMoney}>
+        <MaterialCost projectId={props.projectId} requestGroups={groups()} allGroups={allGroups()} />
+      </Show>
     </div>
   )
 }

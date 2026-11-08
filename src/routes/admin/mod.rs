@@ -10,6 +10,7 @@ pub mod onboarding;
 pub mod part_progress;
 pub mod plant;
 pub mod material;
+pub mod material_cost;
 pub mod notes;
 pub mod part_files;
 pub mod quoting;
@@ -53,6 +54,9 @@ pub use plant::{
     api_machine_state_set, api_plant_layout_save, api_production_plant,
 };
 pub use quality::{api_quality_queue, api_quality_record};
+pub use material_cost::{
+    api_material_quote_delete, api_project_material_quote_create, api_project_material_quotes, api_project_material_rates,
+};
 pub use notes::{
     api_part_comment_create, api_part_comment_delete, api_project_close, api_project_part_comments,
     api_suggestion_create, api_suggestion_update, api_suggestions_index,

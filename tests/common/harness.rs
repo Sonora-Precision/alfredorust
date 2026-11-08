@@ -460,6 +460,12 @@ pub fn build_app(state: Arc<AppState>) -> Router {
         .route("/api/production/cut_list", get(routes::api_cut_list))
         .route("/api/production/cut_list/{id}/done", axum::routing::post(routes::api_cut_done))
         .route("/api/production/cut_list/{id}/queue", axum::routing::post(routes::api_cut_queue))
+        .route("/api/admin/projects/{id}/material_rates", get(routes::api_project_material_rates))
+        .route(
+            "/api/admin/projects/{id}/material_quotes",
+            get(routes::api_project_material_quotes).post(routes::api_project_material_quote_create),
+        )
+        .route("/api/admin/material_quotes/{id}/delete", axum::routing::post(routes::api_material_quote_delete))
         .route("/api/admin/project_concepts/{id}/unit_price", axum::routing::post(routes::api_part_unit_price_set))
         .route("/api/admin/material_prices/from_cfdis", axum::routing::post(routes::api_material_prices_from_cfdis))
         .route("/api/admin/projects/{id}/close", axum::routing::post(routes::api_project_close))
