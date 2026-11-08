@@ -388,6 +388,7 @@ export default function ProjectDetail(): JSX.Element {
                         projectTitle={projectQuery.data?.title ?? ''}
                         concepts={conceptsQuery.data ?? []}
                         canEdit={isAdmin() || auth.hasPermission('take_work_orders') || auth.hasPermission('manage_production_board')}
+                        canSeeMoney={isAdmin()}
                       />
                     ),
                   },

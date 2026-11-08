@@ -84,3 +84,40 @@ export const pricesFromInvoices = (apply: boolean) =>
 /** Price per piece set by hand while costing a part (admin). */
 export const setUnitPrice = (conceptId: string, unitPrice: number | null) =>
   apiPost<void>(`/api/admin/project_concepts/${conceptId}/unit_price`, { unit_price: unitPrice })
+
+/** Density and $/kg of a material the project uses (Daniel, 2026-11-07). */
+export interface MaterialRate {
+  material: string
+  density_g_cm3: number | null
+  price_per_kg: number | null
+  priced_as: string | null
+  as_of: string | null
+}
+export const projectMaterialRates = (projectId: string) => apiGet<MaterialRate[]>(`/api/admin/projects/${projectId}/material_rates`)
+
+export interface MaterialQuoteLine {
+  stock: string
+  kg?: number | null
+  estimate?: number | null
+  quoted?: number | null
+}
+/** What a supplier quoted for the material, next to what we expected. */
+export interface MaterialQuote {
+  id: string
+  supplier: string
+  total: number
+  estimate_total: number
+  lines: MaterialQuoteLine[]
+  note: string | null
+  created_by: string
+  created_at: string
+}
+export const projectMaterialQuotes = (projectId: string) => apiGet<MaterialQuote[]>(`/api/admin/projects/${projectId}/material_quotes`)
+export const createMaterialQuote = (
+  projectId: string,
+  body: { supplier: string; total: number; estimate_total: number; lines: MaterialQuoteLine[]; note?: string | null },
+) => apiPost<{ ok: boolean; id: string }>(`/api/admin/projects/${projectId}/material_quotes`, body)
+export const deleteMaterialQuote = (id: string) => apiPost<void>(`/api/admin/material_quotes/${id}/delete`, {})
+
+/** The multiplier on material a part is quoted at unless set (backend DEFAULT_MULTIPLIER). */
+export const DEFAULT_MULTIPLIER = 3.5
