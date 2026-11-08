@@ -100,6 +100,8 @@ export interface MaterialQuoteLine {
   kg?: number | null
   estimate?: number | null
   quoted?: number | null
+  /** The material, to compare suppliers material by material. */
+  material?: string | null
 }
 /** What a supplier quoted for the material, next to what we expected. */
 export interface MaterialQuote {

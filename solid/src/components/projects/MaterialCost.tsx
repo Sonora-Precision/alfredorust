@@ -20,6 +20,7 @@ import {
   projectMaterialRates,
 } from '../../lib/api/quoting'
 import type { Group } from './MaterialRequest'
+import { type Best, type Offer, bestCombination, byMaterial, offersByMaterial } from './materialCompare'
 
 const CM3_PER_IN3 = 16.387064
 /** Suppliers weigh about 8% over the theoretical weight (HG #17573, 2026-11-07); Daniel set 10%. */
@@ -86,6 +87,80 @@ export function costLines(groups: Group[], rates: MaterialRate[]): CostLine[] {
   })
 }
 
+/** Material by material: what we expect and every supplier's offer, the cheapest marked. */
+function Compare(props: { project: CostLine[]; offers: Map<string, Offer[]>; best: Best | null }): JSX.Element {
+  return (
+    <Show when={props.offers.size}>
+      <div class="mt-4">
+        <p class="text-sm font-semibold text-foreground">Comparar proveedores por material</p>
+        <div class="mt-2 overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-left text-xs text-muted-foreground">
+                <th class="py-1 pr-2 font-normal">Material</th>
+                <th class="py-1 pr-2 text-right font-normal">Prospectado</th>
+                <th class="py-1 font-normal">Propuestas</th>
+              </tr>
+            </thead>
+            <tbody>
+              <For each={props.project}>
+                {(m) => {
+                  const list = () => (m.material ? (props.offers.get(m.material) ?? []) : [])
+                  return (
+                    <tr class="border-t border-border align-top">
+                      <td class="py-1.5 pr-2 text-foreground">{m.stock}</td>
+                      <td class="tnum py-1.5 pr-2 text-right">{m.estimate != null ? mx(m.estimate) : '—'}</td>
+                      <td class="py-1.5">
+                        <Show when={list().length} fallback={<span class="text-xs text-amber-700 dark:text-amber-300">sin cotizar</span>}>
+                          <div class="flex flex-wrap gap-x-4 gap-y-1">
+                            <For each={list()}>
+                              {(o, i) => (
+                                <span class={i() === 0 && list().length > 1 ? 'rounded bg-emerald-500/10 px-1.5' : ''}>
+                                  <span class="font-medium text-foreground">{o.supplier}</span> <span class="tnum">{mx(o.quoted)}</span>{' '}
+                                  <Show when={o.estimate > 0}>
+                                    <Diff quoted={o.quoted} estimate={o.estimate} />
+                                  </Show>
+                                  <Show when={o.partial}>
+                                    <span class="text-[11px] text-muted-foreground"> · parcial</span>
+                                  </Show>
+                                  <Show when={i() === 0 && list().length > 1}>
+                                    <span class="text-[11px] font-medium text-emerald-700 dark:text-emerald-400"> ✔ más barato</span>
+                                  </Show>
+                                </span>
+                              )}
+                            </For>
+                          </div>
+                        </Show>
+                      </td>
+                    </tr>
+                  )
+                }}
+              </For>
+            </tbody>
+            <Show when={props.best}>
+              <tfoot>
+                <tr class="border-t-2 border-border">
+                  <td class="py-2 pr-2 font-medium text-foreground">Mejor combinación</td>
+                  <td class="tnum py-2 pr-2 text-right text-muted-foreground">{mx(props.project.reduce((s, m) => s + (m.estimate ?? 0), 0))}</td>
+                  <td class="py-2">
+                    <span class="tnum text-base font-semibold text-foreground">{mx(props.best!.total)}</span>
+                    <Show when={props.best!.pending.length}>
+                      <span class="ml-2 text-xs text-amber-700 dark:text-amber-300">incluye prospectado de: {props.best!.pending.join(', ')}</span>
+                    </Show>
+                  </td>
+                </tr>
+              </tfoot>
+            </Show>
+          </table>
+        </div>
+        <p class="mt-1 text-[11px] text-muted-foreground">
+          Cada propuesta se compara contra lo prospectado de lo que sí cotizó. "Parcial": cotizó solo algunos renglones de ese material.
+        </p>
+      </div>
+    </Show>
+  )
+}
+
 /** Quoted vs expected, as Daniel reads it: + is the supplier above our estimate. */
 function Diff(props: { quoted: number; estimate: number }): JSX.Element {
   const pct = () => (props.estimate > 0 ? ((props.quoted - props.estimate) / props.estimate) * 100 : null)
@@ -126,6 +201,9 @@ export function MaterialCost(props: { projectId: string; requestGroups: Group[];
   const projectLines = createMemo(() => costLines(props.allGroups, rates.data ?? []))
   const projectEstimate = () => projectLines().reduce((s, l) => s + (l.estimate ?? 0), 0)
   const projectIncomplete = () => projectLines().filter((l) => l.estimate == null).length
+  const projectMaterials = createMemo(() => byMaterial(projectLines()))
+  const offers = createMemo(() => offersByMaterial(quotes.data ?? [], projectLines()))
+  const best = createMemo(() => bestCombination(projectMaterials(), offers()))
   const projectQuote = createQuery(() => ({
     queryKey: ['project-quote', props.projectId],
     queryFn: () => getProjectQuote(props.projectId),
@@ -137,24 +215,35 @@ export function MaterialCost(props: { projectId: string; requestGroups: Group[];
   const [supplier, setSupplier] = createSignal('')
   const [total, setTotal] = createSignal('')
   const [note, setNote] = createSignal('')
+  // A supplier may quote a few lines or a few materials only (Delrin to one, 4140 to two).
+  const [mode, setMode] = createSignal<'renglon' | 'material'>('renglon')
   const [lineQuoted, setLineQuoted] = createSignal<Record<string, string>>({})
-  const quotedOf = (stock: string) => num(lineQuoted()[stock] ?? '')
-  const linesQuotedSum = () => lines().reduce((s, l) => s + (quotedOf(l.stock) || 0), 0)
+  const keyOf = (stock: string) => (mode() === 'material' ? `m:${stock}` : stock)
+  const quotedOf = (stock: string) => num(lineQuoted()[keyOf(stock)] ?? '')
+  const materials = createMemo(() => byMaterial(lines()))
+  /** What the form captures: the lines, or one row per material. */
+  const rowsNow = (): CostLine[] => (mode() === 'material' ? materials() : lines())
+  const linesQuotedSum = () => rowsNow().reduce((s, l) => s + (quotedOf(l.stock) || 0), 0)
   const totalValue = () => num(total()) ?? (linesQuotedSum() || null)
+  const quotedRows = () => rowsNow().filter((l) => quotedOf(l.stock) != null)
+  /** Compared against what it quoted only; a quote with no breakdown covers everything. */
+  const coveredEstimate = () => (quotedRows().length ? quotedRows() : lines()).reduce((s, l) => s + (l.estimate ?? 0), 0)
 
   const save = createMutation(() => ({
     mutationFn: () => {
       const t = totalValue()
       if (!supplier().trim()) throw new Error('Escribe el proveedor')
       if (t == null || Number.isNaN(t) || t <= 0) throw new Error('Escribe lo que cotizó el proveedor')
-      if (lines().some((l) => Number.isNaN(quotedOf(l.stock)))) throw new Error('Los montos por renglón van en números')
+      if (rowsNow().some((l) => Number.isNaN(quotedOf(l.stock)))) throw new Error('Los montos van en números')
+      const rows = quotedRows().length ? quotedRows() : lines()
       return createMaterialQuote(props.projectId, {
         supplier: supplier().trim(),
         total: t,
-        estimate_total: Math.round(estimate() * 100) / 100,
+        estimate_total: Math.round(coveredEstimate() * 100) / 100,
         note: note().trim() || null,
-        lines: lines().map((l) => ({
+        lines: rows.map((l) => ({
           stock: l.stock,
+          material: l.material,
           kg: l.kg != null ? Math.round(l.kg * 1000) / 1000 : null,
           estimate: l.estimate != null ? Math.round(l.estimate * 100) / 100 : null,
           quoted: quotedOf(l.stock),
@@ -200,11 +289,21 @@ export function MaterialCost(props: { projectId: string; requestGroups: Group[];
         when={lines().length}
         fallback={<p class="mt-3 text-sm text-muted-foreground">Sin stock capturado {scope() === 'solicitud' ? 'en la solicitud' : 'en el proyecto'}.</p>}
       >
-        <div class="mt-3 overflow-x-auto">
+        <div class="mt-3 flex flex-wrap items-center gap-1.5 text-xs">
+          <span class="text-muted-foreground">Capturar cotización</span>
+          <button type="button" class={tab(mode() === 'renglon')} onClick={() => setMode('renglon')}>
+            Por renglón
+          </button>
+          <button type="button" class={tab(mode() === 'material')} onClick={() => setMode('material')}>
+            Por material
+          </button>
+          <span class="text-muted-foreground">· llena solo lo que el proveedor cotizó</span>
+        </div>
+        <div class="mt-2 overflow-x-auto">
           <table class="w-full text-sm">
             <thead>
               <tr class="text-left text-xs text-muted-foreground">
-                <th class="py-1 pr-2 font-normal">Stock</th>
+                <th class="py-1 pr-2 font-normal">{mode() === 'material' ? 'Material' : 'Stock'}</th>
                 <th class="py-1 pr-2 text-right font-normal">Kg (+10%)</th>
                 <th class="py-1 pr-2 text-right font-normal">$/kg</th>
                 <th class="py-1 pr-2 text-right font-normal">Prospectado</th>
@@ -212,7 +311,7 @@ export function MaterialCost(props: { projectId: string; requestGroups: Group[];
               </tr>
             </thead>
             <tbody>
-              <For each={lines()}>
+              <For each={rowsNow()}>
                 {(l) => (
                   <tr class="border-t border-border">
                     <td class="py-1.5 pr-2 text-foreground">{l.stock}</td>
@@ -231,8 +330,8 @@ export function MaterialCost(props: { projectId: string; requestGroups: Group[];
                         inputmode="decimal"
                         placeholder="$"
                         aria-label={`Cotizado por ${l.stock}`}
-                        value={lineQuoted()[l.stock] ?? ''}
-                        onInput={(e) => setLineQuoted((s) => ({ ...s, [l.stock]: e.currentTarget.value }))}
+                        value={lineQuoted()[keyOf(l.stock)] ?? ''}
+                        onInput={(e) => setLineQuoted((s) => ({ ...s, [keyOf(l.stock)]: e.currentTarget.value }))}
                       />
                     </td>
                   </tr>
@@ -286,7 +385,7 @@ export function MaterialCost(props: { projectId: string; requestGroups: Group[];
           </label>
           <Show when={totalValue() != null && !Number.isNaN(totalValue()!)}>
             <span class="pb-2 text-sm">
-              vs prospectado: <Diff quoted={totalValue()!} estimate={estimate()} />
+              vs prospectado{quotedRows().length ? ' de lo cotizado' : ''}: <Diff quoted={totalValue()!} estimate={coveredEstimate()} />
             </span>
           </Show>
           <Button type="submit" disabled={save.isPending}>
@@ -296,6 +395,7 @@ export function MaterialCost(props: { projectId: string; requestGroups: Group[];
       </Show>
 
       <Show when={(quotes.data ?? []).length}>
+        <Compare project={projectMaterials()} offers={offers()} best={best()} />
         <div class="mt-4 space-y-2">
           <p class="text-xs font-medium text-muted-foreground">Cotizaciones guardadas</p>
           <For each={quotes.data}>{(q) => <SavedQuote quote={q} onDelete={() => window.confirm(`¿Borrar la cotización de ${q.supplier}?`) && remove.mutate(q.id)} />}</For>
@@ -307,6 +407,7 @@ export function MaterialCost(props: { projectId: string; requestGroups: Group[];
         expected={projectEstimate()}
         expectedComplete={projectIncomplete() === 0}
         supplier={quotes.data?.[0]}
+        best={best()}
       />
     </div>
   )
@@ -324,7 +425,7 @@ function Times(props: { sold: number; cost: number }): JSX.Element {
 
 /** Quick valuation: what the client pays for the machined parts against their material,
  * expected and quoted by the supplier. It should be about 3.5×. */
-function Valuation(props: { sold: number; expected: number; expectedComplete: boolean; supplier?: MaterialQuote }): JSX.Element {
+function Valuation(props: { sold: number; expected: number; expectedComplete: boolean; supplier?: MaterialQuote; best: Best | null }): JSX.Element {
   const card = 'rounded-lg border border-border p-3'
   return (
     <div class="mt-4 rounded-lg bg-muted/40 p-3">
@@ -356,7 +457,16 @@ function Valuation(props: { sold: number; expected: number; expectedComplete: bo
           </div>
           <div class={card}>
             <p class="text-xs text-muted-foreground">Material cotizado por el proveedor</p>
-            <Show when={props.supplier} fallback={<p class="text-sm text-muted-foreground">Sin cotización guardada</p>}>
+            <Show when={props.best}>
+              <p class="tnum text-lg font-semibold text-foreground">{mx(props.best!.total)}</p>
+              <p class="text-xs">
+                Cliente / material: <Times sold={props.sold} cost={props.best!.total} />
+              </p>
+              <p class="text-[11px] text-muted-foreground">
+                Mejor combinación{props.best!.pending.length ? `; con prospectado de ${props.best!.pending.join(', ')}` : ''}
+              </p>
+            </Show>
+            <Show when={!props.best && props.supplier} fallback={<Show when={!props.best}><p class="text-sm text-muted-foreground">Sin cotización guardada</p></Show>}>
               <p class="tnum text-lg font-semibold text-foreground">{mx(props.supplier!.total)}</p>
               <p class="text-xs">
                 Cliente / material: <Times sold={props.sold} cost={props.supplier!.total} />

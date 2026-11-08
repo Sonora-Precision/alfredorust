@@ -178,7 +178,7 @@ async fn quote_from_blank_weight_and_apply() {
     let quotes_path = format!("/api/admin/projects/{}/material_quotes", project.to_hex());
     let quote_body = serde_json::json!({
         "supplier": "HG Aceros", "total": 1800, "estimate_total": 1500,
-        "lines": [{ "stock": "Aluminio 6061 solera 1\" × 1.5\" × 49.5\"", "kg": 1.2, "estimate": 300, "quoted": 360 }],
+        "lines": [{ "stock": "Aluminio 6061 solera 1\" × 1.5\" × 49.5\"", "kg": 1.2, "estimate": 300, "quoted": 360, "material": " Aluminio 6061 " }],
     });
     let (status, _) = post(quotes_path.clone(), jose.clone(), quote_body.clone()).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
@@ -192,6 +192,7 @@ async fn quote_from_blank_weight_and_apply() {
     assert_eq!(status, StatusCode::OK);
     let list = json(&body);
     assert_eq!((list[0]["supplier"].as_str(), list[0]["total"].as_f64(), list[0]["lines"][0]["quoted"].as_f64()), (Some("HG Aceros"), Some(1800.0), Some(360.0)));
+    assert_eq!(list[0]["lines"][0]["material"], "Aluminio 6061");
     let qid = list[0]["id"].as_str().unwrap().to_string();
     let (status, _) = get(quotes_path.clone(), jose.clone()).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
