@@ -103,6 +103,14 @@ const turno = (e: AttendanceEmployee): string => {
   return `${ventanas(e.shift)} · tolerancia ${e.shift.tolerance_min} min${flex.length ? ` · también puede: ${flex.join(', ')}` : ''}`
 }
 
+function InternBadge(): JSX.Element {
+  return (
+    <span class="ml-2 rounded-full bg-sky-500/15 px-2 py-0.5 align-middle text-[11px] font-medium text-sky-700 dark:text-sky-300">
+      Practicante
+    </span>
+  )
+}
+
 function DayCell(props: { day: AttendanceDay; onDeleteManual: (id: string) => void; onCorrect: () => void }): JSX.Element {
   const st = () => STATUS[props.day.status]
   const fix = () => props.day.correction
@@ -273,7 +281,12 @@ export default function Attendance(): JSX.Element {
                     {(e) => (
                       <TableRow>
                         <TableCell class="align-top">
-                          <p class="font-medium text-foreground">{e.name}</p>
+                          <p class="font-medium text-foreground">
+                            {e.name}
+                            <Show when={e.intern}>
+                              <InternBadge />
+                            </Show>
+                          </p>
                           <p class="text-xs text-muted-foreground">
                             #{e.employee_no}
                             {e.shift ? ` · ${ventanas(e.shift)}` : ''}
@@ -348,7 +361,12 @@ export default function Attendance(): JSX.Element {
                 {(e) => (
                   <TableRow>
                     <TableCell class="tnum">{e.employee_no}</TableCell>
-                    <TableCell class={e.active ? 'font-medium text-foreground' : 'text-muted-foreground line-through'}>{e.name}</TableCell>
+                    <TableCell class={e.active ? 'font-medium text-foreground' : 'text-muted-foreground line-through'}>
+                      {e.name}
+                      <Show when={e.intern}>
+                        <InternBadge />
+                      </Show>
+                    </TableCell>
                     <TableCell class="text-sm">{turno(e)}</TableCell>
                     <TableCell class="whitespace-nowrap text-right">
                       <Button variant="ghost" aria-label={`Editar a ${e.name}`} onClick={() => setEditing({ ...e })}>
@@ -562,6 +580,7 @@ function EmployeeForm(props: { initial: AttendanceEmployee; onClose: () => void 
   const toggleFlex = (k: 'manana' | 'tarde', on: boolean) => setFlex(on ? [...flex().filter((x) => x !== k), k] : flex().filter((x) => x !== k))
   const [active, setActive] = createSignal(props.initial.active)
   const [startDate, setStartDate] = createSignal(props.initial.start_date ?? '')
+  const [intern, setIntern] = createSignal(props.initial.intern ?? false)
 
   const valid = createMemo(
     () =>
@@ -615,6 +634,7 @@ function EmployeeForm(props: { initial: AttendanceEmployee; onClose: () => void 
         alternates: hasShift() ? flex().map((k) => ({ ...SHIFT_PRESETS[k], tolerance_min: Math.max(0, Number(tolerance()) || 0) })) : [],
         active: active(),
         start_date: startDate(),
+        intern: intern(),
       }),
     onSuccess: () => {
       toast.success('Guardado')
@@ -763,6 +783,8 @@ function EmployeeForm(props: { initial: AttendanceEmployee; onClose: () => void 
           <Input type="date" value={startDate()} onInput={setStartDate} />
           <span class="block text-xs text-muted-foreground">Los días antes de esta fecha no cuentan como falta. Vacío = cuentan todos.</span>
         </label>
+
+        <Checkbox checked={intern()} onChange={setIntern} label="Practicante (sin sueldo; aparte de la nómina)" />
 
         <Show when={!isNew}>
           <Checkbox checked={active()} onChange={setActive} label="Activo (sale en el reporte)" />

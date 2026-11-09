@@ -31,6 +31,8 @@ export interface AttendanceEmployee {
   active: boolean
   /** First day they work here (YYYY-MM-DD); earlier days are not absences. "" = none. */
   start_date?: string | null
+  /** Unpaid intern: checks in like everyone, not payroll. */
+  intern?: boolean
 }
 
 export interface ManualCheck {
@@ -80,6 +82,7 @@ export interface AttendanceEmployeeReport {
   name: string
   shift?: AttendanceShift | null
   alternates?: AttendanceShift[]
+  intern?: boolean
   days: AttendanceDay[]
   totals: { worked_min: number; late_min: number; late_days: number; absences: number; incomplete: number }
 }

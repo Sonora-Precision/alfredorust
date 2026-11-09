@@ -2190,6 +2190,10 @@ pub struct AttendanceEmployee {
     /// (Daniel, 2026-11-09). None = always counted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub start_date: Option<String>,
+    /// Unpaid intern (Daniel, 2026-11-09): checks in like everyone, for punctuality and the
+    /// school's hour count, but is not payroll.
+    #[serde(default)]
+    pub intern: bool,
     pub updated_at: DateTime,
 }
 

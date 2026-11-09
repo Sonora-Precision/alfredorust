@@ -204,6 +204,7 @@ pub struct EmployeeData {
     pub alternates: Vec<ShiftData>,
     pub active: bool,
     pub start_date: Option<String>,
+    pub intern: bool,
 }
 
 fn shift_data(s: &AttendanceShift) -> ShiftData {
@@ -233,6 +234,7 @@ fn employee_data(e: &AttendanceEmployee) -> EmployeeData {
         alternates: e.alternates.iter().map(shift_data).collect(),
         active: e.active,
         start_date: e.start_date.clone(),
+        intern: e.intern,
     }
 }
 
@@ -303,6 +305,9 @@ pub struct EmployeePayload {
     /// First day they work here, YYYY-MM-DD. Omitted = keep it (new employees: today);
     /// "" = none (every day counts).
     pub start_date: Option<String>,
+    /// Unpaid intern (shown apart from payroll).
+    #[serde(default)]
+    pub intern: bool,
 }
 
 fn yes() -> bool {
@@ -416,6 +421,7 @@ pub async fn api_attendance_employee_save(
         shift,
         alternates,
         p.active,
+        p.intern,
         start_date.as_deref(),
         &today,
     )
@@ -716,6 +722,7 @@ pub struct EmployeeReport {
     pub name: String,
     pub shift: Option<ShiftData>,
     pub alternates: Vec<ShiftData>,
+    pub intern: bool,
     pub days: Vec<DayData>,
     pub totals: Totals,
 }
@@ -947,6 +954,7 @@ pub fn build_report(
             name: emp.name.clone(),
             shift: emp.shift.as_ref().map(shift_data),
             alternates: emp.alternates.iter().map(shift_data).collect(),
+            intern: emp.intern,
             days,
             totals,
         });
@@ -1065,6 +1073,7 @@ mod tests {
             alternates: vec![],
             active: true,
             start_date: None,
+            intern: false,
             updated_at: DateTime::now(),
         }
     }
