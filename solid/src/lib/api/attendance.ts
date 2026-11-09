@@ -64,6 +64,15 @@ export interface AttendanceDay {
   /** The window came from an alternate shift. */
   alternate?: boolean
   manual?: ManualCheck[]
+  /** An admin's correction; `entry`/`exit` above already use it. */
+  correction?: AttendanceCorrection | null
+}
+
+export interface AttendanceCorrection {
+  entry?: string | null
+  exit?: string | null
+  note?: string | null
+  author: string
 }
 
 export interface AttendanceEmployeeReport {
@@ -89,6 +98,14 @@ export const saveAttendanceEmployee = (payload: AttendanceEmployee) =>
   apiPost<void>('/api/admin/attendance/employees', payload)
 export const addManualCheck = (payload: { employee_no: string; date: string; time: string; note?: string | null }) =>
   apiPost<{ id: string }>('/api/admin/attendance/manual', payload)
-export const deleteManualCheck = (id: string) => apiPost<void>(`/api/admin/attendance/manual/${encodeURIComponent(id)}/delete`)
+/** Sets a day's entry/exit; with both empty the correction is removed. */
+export const saveCorrection = (payload: {
+  employee_no: string
+  date: string
+  entry?: string | null
+  exit?: string | null
+  note?: string | null
+}) => apiPost<void>('/api/admin/attendance/correction', payload)
+export const deleteManualCheck =(id: string) => apiPost<void>(`/api/admin/attendance/manual/${encodeURIComponent(id)}/delete`)
 export const deleteAttendanceEmployee =(employeeNo: string) =>
   apiPost<void>(`/api/admin/attendance/employees/${encodeURIComponent(employeeNo)}/delete`)

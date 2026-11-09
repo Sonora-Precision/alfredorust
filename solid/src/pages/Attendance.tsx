@@ -29,6 +29,7 @@ import {
   getAttendanceReport,
   listAttendanceEmployees,
   saveAttendanceEmployee,
+  saveCorrection,
 } from '../lib/api/attendance'
 import { humanizeError } from '../lib/api/client'
 
@@ -102,15 +103,37 @@ const turno = (e: AttendanceEmployee): string => {
   return `${ventanas(e.shift)} · tolerancia ${e.shift.tolerance_min} min${flex.length ? ` · también puede: ${flex.join(', ')}` : ''}`
 }
 
-function DayCell(props: { day: AttendanceDay; onDeleteManual: (id: string) => void }): JSX.Element {
+function DayCell(props: { day: AttendanceDay; onDeleteManual: (id: string) => void; onCorrect: () => void }): JSX.Element {
   const st = () => STATUS[props.day.status]
+  const fix = () => props.day.correction
   return (
-    <TableCell class="align-top">
+    <TableCell class="group align-top">
       <div class="space-y-0.5 text-xs">
-        <Show when={props.day.entry}>
-          <p class="tnum text-foreground">
-            {props.day.entry} – {props.day.exit ?? '¿?'}
-          </p>
+        <div class="flex items-start justify-between gap-1">
+          <Show when={props.day.entry} fallback={<span />}>
+            <p class="tnum text-foreground">
+              {props.day.entry} – {props.day.exit ?? '¿?'}
+            </p>
+          </Show>
+          <button
+            type="button"
+            class="rounded p-0.5 text-muted-foreground opacity-40 hover:bg-muted hover:text-foreground hover:opacity-100 focus:opacity-100 group-hover:opacity-100"
+            aria-label={`Corregir entrada o salida del ${props.day.date}`}
+            title="Corregir entrada / salida"
+            onClick={() => props.onCorrect()}
+          >
+            <Pencil class="h-3 w-3" />
+          </button>
+        </div>
+        <Show when={fix()}>
+          {(c) => (
+            <p
+              class="text-violet-700 dark:text-violet-300"
+              title={[c().note, `por ${c().author}`, props.day.checks.length ? `checador: ${props.day.checks.join(', ')}` : 'sin checadas'].filter(Boolean).join(' · ')}
+            >
+              corregido{c().note ? ` · ${c().note}` : ''}
+            </p>
+          )}
         </Show>
         <Show when={props.day.alternate && props.day.window}>
           <p class="text-muted-foreground">turno {props.day.window}</p>
@@ -175,6 +198,7 @@ export default function Attendance(): JSX.Element {
     onError: (err) => toast.error('No se pudo quitar', humanizeError(err, '')),
   }))
   const [manualOpen, setManualOpen] = createSignal(false)
+  const [correcting, setCorrecting] = createSignal<{ employee_no: string; name: string; day: AttendanceDay } | null>(null)
   const removeManual = createMutation(() => ({
     mutationFn: (id: string) => deleteManualCheck(id),
     onSuccess: () => {
@@ -255,7 +279,15 @@ export default function Attendance(): JSX.Element {
                             {e.shift ? ` · ${ventanas(e.shift)}` : ''}
                           </p>
                         </TableCell>
-                        <For each={e.days}>{(d) => <DayCell day={d} onDeleteManual={(id) => removeManual.mutate(id)} />}</For>
+                        <For each={e.days}>
+                          {(d) => (
+                            <DayCell
+                              day={d}
+                              onDeleteManual={(id) => removeManual.mutate(id)}
+                              onCorrect={() => setCorrecting({ employee_no: e.employee_no, name: e.name, day: d })}
+                            />
+                          )}
+                        </For>
                         <TableCell class="tnum align-top font-medium">{horas(e.totals.worked_min)}</TableCell>
                         <TableCell class="tnum align-top">
                           {e.totals.late_days > 0 ? `${e.totals.late_days} (${e.totals.late_min} min)` : e.shift ? '0' : '—'}
@@ -345,7 +377,86 @@ export default function Attendance(): JSX.Element {
       <Show when={manualOpen()}>
         <ManualCheckForm employees={(employees.data ?? []).filter((e) => e.active)} onClose={() => setManualOpen(false)} />
       </Show>
+      <Show when={correcting()}>{(c) => <CorrectionForm {...c()} onClose={() => setCorrecting(null)} />}</Show>
     </div>
+  )
+}
+
+/** Fix one day's entry and/or exit (Daniel, 2026-11-09). The real checks stay; empty = use the clock's. */
+function CorrectionForm(props: { employee_no: string; name: string; day: AttendanceDay; onClose: () => void }): JSX.Element {
+  const qc = useQueryClient()
+  const fix = props.day.correction
+  const [entry, setEntry] = createSignal(fix?.entry ?? '')
+  const [exit, setExit] = createSignal(fix?.exit ?? '')
+  const [note, setNote] = createSignal(fix?.note ?? '')
+  const valid = () => (entry() !== '' || exit() !== '') && (!entry() || !exit() || entry() < exit())
+
+  const save = createMutation(() => ({
+    mutationFn: (clear: boolean) =>
+      saveCorrection({
+        employee_no: props.employee_no,
+        date: props.day.date,
+        entry: clear ? null : entry() || null,
+        exit: clear ? null : exit() || null,
+        note: clear ? null : note().trim() || null,
+      }),
+    onSuccess: (_d, clear) => {
+      toast.success(clear ? 'Corrección quitada' : 'Día corregido')
+      void qc.invalidateQueries({ queryKey: ['attendance-report'] })
+      props.onClose()
+    },
+    onError: (err) => toast.error('No se pudo guardar', humanizeError(err, 'Revisa los datos')),
+  }))
+
+  return (
+    <Modal open onOpenChange={(o) => !o && props.onClose()} title={`Corregir ${diaCorto(props.day.date)} · ${props.name}`}>
+      <form
+        class="space-y-4"
+        onSubmit={(ev) => {
+          ev.preventDefault()
+          if (valid()) save.mutate(false)
+        }}
+      >
+        <p class="text-sm text-muted-foreground">
+          Checador: {props.day.checks.length ? props.day.checks.join(', ') : 'sin checadas'}. Las checadas no se borran; el reporte usa la hora que pongas aquí.
+        </p>
+        <div class="grid grid-cols-2 gap-2">
+          <label class="space-y-1">
+            <span class="text-sm font-medium text-foreground">Entrada</span>
+            <Input type="time" value={entry()} onInput={setEntry} />
+          </label>
+          <label class="space-y-1">
+            <span class="text-sm font-medium text-foreground">Salida</span>
+            <Input type="time" value={exit()} onInput={setExit} />
+          </label>
+        </div>
+        <p class="text-xs text-muted-foreground">Deja vacía la que esté bien: se toma la del checador.</p>
+        <Show when={entry() && exit() && entry() >= exit()}>
+          <p class="text-xs text-red-600">La salida debe ser después de la entrada.</p>
+        </Show>
+        <label class="block space-y-1">
+          <span class="text-sm font-medium text-foreground">Nota</span>
+          <Input value={note()} onInput={setNote} maxLength={200} placeholder="Ej. llegó a las 7, todavía no tenía huella" />
+        </label>
+        <div class="flex items-center justify-between gap-2">
+          <div>
+            <Show when={fix}>
+              <Button type="button" variant="ghost" disabled={save.isPending} onClick={() => save.mutate(true)}>
+                Quitar corrección
+              </Button>
+            </Show>
+          </div>
+          <div class="flex gap-2">
+            <Button type="button" variant="ghost" onClick={() => props.onClose()}>
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={!valid() || save.isPending}>
+              {save.isPending ? 'Guardando…' : 'Guardar'}
+            </Button>
+          </div>
+        </div>
+      </form>
+    </Modal>
   )
 }
 

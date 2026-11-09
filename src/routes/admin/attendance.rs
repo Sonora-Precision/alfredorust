@@ -21,13 +21,16 @@ use serde::{Deserialize, Serialize};
 use super::finance::helpers::require_admin_active;
 use super::project_backend::{iso, json_error};
 use crate::{
-    models::{AttendanceEmployee, AttendanceEvent, AttendanceShift, ShiftWindow},
+    models::{
+        AttendanceCorrection, AttendanceEmployee, AttendanceEvent, AttendanceShift, ShiftWindow,
+    },
     session::SessionUser,
     state::{
         AppState, MANUAL_DEVICE, MAX_EVENTS_PER_INGEST, NewAttendanceEvent,
-        delete_attendance_employee, delete_manual_attendance_event, insert_attendance_events,
-        insert_manual_attendance_event, last_attendance_event_at, list_attendance_employees,
-        list_attendance_events, upsert_attendance_employee,
+        delete_attendance_correction, delete_attendance_employee, delete_manual_attendance_event,
+        insert_attendance_events, insert_manual_attendance_event, last_attendance_event_at,
+        list_attendance_corrections, list_attendance_employees, list_attendance_events,
+        upsert_attendance_correction, upsert_attendance_employee,
     },
 };
 
@@ -559,6 +562,102 @@ pub async fn api_attendance_manual_delete(
     }
 }
 
+// ---------- corrections ----------
+
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub struct CorrectionPayload {
+    pub employee_no: String,
+    /// YYYY-MM-DD, shop date.
+    pub date: String,
+    /// "HH:MM"; empty/omitted = keep the one from the checks.
+    pub entry: Option<String>,
+    pub exit: Option<String>,
+    pub note: Option<String>,
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/admin/attendance/correction",
+    tag = "operations",
+    request_body = CorrectionPayload,
+    responses(
+        (status = 200, description = "Day corrected; with neither entry nor exit, the correction is removed"),
+        (status = 400, description = "Invalid input"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Admin only")
+    ),
+    security(("session" = []))
+)]
+pub async fn api_attendance_correction_save(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Json(p): Json<CorrectionPayload>,
+) -> Response {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let employee_no = p.employee_no.trim();
+    if !valid_code(employee_no, 32) {
+        return json_error(
+            StatusCode::BAD_REQUEST,
+            "employee_no must be 1-32 letters or digits",
+        );
+    }
+    let Ok(date) = NaiveDate::parse_from_str(p.date.trim(), "%Y-%m-%d") else {
+        return json_error(StatusCode::BAD_REQUEST, "date must be YYYY-MM-DD");
+    };
+    let date = date.format("%Y-%m-%d").to_string();
+    let time = |v: &Option<String>| -> Result<Option<NaiveTime>, ()> {
+        match v.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+            Some(v) => parse_hm(v).map(Some).ok_or(()),
+            None => Ok(None),
+        }
+    };
+    let (Ok(entry), Ok(exit)) = (time(&p.entry), time(&p.exit)) else {
+        return json_error(StatusCode::BAD_REQUEST, "entry and exit must be HH:MM");
+    };
+    if let (Some(a), Some(b)) = (entry, exit) {
+        if b <= a {
+            return json_error(StatusCode::BAD_REQUEST, "exit must be after entry");
+        }
+    }
+    if entry.is_none() && exit.is_none() {
+        return match delete_attendance_correction(&state, &company_id, employee_no, &date).await {
+            Ok(_) => Json(serde_json::json!({ "ok": true })).into_response(),
+            Err(err) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()),
+        };
+    }
+    let fmt = |t: Option<NaiveTime>| t.map(|t| t.format("%H:%M").to_string());
+    let (entry, exit) = (fmt(entry), fmt(exit));
+    let note: Option<String> = p
+        .note
+        .as_deref()
+        .map(|n| n.trim().chars().take(200).collect::<String>())
+        .filter(|n| !n.is_empty());
+    let u = session_user.user();
+    let author = u
+        .display_name
+        .clone()
+        .filter(|n| !n.trim().is_empty())
+        .unwrap_or_else(|| u.username.clone());
+    match upsert_attendance_correction(
+        &state,
+        &company_id,
+        employee_no,
+        &date,
+        entry.as_deref(),
+        exit.as_deref(),
+        note.as_deref(),
+        &author,
+    )
+    .await
+    {
+        Ok(()) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Err(err) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()),
+    }
+}
+
 // ---------- report ----------
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -582,6 +681,16 @@ pub struct DayData {
     pub alternate: bool,
     /// Checks typed by an admin that day.
     pub manual: Vec<ManualCheckData>,
+    /// An admin's correction of the entry/exit; `entry`/`exit` above already use it.
+    pub correction: Option<CorrectionData>,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+pub struct CorrectionData {
+    pub entry: Option<String>,
+    pub exit: Option<String>,
+    pub note: Option<String>,
+    pub author: String,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -662,6 +771,7 @@ fn day_data(
     date: NaiveDate,
     events: &[&AttendanceEvent],
     shifts: &[&AttendanceShift],
+    correction: Option<&AttendanceCorrection>,
     now: DateTime,
 ) -> DayData {
     let manual: Vec<ManualCheckData> = events
@@ -684,16 +794,24 @@ fn day_data(
         }
     }
     let minutes: Vec<i64> = checks.iter().map(|&c| shop_minute(c)).collect();
-    let entry = minutes.first().copied();
-    let exit = if minutes.len() >= 2 {
-        minutes.last().copied()
-    } else {
-        None
+    let fixed_entry = correction.and_then(|c| c.entry.as_deref()).map(minute_of);
+    let fixed_exit = correction.and_then(|c| c.exit.as_deref()).map(minute_of);
+    let entry = fixed_entry.or(minutes.first().copied());
+    let exit = match (fixed_exit, fixed_entry) {
+        (Some(x), _) => Some(x),
+        // A corrected entry: the exit is the last check after it.
+        (None, Some(e)) => minutes
+            .last()
+            .copied()
+            .filter(|&m| m > e + DOUBLE_CHECK_MS / 60_000),
+        (None, None) if minutes.len() >= 2 => minutes.last().copied(),
+        (None, None) => None,
     };
     let worked_min = match (entry, exit) {
-        (Some(a), Some(b)) => b - a,
+        (Some(a), Some(b)) if b > a => b - a,
         _ => 0,
     };
+    let has_checks = !checks.is_empty() || entry.is_some();
     let weekday = date.weekday().number_from_monday() as u8;
     // (shift, start, end, is_alternate) of every shift that works this weekday
     let candidates: Vec<(&AttendanceShift, &str, &str, bool)> = shifts
@@ -713,7 +831,7 @@ fn day_data(
     let status = match (shifts.is_empty(), chosen) {
         (true, _) => "sin_horario",
         (false, None) => {
-            if checks.is_empty() {
+            if !has_checks {
                 "descanso"
             } else {
                 "extra"
@@ -753,6 +871,12 @@ fn day_data(
         window: chosen.map(|(_, a, b, _)| format!("{a}–{b}")),
         alternate: chosen.is_some_and(|c| c.3),
         manual,
+        correction: correction.map(|c| CorrectionData {
+            entry: c.entry.clone(),
+            exit: c.exit.clone(),
+            note: c.note.clone(),
+            author: c.author.clone(),
+        }),
     }
 }
 
@@ -760,10 +884,15 @@ fn day_data(
 pub fn build_report(
     employees: &[AttendanceEmployee],
     events: &[AttendanceEvent],
+    corrections: &[AttendanceCorrection],
     from: NaiveDate,
     to: NaiveDate,
     now: DateTime,
 ) -> AttendanceReport {
+    let fixes: BTreeMap<(&str, &str), &AttendanceCorrection> = corrections
+        .iter()
+        .map(|c| ((c.employee_no.as_str(), c.date.as_str()), c))
+        .collect();
     let mut by_employee: BTreeMap<&str, BTreeMap<NaiveDate, Vec<&AttendanceEvent>>> =
         BTreeMap::new();
     for e in events {
@@ -795,9 +924,11 @@ pub fn build_report(
             .map(|&d| {
                 let mut day_events = mine.get(&d).cloned().unwrap_or_default();
                 day_events.sort_by_key(|e| e.at);
-                let mut day = day_data(d, &day_events, &shifts, now);
+                let key = d.format("%Y-%m-%d").to_string();
+                let fix = fixes.get(&(emp.employee_no.as_str(), key.as_str())).copied();
+                let mut day = day_data(d, &day_events, &shifts, fix, now);
                 // Before they started here, a day without checks is nothing, not an absence.
-                if start.is_some_and(|s| d < s) && day_events.is_empty() {
+                if start.is_some_and(|s| d < s) && day.entry.is_none() {
                     day.status = "antes_alta".to_string();
                 }
                 totals.worked_min += day.worked_min;
@@ -896,14 +1027,19 @@ pub async fn api_attendance_report(
         );
     }
     let range_end = shop_midnight(to + Duration::days(1));
-    let (employees, events) = match tokio::try_join!(
+    let (from_s, to_s) = (
+        from.format("%Y-%m-%d").to_string(),
+        to.format("%Y-%m-%d").to_string(),
+    );
+    let (employees, events, corrections) = match tokio::try_join!(
         list_attendance_employees(&state, &company_id),
         list_attendance_events(&state, &company_id, shop_midnight(from), range_end),
+        list_attendance_corrections(&state, &company_id, &from_s, &to_s),
     ) {
         Ok(v) => v,
         Err(err) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()),
     };
-    Json(build_report(&employees, &events, from, to, now)).into_response()
+    Json(build_report(&employees, &events, &corrections, from, to, now)).into_response()
 }
 
 #[cfg(test)]
@@ -941,6 +1077,7 @@ mod tests {
         let r = build_report(
             &[emp],
             &events,
+            &[],
             d("2026-11-06"),
             d("2026-11-09"),
             t("2026-11-10T06:00:00Z"),
@@ -950,6 +1087,50 @@ mod tests {
         assert_eq!(days[1].status, "antes_alta"); // Sat
         assert_eq!(days[3].entry.as_deref(), Some("07:01")); // Mon, counted
         assert_eq!(r.employees[0].totals.absences, 0);
+    }
+
+    fn fix(no: &str, date: &str, entry: Option<&str>, exit: Option<&str>) -> AttendanceCorrection {
+        AttendanceCorrection {
+            id: None,
+            company_id: ObjectId::new(),
+            employee_no: no.into(),
+            date: date.into(),
+            entry: entry.map(Into::into),
+            exit: exit.map(Into::into),
+            note: Some("llegó a las 7, todavía sin huella".into()),
+            author: "Daniel".into(),
+            updated_at: DateTime::now(),
+        }
+    }
+
+    #[test]
+    fn corrected_entry_and_exit() {
+        let emp = employee("0006", Some(manana()));
+        // Mon: one check at 11:01 (her fingerprint test); Tue: no checks at all.
+        let events = vec![check("0006", "2026-11-09T18:01:00Z")];
+        let now = t("2026-11-11T06:00:00Z");
+        let r = build_report(&[emp.clone()], &events, &[], d("2026-11-09"), d("2026-11-10"), now);
+        assert_eq!(r.employees[0].days[0].status, "incompleto"); // one late check, no exit
+        assert_eq!(r.employees[0].days[1].status, "falta");
+
+        let fixes = vec![
+            // entry only: the 11:01 check becomes the exit
+            fix("0006", "2026-11-09", Some("07:00"), None),
+            // forgot to check at all: both typed in
+            fix("0006", "2026-11-10", Some("07:05"), Some("15:00")),
+        ];
+        let r = build_report(&[emp], &events, &fixes, d("2026-11-09"), d("2026-11-10"), now);
+        let mon = &r.employees[0].days[0];
+        assert_eq!(
+            (mon.entry.as_deref(), mon.exit.as_deref(), mon.status.as_str(), mon.worked_min),
+            (Some("07:00"), Some("11:01"), "ok", 241)
+        );
+        assert_eq!(mon.checks, vec!["11:01"]); // the real check stays visible
+        assert_eq!(mon.correction.as_ref().map(|c| c.author.as_str()), Some("Daniel"));
+        let tue = &r.employees[0].days[1];
+        assert_eq!((tue.status.as_str(), tue.worked_min), ("ok", 475));
+        assert_eq!(r.employees[0].totals.absences, 0);
+        assert_eq!(r.employees[0].totals.late_days, 0);
     }
 
     fn tarde() -> AttendanceShift {
@@ -1028,7 +1209,7 @@ mod tests {
             manual("2026-11-14T12:00:00-07:00"),
         ];
         let now = t("2026-11-16T09:00:00-07:00");
-        let r = build_report(&[jose], &events, d("2026-11-09"), d("2026-11-15"), now);
+        let r = build_report(&[jose], &events, &[], d("2026-11-09"), d("2026-11-15"), now);
         let days = &r.employees[0].days;
         let view = |i: usize| {
             (
@@ -1087,7 +1268,7 @@ mod tests {
         ];
         // Now = Friday 13 at 15:00: Friday's shift has not ended.
         let now = t("2026-11-13T15:00:00-07:00");
-        let r = build_report(&emps, &events, d("2026-11-09"), d("2026-11-15"), now);
+        let r = build_report(&emps, &events, &[], d("2026-11-09"), d("2026-11-15"), now);
         let jose = &r.employees[0];
         let status: Vec<&str> = jose.days.iter().map(|x| x.status.as_str()).collect();
         assert_eq!(

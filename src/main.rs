@@ -843,6 +843,10 @@ async fn main() {
             post(routes::api_attendance_manual_delete),
         )
         .route(
+            "/api/admin/attendance/correction",
+            post(routes::api_attendance_correction_save),
+        )
+        .route(
             "/api/admin/projects/{id}/machine_time",
             get(routes::api_project_machine_time),
         )

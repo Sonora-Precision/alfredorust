@@ -29,7 +29,7 @@ pub mod users_api;
 
 pub use account::*;
 pub use attendance::{
-    api_attendance_employee_delete, api_attendance_employee_save, api_attendance_employees,
+    api_attendance_correction_save, api_attendance_employee_delete, api_attendance_employee_save, api_attendance_employees,
     api_attendance_ingest, api_attendance_last, api_attendance_manual_add,
     api_attendance_manual_delete, api_attendance_report,
 };

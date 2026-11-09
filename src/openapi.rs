@@ -151,6 +151,7 @@ impl Modify for SecurityAddon {
         crate::routes::admin::attendance::api_attendance_report,
         crate::routes::admin::attendance::api_attendance_manual_add,
         crate::routes::admin::attendance::api_attendance_manual_delete,
+        crate::routes::admin::attendance::api_attendance_correction_save,
         crate::routes::admin::project_backend::api_resource_usages_index,
         crate::routes::admin::project_backend::api_resource_usages_create,
         crate::routes::admin::project_backend::api_resource_usages_grid_save,

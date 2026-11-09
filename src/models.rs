@@ -2081,6 +2081,28 @@ pub struct AttendanceEvent {
     pub author: Option<String>,
 }
 
+/// An admin's correction of one employee's entry and/or exit on one day (Daniel, 2026-11-09:
+/// "quiero poder modificar la hr de entrada"). The checks themselves stay as they were; the
+/// report uses these times instead. One per (`company_id`, `employee_no`, `date`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AttendanceCorrection {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub company_id: ObjectId,
+    pub employee_no: String,
+    /// YYYY-MM-DD, shop date.
+    pub date: String,
+    /// "HH:MM" shop time; None = keep the one from the checks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    pub author: String,
+    pub updated_at: DateTime,
+}
+
 /// A daily window on some weekdays.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ShiftWindow {

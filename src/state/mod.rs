@@ -10,7 +10,7 @@ use crate::models::{
     PlannedEntry, ProcessOperation, Project, ProjectConcept, RecurringPlan, Resource, ResourceLog,
     ResourceUsage, ResourceUsageAllocation, SatConfig, ServiceOrder, Session, Transaction, User,
     UserCompany, WorkOrderEvent, MachineQueueEntry, MachineState, MaterialPrice, MaterialPricePoint, MaterialQuote, MaterialReceipt, PartComment, PartFile, Suggestion, PlantLayout, Quote, QuoteFile, QuoteSettings, ClientQuoteDefaults,
-    ShopDailyReport, AttendanceEmployee, AttendanceEvent,
+    ShopDailyReport, AttendanceCorrection, AttendanceEmployee, AttendanceEvent,
 };
 use bson::Document;
 
@@ -147,6 +147,7 @@ pub struct AppState {
     pub quote_files: Collection<QuoteFile>,
     pub attendance_events: Collection<AttendanceEvent>,
     pub attendance_employees: Collection<AttendanceEmployee>,
+    pub attendance_corrections: Collection<AttendanceCorrection>,
 }
 
 pub async fn init_state() -> Result<AppState> {
@@ -390,6 +391,20 @@ pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppStat
         )
         .await
         .context("creating the unique attendance employee index")?;
+    db.collection::<AttendanceCorrection>("attendance_corrections")
+        .create_index(
+            IndexModel::builder()
+                .keys(mongodb::bson::doc! { "company_id": 1, "employee_no": 1, "date": 1 })
+                .options(
+                    IndexOptions::builder()
+                        .name("unique_attendance_correction".to_string())
+                        .unique(true)
+                        .build(),
+                )
+                .build(),
+        )
+        .await
+        .context("creating the unique attendance correction index")?;
 
     let state = AppState {
         cfdi_archive_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
@@ -439,6 +454,7 @@ pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppStat
         quote_files: db.collection::<QuoteFile>("quote_files"),
         attendance_events: db.collection::<AttendanceEvent>("attendance_events"),
         attendance_employees: db.collection::<AttendanceEmployee>("attendance_employees"),
+        attendance_corrections: db.collection::<AttendanceCorrection>("attendance_corrections"),
     };
 
     let interrupted = fail_interrupted_cfdi_jobs(&state).await?;

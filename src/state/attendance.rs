@@ -4,7 +4,7 @@ use anyhow::{Result, bail};
 use futures::stream::TryStreamExt;
 use mongodb::bson::{DateTime, doc, oid::ObjectId};
 
-use crate::models::{AttendanceEmployee, AttendanceEvent, AttendanceShift};
+use crate::models::{AttendanceCorrection, AttendanceEmployee, AttendanceEvent, AttendanceShift};
 
 use super::AppState;
 
@@ -89,6 +89,63 @@ pub async fn list_attendance_employees(
         .sort(doc! { "employee_no": 1 })
         .await?;
     Ok(cursor.try_collect().await?)
+}
+
+/// Corrections with `from <= date <= to` (YYYY-MM-DD compares as text).
+pub async fn list_attendance_corrections(
+    state: &AppState,
+    company_id: &ObjectId,
+    from: &str,
+    to: &str,
+) -> Result<Vec<AttendanceCorrection>> {
+    let cursor = state
+        .attendance_corrections
+        .find(doc! { "company_id": company_id, "date": { "$gte": from, "$lte": to } })
+        .await?;
+    Ok(cursor.try_collect().await?)
+}
+
+/// Sets (or replaces) the correction of that employee's day.
+#[allow(clippy::too_many_arguments)]
+pub async fn upsert_attendance_correction(
+    state: &AppState,
+    company_id: &ObjectId,
+    employee_no: &str,
+    date: &str,
+    entry: Option<&str>,
+    exit: Option<&str>,
+    note: Option<&str>,
+    author: &str,
+) -> Result<()> {
+    state
+        .attendance_corrections
+        .update_one(
+            doc! { "company_id": company_id, "employee_no": employee_no, "date": date },
+            doc! { "$set": {
+                "entry": entry,
+                "exit": exit,
+                "note": note,
+                "author": author,
+                "updated_at": DateTime::now(),
+            } },
+        )
+        .upsert(true)
+        .await?;
+    Ok(())
+}
+
+/// Removes it; false when there was none.
+pub async fn delete_attendance_correction(
+    state: &AppState,
+    company_id: &ObjectId,
+    employee_no: &str,
+    date: &str,
+) -> Result<bool> {
+    let r = state
+        .attendance_corrections
+        .delete_one(doc! { "company_id": company_id, "employee_no": employee_no, "date": date })
+        .await?;
+    Ok(r.deleted_count > 0)
 }
 
 /// The terminal name used for checks typed by an admin.
