@@ -41,6 +41,7 @@ const STATUS: Record<AttendanceStatus, { label: string; class: string }> = {
   extra: { label: 'Día extra', class: 'bg-violet-500/15 text-violet-700 dark:text-violet-300' },
   descanso: { label: 'Descanso', class: 'text-muted-foreground' },
   sin_horario: { label: '', class: '' },
+  antes_alta: { label: 'Aún no entraba', class: 'text-muted-foreground' },
 }
 
 const DAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
@@ -290,6 +291,7 @@ export default function Attendance(): JSX.Element {
                 user_id: null,
                 shift: SHIFT_PRESETS.tarde,
                 active: true,
+                start_date: ymd(new Date()),
               })
             }
           >
@@ -448,6 +450,7 @@ function EmployeeForm(props: { initial: AttendanceEmployee; onClose: () => void 
   )
   const toggleFlex = (k: 'manana' | 'tarde', on: boolean) => setFlex(on ? [...flex().filter((x) => x !== k), k] : flex().filter((x) => x !== k))
   const [active, setActive] = createSignal(props.initial.active)
+  const [startDate, setStartDate] = createSignal(props.initial.start_date ?? '')
 
   const valid = createMemo(
     () =>
@@ -500,6 +503,7 @@ function EmployeeForm(props: { initial: AttendanceEmployee; onClose: () => void 
           : null,
         alternates: hasShift() ? flex().map((k) => ({ ...SHIFT_PRESETS[k], tolerance_min: Math.max(0, Number(tolerance()) || 0) })) : [],
         active: active(),
+        start_date: startDate(),
       }),
     onSuccess: () => {
       toast.success('Guardado')
@@ -642,6 +646,12 @@ function EmployeeForm(props: { initial: AttendanceEmployee; onClose: () => void 
             </div>
           </div>
         </Show>
+
+        <label class="block space-y-1">
+          <span class="text-sm font-medium text-foreground">Fecha de ingreso</span>
+          <Input type="date" value={startDate()} onInput={setStartDate} />
+          <span class="block text-xs text-muted-foreground">Los días antes de esta fecha no cuentan como falta. Vacío = cuentan todos.</span>
+        </label>
 
         <Show when={!isNew}>
           <Checkbox checked={active()} onChange={setActive} label="Activo (sale en el reporte)" />

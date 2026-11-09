@@ -29,6 +29,8 @@ export interface AttendanceEmployee {
   /** Other shifts they may work instead; each day uses the one closest to their entry. */
   alternates?: AttendanceShift[]
   active: boolean
+  /** First day they work here (YYYY-MM-DD); earlier days are not absences. "" = none. */
+  start_date?: string | null
 }
 
 export interface ManualCheck {
@@ -47,6 +49,7 @@ export type AttendanceStatus =
   | 'extra'
   | 'pendiente'
   | 'sin_horario'
+  | 'antes_alta'
 
 export interface AttendanceDay {
   date: string

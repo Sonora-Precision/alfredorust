@@ -160,24 +160,41 @@ pub async fn upsert_attendance_employee(
     shift: Option<AttendanceShift>,
     alternates: Vec<AttendanceShift>,
     active: bool,
+    // None = keep what they have (a new employee gets `default_start`); Some("") = clear it.
+    start_date: Option<&str>,
+    default_start: &str,
 ) -> Result<()> {
     let shift = match shift {
         Some(s) => Some(mongodb::bson::to_bson(&s)?),
         None => None,
     };
     let alternates = mongodb::bson::to_bson(&alternates)?;
+    let mut set = doc! {
+        "name": name,
+        "user_id": user_id,
+        "shift": shift,
+        "alternates": alternates,
+        "active": active,
+        "updated_at": DateTime::now(),
+    };
+    let mut update = doc! {};
+    match start_date {
+        Some("") => {
+            update.insert("$unset", doc! { "start_date": "" });
+        }
+        Some(d) => {
+            set.insert("start_date", d);
+        }
+        None => {
+            update.insert("$setOnInsert", doc! { "start_date": default_start });
+        }
+    }
+    update.insert("$set", set);
     state
         .attendance_employees
         .update_one(
             doc! { "company_id": company_id, "employee_no": employee_no },
-            doc! { "$set": {
-                "name": name,
-                "user_id": user_id,
-                "shift": shift,
-                "alternates": alternates,
-                "active": active,
-                "updated_at": DateTime::now(),
-            } },
+            update,
         )
         .upsert(true)
         .await?;

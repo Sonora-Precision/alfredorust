@@ -2141,6 +2141,10 @@ pub struct AttendanceEmployee {
     pub alternates: Vec<AttendanceShift>,
     #[serde(default = "default_true")]
     pub active: bool,
+    /// First day they work here (YYYY-MM-DD, shop date): days before it are not absences
+    /// (Daniel, 2026-11-09). None = always counted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_date: Option<String>,
     pub updated_at: DateTime,
 }
 

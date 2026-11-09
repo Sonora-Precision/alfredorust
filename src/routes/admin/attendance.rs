@@ -200,6 +200,7 @@ pub struct EmployeeData {
     pub shift: Option<ShiftData>,
     pub alternates: Vec<ShiftData>,
     pub active: bool,
+    pub start_date: Option<String>,
 }
 
 fn shift_data(s: &AttendanceShift) -> ShiftData {
@@ -228,6 +229,7 @@ fn employee_data(e: &AttendanceEmployee) -> EmployeeData {
         shift: e.shift.as_ref().map(shift_data),
         alternates: e.alternates.iter().map(shift_data).collect(),
         active: e.active,
+        start_date: e.start_date.clone(),
     }
 }
 
@@ -295,6 +297,9 @@ pub struct EmployeePayload {
     pub alternates: Vec<ShiftData>,
     #[serde(default = "yes")]
     pub active: bool,
+    /// First day they work here, YYYY-MM-DD. Omitted = keep it (new employees: today);
+    /// "" = none (every day counts).
+    pub start_date: Option<String>,
 }
 
 fn yes() -> bool {
@@ -390,6 +395,15 @@ pub async fn api_attendance_employee_save(
         Ok(a) => a,
         Err(msg) => return json_error(StatusCode::BAD_REQUEST, msg),
     };
+    let start_date = match p.start_date.as_deref().map(str::trim) {
+        Some("") => Some(String::new()),
+        Some(v) => match NaiveDate::parse_from_str(v, "%Y-%m-%d") {
+            Ok(d) => Some(d.format("%Y-%m-%d").to_string()),
+            Err(_) => return json_error(StatusCode::BAD_REQUEST, "start_date must be YYYY-MM-DD"),
+        },
+        None => None,
+    };
+    let today = shop_date(DateTime::now()).format("%Y-%m-%d").to_string();
     match upsert_attendance_employee(
         &state,
         &company_id,
@@ -399,6 +413,8 @@ pub async fn api_attendance_employee_save(
         shift,
         alternates,
         p.active,
+        start_date.as_deref(),
+        &today,
     )
     .await
     {
@@ -558,7 +574,7 @@ pub struct DayData {
     pub late_min: i64,
     /// "ok", "retardo", "falta", "incompleto" (one check only), "descanso" (not a work day),
     /// "extra" (checks on a day off), "pendiente" (the shift has not ended yet),
-    /// "sin_horario" (no shift: only the checks).
+    /// "sin_horario" (no shift: only the checks), "antes_alta" (before their start_date).
     pub status: String,
     /// "HH:MM–HH:MM" the day was measured against (with alternates, the one closest to the entry).
     pub window: Option<String>,
@@ -770,12 +786,20 @@ pub fn build_report(
             .unwrap_or_default();
         let mut totals = Totals::default();
         let shifts: Vec<&AttendanceShift> = emp.shift.iter().chain(emp.alternates.iter()).collect();
+        let start = emp
+            .start_date
+            .as_deref()
+            .and_then(|v| NaiveDate::parse_from_str(v, "%Y-%m-%d").ok());
         let days: Vec<DayData> = dates
             .iter()
             .map(|&d| {
                 let mut day_events = mine.get(&d).cloned().unwrap_or_default();
                 day_events.sort_by_key(|e| e.at);
-                let day = day_data(d, &day_events, &shifts, now);
+                let mut day = day_data(d, &day_events, &shifts, now);
+                // Before they started here, a day without checks is nothing, not an absence.
+                if start.is_some_and(|s| d < s) && day_events.is_empty() {
+                    day.status = "antes_alta".to_string();
+                }
                 totals.worked_min += day.worked_min;
                 totals.late_min += day.late_min;
                 match day.status.as_str() {
@@ -904,8 +928,28 @@ mod tests {
             shift,
             alternates: vec![],
             active: true,
+            start_date: None,
             updated_at: DateTime::now(),
         }
+    }
+
+    #[test]
+    fn days_before_the_start_date_are_not_absences() {
+        let mut emp = employee("0006", Some(manana()));
+        emp.start_date = Some("2026-11-09".into());
+        let events = vec![check("0006", "2026-11-09T14:01:00Z")];
+        let r = build_report(
+            &[emp],
+            &events,
+            d("2026-11-06"),
+            d("2026-11-09"),
+            t("2026-11-10T06:00:00Z"),
+        );
+        let days = &r.employees[0].days;
+        assert_eq!(days[0].status, "antes_alta"); // Fri
+        assert_eq!(days[1].status, "antes_alta"); // Sat
+        assert_eq!(days[3].entry.as_deref(), Some("07:01")); // Mon, counted
+        assert_eq!(r.employees[0].totals.absences, 0);
     }
 
     fn tarde() -> AttendanceShift {
