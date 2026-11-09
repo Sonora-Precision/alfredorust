@@ -490,6 +490,7 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                 .post(routes::api_project_document_upload)
                 .layer(axum::extract::DefaultBodyLimit::max(45 * 1024 * 1024)),
         )
+        .route("/api/admin/project_documents", get(routes::api_company_project_documents))
         .route("/api/admin/project_documents/{id}", get(routes::api_project_document_download))
         .route("/api/admin/project_documents/{id}/delete", axum::routing::post(routes::api_project_document_delete))
         .route(

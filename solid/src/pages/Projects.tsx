@@ -24,6 +24,8 @@ import * as operationsApi from '../lib/api/operations'
 import type { ProjectPayload, ProjectPriority, ProjectRow } from '../lib/api/types'
 import { dateToRfc3339, money, rfc3339ToDate } from '../lib/format'
 import { useAuth } from '../lib/auth/AuthContext'
+import { type ProjectDocument, listCompanyProjectDocuments } from '../lib/api/projectDocuments'
+import { ProjectDocLinks } from '../components/projects/ProjectDocLinks'
 
 /** Values match the backend (`low|medium|high|urgent`). */
 const PRIORITIES: { value: ProjectPriority; label: string }[] = [
@@ -54,6 +56,17 @@ export default function Projects(): JSX.Element {
     queryKey: ['projects'],
     queryFn: operationsApi.listProjects,
   }))
+  // Each project's PO and quote, opened from the list (admin only: prices).
+  const docsQuery = createQuery(() => ({
+    queryKey: ['project-documents', 'all'],
+    queryFn: listCompanyProjectDocuments,
+    enabled: isAdmin(),
+  }))
+  const docsOf = createMemo(() => {
+    const by = new Map<string, ProjectDocument[]>()
+    for (const d of docsQuery.data ?? []) by.set(d.project_id, [...(by.get(d.project_id) ?? []), d])
+    return by
+  })
   const categoriesQuery = createQuery(() => ({
     queryKey: ['categories'],
     queryFn: financeApi.listCategories,
@@ -267,7 +280,14 @@ export default function Projects(): JSX.Element {
                       const priorityLabel = p.priority_label || p.priority
                       return (
                         <TableRow>
-                          <TableCell class="font-medium text-foreground">{p.title}</TableCell>
+                          <TableCell class="font-medium text-foreground">
+                            {p.title}
+                            <Show when={docsOf().get(p.id)}>
+                              <div class="mt-1">
+                                <ProjectDocLinks docs={docsOf().get(p.id)} />
+                              </div>
+                            </Show>
+                          </TableCell>
                           <TableCell>
                             <Badge tone={statusBadgeTone(statusLabel)}>{statusLabel}</Badge>
                           </TableCell>
@@ -366,6 +386,7 @@ export default function Projects(): JSX.Element {
                         <Show when={p.scheduled_at}>
                           <span class="text-muted-foreground tnum">{rfc3339ToDate(p.scheduled_at!)}</span>
                         </Show>
+                        <ProjectDocLinks docs={docsOf().get(p.id)} />
                       </div>
                     </div>
                   )

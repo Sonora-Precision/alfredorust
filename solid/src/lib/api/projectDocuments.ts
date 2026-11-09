@@ -10,6 +10,7 @@ export const DOCUMENT_KINDS: { value: ProjectDocumentKind; label: string }[] = [
 
 /** A PDF kept with a project (purchase order, quote…). Admin only. */
 export interface ProjectDocument {
+  project_id: string
   id: string
   kind: ProjectDocumentKind | string
   filename: string
@@ -21,6 +22,9 @@ export interface ProjectDocument {
 
 export const listProjectDocuments = (projectId: string) =>
   apiGet<ProjectDocument[]>(`/api/admin/projects/${projectId}/documents`)
+
+/** Every document of the company (projects list). */
+export const listCompanyProjectDocuments = () => apiGet<ProjectDocument[]>('/api/admin/project_documents')
 
 export const uploadProjectDocument = (projectId: string, kind: ProjectDocumentKind, file: File) => {
   const form = new FormData()
