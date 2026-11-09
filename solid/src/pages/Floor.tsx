@@ -292,9 +292,6 @@ function PersonLine(props: { row: PersonRow }): JSX.Element {
         <Show when={r().clock}>
           <span class="text-xs text-muted-foreground"> · {r().clock}</span>
         </Show>
-        <Show when={!r().p.in_clock}>
-          <span class="text-xs text-muted-foreground"> · no está en el checador</span>
-        </Show>
       </div>
       <div class="flex items-center gap-2">
         <Show when={doing()}>
