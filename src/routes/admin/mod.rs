@@ -15,6 +15,7 @@ pub mod traveler;
 pub mod floor;
 pub mod notes;
 pub mod part_files;
+pub mod project_documents;
 pub mod quoting;
 pub mod quotes;
 pub mod production;
@@ -83,6 +84,9 @@ pub use quoting::{
 };
 pub use part_files::{
     api_company_part_drawings, api_part_drawing_upload, api_part_file_delete, api_part_file_download, api_project_part_files,
+};
+pub use project_documents::{
+    api_project_document_delete, api_project_document_download, api_project_document_upload, api_project_documents,
 };
 pub use production::{
     api_production_board, api_production_members, api_production_search,
