@@ -148,6 +148,52 @@ async fn part_drawings_upload_open_and_delete() {
     let (_, body) = get_with_cookie(build_app(shared.clone()), host, &list, &jose).await;
     assert_eq!(json(&body).as_array().unwrap().len(), 0, "{body}");
 
+    // Project documents (purchase order, quote): admin only, PDFs only, per company.
+    let docs = format!("/api/admin/projects/{}/documents", project.to_hex());
+    let (status, _) = post_multipart_with_cookie(
+        build_app(shared.clone()), host, &docs, &jose,
+        &[("kind", None, &b"orden_compra"[..]), ("file", Some("PO-C261109-1 Cople.pdf"), pdf)],
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, body) = post_multipart_with_cookie(
+        build_app(shared.clone()), host, &docs, &admin,
+        &[("kind", None, &b"factura"[..]), ("file", Some("x.pdf"), pdf)],
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "body: {body}");
+    let (status, body) = post_multipart_with_cookie(
+        build_app(shared.clone()), host, &docs, &admin,
+        &[("kind", None, &b"orden_compra"[..]), ("file", Some("PO-C261109-1 Cople.pdf"), pdf)],
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "body: {body}");
+    let po = json(&body);
+    assert_eq!(po["kind"], "orden_compra");
+    assert_eq!(po["filename"], "PO-C261109-1 Cople.pdf");
+    let po_url = po["url"].as_str().unwrap().to_string();
+    let (status, body) = get_with_cookie(build_app(shared.clone()), host, &docs, &admin).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    assert_eq!(json(&body).as_array().unwrap().len(), 1, "{body}");
+    let (status, body) = get_with_cookie(build_app(shared.clone()), host, &po_url, &admin).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.starts_with("%PDF-"), "{body}");
+    // The programmer sees neither the list nor the file (prices).
+    let (status, _) = get_with_cookie(build_app(shared.clone()), host, &docs, &jose).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _) = get_with_cookie(build_app(shared.clone()), host, &po_url, &jose).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    // Another company's admin cannot open it.
+    let (status, _) = get_with_cookie(build_app(shared.clone()), "files-b.miapp.local", &po_url, &outsider).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = post_json_with_cookie(
+        build_app(shared.clone()), host, &format!("{po_url}/delete"), &admin, serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, body) = get_with_cookie(build_app(shared.clone()), host, &docs, &admin).await;
+    assert_eq!(json(&body).as_array().unwrap().len(), 0, "{body}");
+
     let _ = std::fs::remove_dir_all(&store);
     common::teardown(Some(ctx)).await;
 }

@@ -1596,6 +1596,29 @@ pub struct PartFile {
     pub deleted_at: Option<DateTime>,
 }
 
+/// A PDF kept with a project: the customer's purchase order, our quote, anything else
+/// (Daniel, 2026-11-09). Admin only: they carry prices.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectDocument {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+
+    pub company_id: ObjectId,
+    pub project_id: ObjectId,
+    /// "orden_compra", "cotizacion" or "otro".
+    pub kind: String,
+    pub original_filename: String,
+    pub size_bytes: i64,
+    pub sha256: String,
+    /// Path under the file store root: `{company}/projects/{project}/{file}.pdf`.
+    pub storage_key: String,
+    pub uploaded_by: ObjectId,
+    pub uploaded_at: DateTime,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deleted_at: Option<DateTime>,
+}
+
 /// ---------- PLANT VIEW ----------
 
 /// Where a machine sits on the plant drawing (layout units; `rotation` in degrees).
