@@ -18,7 +18,7 @@ use crate::{
     models::ProjectDocument,
     session::SessionUser,
     state::{
-        AppState, delete_project_document, get_project_by_id_for_company, get_project_document,
+        AppState, delete_project_document, get_project_by_id_for_company, get_project_document, list_company_project_documents,
         list_project_documents, read_project_document, save_project_document,
     },
 };
@@ -26,6 +26,7 @@ use crate::{
 #[derive(Serialize)]
 pub struct ProjectDocumentData {
     pub id: String,
+    pub project_id: String,
     pub kind: String,
     pub filename: String,
     pub size_bytes: i64,
@@ -39,6 +40,7 @@ fn document_data(d: ProjectDocument) -> Option<ProjectDocumentData> {
     Some(ProjectDocumentData {
         url: format!("/api/admin/project_documents/{id}"),
         id,
+        project_id: d.project_id.to_hex(),
         kind: d.kind,
         filename: d.original_filename,
         size_bytes: d.size_bytes,
@@ -61,6 +63,18 @@ pub async fn api_project_documents(
         Err(resp) => return resp,
     };
     match list_project_documents(&state, &company_id, &project_id).await {
+        Ok(docs) => Json(docs.into_iter().filter_map(document_data).collect::<Vec<_>>()).into_response(),
+        Err(_) => json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load documents"),
+    }
+}
+
+/// Every document of the company, so the projects list shows each project's PO and quote.
+pub async fn api_company_project_documents(session_user: SessionUser, State(state): State<Arc<AppState>>) -> Response {
+    if !session_user.is_admin() {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let company_id = require_active_company(&session_user);
+    match list_company_project_documents(&state, &company_id).await {
         Ok(docs) => Json(docs.into_iter().filter_map(document_data).collect::<Vec<_>>()).into_response(),
         Err(_) => json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load documents"),
     }

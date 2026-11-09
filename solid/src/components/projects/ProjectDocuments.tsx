@@ -36,13 +36,13 @@ export function ProjectDocuments(props: { projectId: string }): JSX.Element {
     mutationFn: (file: File) => uploadProjectDocument(props.projectId, kind(), file),
     onSuccess: (d) => {
       toast.success('Documento guardado', d.filename)
-      void qc.invalidateQueries({ queryKey: key() })
+      void qc.invalidateQueries({ queryKey: ['project-documents'] })
     },
     onError: (err) => toast.error('No se pudo subir el documento', humanizeError(err, 'Intenta de nuevo')),
   }))
   const remove = createMutation(() => ({
     mutationFn: (id: string) => deleteProjectDocument(id),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: key() }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['project-documents'] }),
     onError: (err) => toast.error('No se pudo quitar el documento', humanizeError(err, 'Intenta de nuevo')),
   }))
 

@@ -86,6 +86,20 @@ pub async fn list_project_documents(
     Ok(out)
 }
 
+/// Every document of the company that is not deleted, newest first (the projects list).
+pub async fn list_company_project_documents(state: &AppState, company_id: &ObjectId) -> Result<Vec<ProjectDocument>> {
+    let mut cursor = state
+        .project_documents
+        .find(doc! { "company_id": company_id, "deleted_at": { "$exists": false } })
+        .sort(doc! { "uploaded_at": -1 })
+        .await?;
+    let mut out = Vec::new();
+    while let Some(d) = cursor.try_next().await? {
+        out.push(d);
+    }
+    Ok(out)
+}
+
 pub async fn get_project_document(
     state: &AppState,
     company_id: &ObjectId,

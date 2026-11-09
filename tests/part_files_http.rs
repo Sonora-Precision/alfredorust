@@ -178,6 +178,17 @@ async fn part_drawings_upload_open_and_delete() {
     let (status, body) = get_with_cookie(build_app(shared.clone()), host, &po_url, &admin).await;
     assert_eq!(status, StatusCode::OK);
     assert!(body.starts_with("%PDF-"), "{body}");
+    // The projects list reads every document of the company with its project.
+    let (status, body) = get_with_cookie(build_app(shared.clone()), host, "/api/admin/project_documents", &admin).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let all = json(&body);
+    assert_eq!(all.as_array().unwrap().len(), 1, "{body}");
+    assert_eq!(all[0]["project_id"], project.to_hex());
+    let (status, _) = get_with_cookie(build_app(shared.clone()), host, "/api/admin/project_documents", &jose).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (_, body) =
+        get_with_cookie(build_app(shared.clone()), "files-b.miapp.local", "/api/admin/project_documents", &outsider).await;
+    assert_eq!(json(&body).as_array().unwrap().len(), 0, "{body}");
     // The programmer sees neither the list nor the file (prices).
     let (status, _) = get_with_cookie(build_app(shared.clone()), host, &docs, &jose).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
