@@ -73,6 +73,10 @@ pub struct WorkOrder {
     pub operation: ProcessOperation,
     pub queue: WorkQueue,
     pub assignee_user_id: Option<ObjectId>,
+    /// Every step before it that has no queue (Material, Material habilitado) is done or
+    /// N/A: the part can be run now (Daniel, 2026-11-09: "ya deberían de poderse correr").
+    /// Always true in the programming queue: programs are made before material arrives.
+    pub ready: bool,
 }
 
 impl WorkOrder {
@@ -115,7 +119,23 @@ fn priority_order(priority: &ProjectPriority) -> u8 {
     }
 }
 
-/// Pinned orders first by rank; then priority, then project date (none last), then folio.
+/// Whether the steps without a queue before `op` are all done or N/A.
+pub fn ready_for(concept: &ProjectConcept, operations: &[ProcessOperation], op: &ProcessOperation) -> bool {
+    if op.queue == Some(WorkQueue::Programming) {
+        return true;
+    }
+    operations
+        .iter()
+        .take_while(|o| o.id != op.id)
+        .filter(|o| o.is_active && o.queue.is_none())
+        .all(|o| {
+            let step = o.id.and_then(|id| concept.process_steps.iter().find(|s| s.operation_id == id));
+            matches!(step.map(|s| s.state), Some(StepState::Done) | Some(StepState::NotApplicable))
+        })
+}
+
+/// Pinned orders first by rank; then ready to run before waiting on material; then
+/// priority, then project date (none last), then folio.
 pub fn sequence_cmp(a: &WorkOrder, b: &WorkOrder) -> Ordering {
     match (a.concept.sequence_rank, b.concept.sequence_rank) {
         (Some(x), Some(y)) => return x.partial_cmp(&y).unwrap_or(Ordering::Equal),
@@ -123,8 +143,9 @@ pub fn sequence_cmp(a: &WorkOrder, b: &WorkOrder) -> Ordering {
         (None, Some(_)) => return Ordering::Greater,
         (None, None) => {}
     }
-    priority_order(&a.priority())
-        .cmp(&priority_order(&b.priority()))
+    b.ready
+        .cmp(&a.ready)
+        .then_with(|| priority_order(&a.priority()).cmp(&priority_order(&b.priority())))
         .then_with(|| match (a.project.scheduled_at, b.project.scheduled_at) {
             (Some(x), Some(y)) => x.cmp(&y),
             (Some(_), None) => Ordering::Less,
@@ -211,6 +232,7 @@ pub async fn list_work_orders(state: &AppState, company_id: &ObjectId) -> Result
             project: project.clone(),
             operation: op.clone(),
             queue: op.queue.expect("filtered to queued operations"),
+            ready: ready_for(&concept, &operations, op),
             assignee_user_id: assignee,
             concept,
         });

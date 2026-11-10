@@ -68,6 +68,9 @@ pub struct WorkOrderData {
     pub operation_id: String,
     pub operation: String,
     pub assignee: Option<PersonData>,
+    /// Material and the other steps without a queue are done: it can be run now.
+    /// None in the programming queue, where material does not matter.
+    pub ready: Option<bool>,
 }
 
 pub(crate) fn folio(number: Option<i64>) -> String {
@@ -123,6 +126,7 @@ fn work_order_data(o: &WorkOrder, names: &HashMap<ObjectId, (String, String)>) -
         operation_id: o.operation.id.map(|id| id.to_hex()).unwrap_or_default(),
         operation: o.operation.name.clone(),
         assignee: o.assignee_user_id.map(|id| person(id, names)),
+        ready: (o.queue != WorkQueue::Programming).then_some(o.ready),
     }
 }
 

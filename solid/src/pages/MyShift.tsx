@@ -7,6 +7,7 @@ import { A } from '@solidjs/router'
 import { createQuery } from '@tanstack/solid-query'
 import { type JSX, For, Show, createMemo, createSignal } from 'solid-js'
 
+import { ReadyBadge } from '../components/production/ReadyBadge'
 import { WeeklyPiecesCard } from '../components/production/WeeklyPiecesCard'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Select } from '../components/ui/Select'
@@ -266,6 +267,7 @@ function PartCard(props: { part: MyPart; drawing?: string; canOpenProject: boole
       <p class="text-sm text-foreground">
         Va en <span class="font-medium">{p().step}</span>
         <span class="text-muted-foreground"> · {p().step_assignee ? (p().step_assignee!.name) : 'sin asignar'}</span>
+        <span class="ml-1.5 inline-block align-middle"><ReadyBadge ready={p().ready} /></span>
       </p>
       <Show when={p().blocked_note}>
         <p class="rounded bg-red-500/10 px-2 py-1 text-xs text-red-500">Detenida: {p().blocked_note}</p>
