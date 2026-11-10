@@ -413,6 +413,7 @@ pub(crate) async fn log_pieces_change(
         reason: None,
         pieces_delta: Some(delta),
         unit_price: after.unit_price,
+        previous_user_id: None,
         at: mongodb::bson::DateTime::now(),
     };
     if let Err(err) = log_work_order_event(state, event).await {
@@ -470,6 +471,7 @@ pub(crate) async fn log_step_change(
         reason: None,
         pieces_delta: None,
         unit_price: None,
+        previous_user_id: None,
         at: mongodb::bson::DateTime::now(),
     };
     if let Err(err) = log_work_order_event(state, event).await {

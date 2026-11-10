@@ -54,3 +54,8 @@ export const startQueueEntry = (id: string) => apiPost<void>(`/api/production/ma
 
 /** Every open project with its parts, for the traveler (no money). */
 export const getTraveler = () => apiGet<import('./types').TravelerData>('/api/admin/traveler')
+
+/** "Mi turno": the caller's parts and what changed on them since their last look. An admin
+ *  may pass someone else's id to see their turn (it does not count as that person's look). */
+export const getMyShift = (userId?: string | null) =>
+  apiGet<import('./types').MyShiftData>('/api/production/my_shift', userId ? { user_id: userId } : undefined)

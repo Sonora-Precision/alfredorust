@@ -199,6 +199,7 @@ pub async fn api_quality_record(
             reason: if released { None } else { reason.clone() },
             pieces_delta: Some(delta),
             unit_price: if released { concept.unit_price } else { None },
+            previous_user_id: None,
             at: now,
         };
         if let Err(err) = log_work_order_event(&state, event).await {

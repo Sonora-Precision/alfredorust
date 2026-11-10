@@ -1565,6 +1565,10 @@ pub struct WorkOrderEvent {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unit_price: Option<f64>,
 
+    /// Assigned / Unassigned: who held the step before, so "Mi turno" can tell them it moved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_user_id: Option<ObjectId>,
+
     pub at: DateTime,
 }
 

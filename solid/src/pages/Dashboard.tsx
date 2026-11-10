@@ -81,7 +81,9 @@ export default function Dashboard(): JSX.Element {
 function StaffHome(): JSX.Element {
   const auth = useAuth()
   const home = () =>
-    auth.hasPermission('view_production_board')
+    auth.hasPermission('take_work_orders')
+      ? '/produccion/mi-turno'
+      : auth.hasPermission('view_production_board')
       ? '/produccion'
       : auth.hasPermission('view_projects')
         ? '/projects'
