@@ -1337,3 +1337,76 @@ export interface FloorData {
   with_attendance: boolean
   people: FloorPerson[]
 }
+
+// ---------- Mi turno (Daniel, 2026-11-09) ----------
+
+export interface MyStep {
+  name: string
+  state: 'pending' | 'done' | 'blocked' | 'not_applicable'
+  pieces: number | null
+  programmed: boolean
+  note: string | null
+  assignee: WorkOrderPerson | null
+  mine: boolean
+  current: boolean
+}
+
+export interface MyPart {
+  id: string
+  folio: string
+  part: string
+  project_id: string
+  project: string
+  client: string | null
+  priority: 'urgent' | 'high' | 'medium' | 'low'
+  priority_label: string
+  scheduled_at: string | null
+  quantity: number
+  completed_quantity: number
+  released_quantity: number
+  unit: string | null
+  step: string
+  step_assignee: WorkOrderPerson | null
+  blocked_note: string | null
+  /** Assigned by someone else since the last look. */
+  new: boolean
+  steps: MyStep[]
+}
+
+export type MyChangeKind =
+  | 'assigned'
+  | 'unassigned'
+  | 'taken'
+  | 'released'
+  | 'step_done'
+  | 'step_reopened'
+  | 'pinned'
+  | 'unpinned'
+  | 'pieces_recorded'
+  | 'pieces_released'
+  | 'pieces_rejected'
+
+export interface MyChange {
+  at: string
+  kind: MyChangeKind
+  part_id: string
+  folio: string
+  part: string
+  project: string
+  operation: string | null
+  actor: WorkOrderPerson
+  subject: WorkOrderPerson | null
+  previous: WorkOrderPerson | null
+  pieces: number | null
+  reason: string | null
+}
+
+export interface MyShiftData {
+  person: WorkOrderPerson
+  since: string
+  first_visit: boolean
+  now: MyPart[]
+  blocked: MyPart[]
+  elsewhere: MyPart[]
+  changes: MyChange[]
+}

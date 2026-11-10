@@ -275,6 +275,7 @@ fn event(
         reason: None,
         pieces_delta: None,
         unit_price: None,
+        previous_user_id: None,
         at: DateTime::now(),
     }
 }
@@ -349,7 +350,9 @@ pub async fn api_work_order_assign(
     } else {
         WorkOrderEventKind::Unassigned
     };
-    log(&state, event(order, kind, *session_user.user_id(), assignee)).await;
+    let mut e = event(order, kind, *session_user.user_id(), assignee);
+    e.previous_user_id = order.assignee_user_id;
+    log(&state, e).await;
     Json(serde_json::json!({ "ok": true })).into_response()
 }
 

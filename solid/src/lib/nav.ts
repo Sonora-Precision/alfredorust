@@ -4,6 +4,7 @@
 // which reproduces the admin/staff split the old Sidebar hard-coded.
 import {
   Boxes,
+  ClipboardCheck,
   ClipboardList,
   Clock,
   Factory,
@@ -72,6 +73,14 @@ export const NAV: NavEntry[] = [
   // Staff land on their first module (see Dashboard.tsx), so Inicio is admin-only.
   { id: 'home', label: 'Inicio', icon: Home, href: '/', can: admin },
   { id: 'onboarding', label: 'Configuración inicial', icon: Rocket, href: '/onboarding', can: admin },
+  // What a programmer sees on arrival: their parts and what changed (Daniel, 2026-11-09).
+  {
+    id: 'mi-turno',
+    label: 'Mi turno',
+    icon: ClipboardCheck,
+    href: '/produccion/mi-turno',
+    can: (a) => a.role() === 'admin' || a.hasPermission('take_work_orders') || a.hasPermission('view_production_board'),
+  },
   // The shop right now (Daniel, 2026-11-08): machines, people and what is held up.
   {
     id: 'taller',

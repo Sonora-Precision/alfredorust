@@ -59,6 +59,7 @@ mod orders;
 mod plant;
 mod part_files;
 mod project_documents;
+mod my_shift;
 mod process_operations;
 mod production;
 mod project_concepts;
@@ -86,6 +87,7 @@ pub use orders::*;
 pub use plant::*;
 pub use part_files::*;
 pub use project_documents::*;
+pub use my_shift::*;
 pub use process_operations::*;
 pub use production::*;
 pub use project_concepts::*;
@@ -147,6 +149,8 @@ pub struct AppState {
     pub client_quote_defaults: Collection<ClientQuoteDefaults>,
     pub part_files: Collection<PartFile>,
     pub project_documents: Collection<ProjectDocument>,
+    /// When each person last opened "Mi turno": company_id, user_id, last_at, window_from.
+    pub my_shift_visits: Collection<Document>,
     pub quote_files: Collection<QuoteFile>,
     pub attendance_events: Collection<AttendanceEvent>,
     pub attendance_employees: Collection<AttendanceEmployee>,
@@ -305,6 +309,10 @@ pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppStat
         )
         .await
         .context("creating the work order events index")?;
+    db.collection::<WorkOrderEvent>("work_order_events")
+        .create_index(IndexModel::builder().keys(mongodb::bson::doc! { "company_id": 1, "at": 1 }).build())
+        .await
+        .context("creating the work order events by time index")?;
     db.collection::<PlantLayout>("plant_layouts")
         .create_index(
             IndexModel::builder()
@@ -463,6 +471,7 @@ pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppStat
         client_quote_defaults: db.collection::<ClientQuoteDefaults>("client_quote_defaults"),
         part_files: db.collection::<PartFile>("part_files"),
         project_documents: db.collection::<ProjectDocument>("project_documents"),
+        my_shift_visits: db.collection::<Document>("my_shift_visits"),
         quote_files: db.collection::<QuoteFile>("quote_files"),
         attendance_events: db.collection::<AttendanceEvent>("attendance_events"),
         attendance_employees: db.collection::<AttendanceEmployee>("attendance_employees"),
