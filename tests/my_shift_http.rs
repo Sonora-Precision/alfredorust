@@ -84,6 +84,7 @@ async fn my_shift_shows_my_parts_and_what_changed() {
         }
     };
 
+    let mut material_id = String::new();
     for (position, name, queue) in [
         (1, "Material", serde_json::Value::Null),
         (2, "Programa", serde_json::json!("programming")),
@@ -98,6 +99,9 @@ async fn my_shift_shows_my_parts_and_what_changed() {
         )
         .await;
         assert_eq!(status, StatusCode::CREATED, "body: {body}");
+        if name == "Material" {
+            material_id = json(&body)["id"].as_str().expect("operation id").to_string();
+        }
     }
     create_concept_status(&state, &company, "En espera", 1, None, true, false, false, true).await.unwrap();
     let project = create_project(
@@ -159,6 +163,27 @@ async fn my_shift_shows_my_parts_and_what_changed() {
     assert_eq!(parts(&v, "elsewhere"), ["PART-A"]);
     assert_eq!(v["elsewhere"][0]["step"], "Setup 1");
     assert_eq!(v["elsewhere"][0]["step_assignee"]["id"], carlos_id.to_hex());
+    // Program done but Material still pending: not ready to run yet. In programming the
+    // flag does not apply.
+    assert_eq!(v["elsewhere"][0]["ready"], false, "{body}");
+    let (_, board) = get(admin.clone(), "/api/production/board?queue=setup".into()).await;
+    let board = json(&board);
+    assert_eq!(board[0]["part"], "PART-A");
+    assert_eq!(board[0]["ready"], false);
+    let (_, board) = get(admin.clone(), "/api/production/board".into()).await;
+    assert!(json(&board)[0]["ready"].is_null(), "programming queue has no ready flag");
+    // Material arrives: now it can run.
+    let (status, body) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        &format!("/api/admin/project_concepts/{a}/progress"),
+        &admin,
+        serde_json::json!({ "operation_id": material_id, "state": "done" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let (_, board) = get(admin.clone(), "/api/production/board?queue=setup".into()).await;
+    assert_eq!(json(&board)[0]["ready"], true);
     let kinds: Vec<(String, String)> = v["changes"]
         .as_array()
         .unwrap()

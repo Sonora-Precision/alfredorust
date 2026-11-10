@@ -20,6 +20,7 @@ import {
 import { type JSX, For, Show, createMemo, createSignal } from 'solid-js'
 
 import { AssignmentsByPerson } from '../components/production/AssignmentsByPerson'
+import { ReadyBadge } from '../components/production/ReadyBadge'
 import { WeeklyPiecesCard } from '../components/production/WeeklyPiecesCard'
 import { QualityQueue } from '../components/production/QualityQueue'
 import { WorkOrderSearch, matchesWorkOrder } from '../components/production/WorkOrderSearch'
@@ -225,6 +226,7 @@ function OrderSummary(props: { order: WorkOrder }): JSX.Element {
         <span class="font-semibold tabular-nums text-foreground">{props.order.folio}</span>
         <PartName conceptId={props.order.id} part={props.order.part} class="truncate text-foreground" />
         <PriorityBadge order={props.order} />
+        <ReadyBadge ready={props.order.ready} />
       </div>
       <p class="mt-0.5 truncate text-xs text-muted-foreground">
         {props.order.project}

@@ -21,7 +21,7 @@ use super::finance::helpers::require_active_company;
 use super::production::{PersonData, folio, member_names, person};
 use super::project_backend::{iso, json_error, parse_oid};
 use crate::{
-    models::{ProcessOperation, Project, ProjectConcept, StepState, UserPermission, WorkOrderEvent, WorkOrderEventKind},
+    models::{ProcessOperation, Project, ProjectConcept, StepState, UserPermission, WorkOrderEvent, WorkOrderEventKind, WorkQueue},
     session::SessionUser,
     state::{
         AppState, WorkOrder, list_board_members, list_process_operations, list_work_order_events_since,
@@ -63,6 +63,9 @@ pub struct MyPart {
     pub step_assignee: Option<PersonData>,
     /// Why it is held up, when a step is blocked.
     pub blocked_note: Option<String>,
+    /// Material and the other steps without a queue are done: it can be run now.
+    /// None in the programming queue, where material does not matter.
+    pub ready: Option<bool>,
     /// Assigned to them by someone else since their last look.
     pub new: bool,
     pub steps: Vec<MyStep>,
@@ -171,6 +174,7 @@ fn part_data(
         step: o.operation.name.clone(),
         step_assignee: o.assignee_user_id.map(|u| person(u, names)),
         blocked_note,
+        ready: (o.queue != WorkQueue::Programming).then_some(o.ready),
         new,
         steps,
     }

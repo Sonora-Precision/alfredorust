@@ -550,6 +550,9 @@ export interface WorkOrder {
   operation_id: string
   operation: string
   assignee: WorkOrderPerson | null
+  /// Material and the other steps without a queue are done: it can be run now.
+  /// null in the programming queue.
+  ready: boolean | null
 }
 
 export interface BoardMemberLoad {
@@ -1368,6 +1371,8 @@ export interface MyPart {
   step: string
   step_assignee: WorkOrderPerson | null
   blocked_note: string | null
+  /// null in the programming queue.
+  ready: boolean | null
   /** Assigned by someone else since the last look. */
   new: boolean
   steps: MyStep[]
