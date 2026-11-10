@@ -523,6 +523,7 @@ pub fn build_app(state: Arc<AppState>) -> Router {
             "/api/production/work_orders/{id}/assign",
             post(routes::api_work_order_assign),
         )
+        .route("/api/admin/project_concepts/{id}/owner", post(routes::api_part_owner_set))
         .route(
             "/api/production/work_orders/{id}/take",
             post(routes::api_work_order_take),

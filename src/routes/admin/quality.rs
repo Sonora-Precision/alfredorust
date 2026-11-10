@@ -22,7 +22,7 @@ use crate::{
     session::SessionUser,
     state::{
         AppState, awaiting_release, list_board_members, list_quality_queue, log_work_order_event,
-        programmer_of, record_quality,
+        record_quality, responsible_of,
     },
 };
 
@@ -88,7 +88,7 @@ pub async fn api_quality_queue(
             }
             None => None,
         };
-        let programmer = programmer_of(&state, &company_id, &id)
+        let programmer = responsible_of(&state, &company_id, &id)
             .await
             .ok()
             .flatten()
@@ -173,7 +173,7 @@ pub async fn api_quality_record(
         Err(err) => return json_error(StatusCode::BAD_REQUEST, &err.to_string()),
     };
 
-    let programmer = programmer_of(&state, &company_id, &id).await.ok().flatten();
+    let programmer = responsible_of(&state, &company_id, &id).await.ok().flatten();
     let actor = *session_user.user_id();
     let now = DateTime::now();
     for (kind, delta) in [

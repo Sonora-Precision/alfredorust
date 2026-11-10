@@ -682,6 +682,7 @@ mod tests {
             work_order_number: None,
             sequence_rank: None,
             priority_override: None,
+            owner_user_id: None,
             completed_quantity: 0.0,
             released_quantity: 0.0,
             rejected_quantity: 0.0,

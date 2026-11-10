@@ -951,6 +951,13 @@ pub struct ProjectConcept {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub priority_override: Option<ProjectPriority>,
 
+    /// Who is responsible for making the part, apart from who programs it (Daniel,
+    /// 2026-11-10: Jesús sometimes programs parts he does not make). Gets the finished
+    /// pieces in the weekly report. Set by the admin, or by the first person who takes or
+    /// is given a step past programming. Empty: the programmer, as before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner_user_id: Option<ObjectId>,
+
     /// Pieces produced so far (all steps ✔ or N/A). They count as finished only once quality
     /// releases them; rejected ones are made again, so this may reach quantity + rejected.
     #[serde(default)]
