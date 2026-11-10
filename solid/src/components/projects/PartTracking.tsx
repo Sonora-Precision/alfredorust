@@ -18,7 +18,7 @@ import {
   updatePartProgress,
   updateProcessOperation,
 } from '../../lib/api/operations'
-import { assignWorkOrder, getPlant, listBoardMembers } from '../../lib/api/production'
+import { assignWorkOrder, getPlant, listBoardMembers, releaseWorkOrder, setPartOwner, takeWorkOrder } from '../../lib/api/production'
 import { PartMachines, placesByPart } from './PartMachines'
 import { folioOf, matchesWorkOrder } from '../production/WorkOrderSearch'
 import { type PartFile, listProjectPartFiles } from '../../lib/api/partFiles'
@@ -158,6 +158,10 @@ interface PartTrackingProps {
   canSeeAssignees: boolean
   /** Assign or change who holds each part (whoever manages the board). */
   canAssign: boolean
+  /** Take a free part for yourself, or let go of your own (whoever takes work orders). */
+  canTake?: boolean
+  /** The signed-in user, to offer "Soltar" on their own parts. */
+  myId?: string | null
   /** Prices, costing and money (admins only). */
   canSeeMoney?: boolean
   /** Upload, replace or remove part drawings (admins only). */
@@ -198,6 +202,55 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
     const id = holderIdOf(concept)
     return id ? (nameOf().get(id) ?? 'Asignado') : null
   }
+  /** The queued step the part waits on now ("Programa", "Setup 1"…), as on the board. */
+  const currentOpOf = (concept: ProjectConcept): ProcessOperation | undefined =>
+    activeOps().find((op) => op.queue && stepState(concept, op.id) === 'pending')
+  /** When the current step is free: who held the step before it ("Programa: José"), so a
+   *  part that shows in someone's "Mi turno" does not look unowned here (Daniel, 2026-11-10). */
+  const previousHolderOf = (concept: ProjectConcept): { step: string; name: string } | null => {
+    const current = currentOpOf(concept)
+    if (!current) return null
+    const before = activeOps().slice(0, activeOps().indexOf(current)).map((op) => op.id)
+    const step = [...concept.process_steps]
+      .filter((s) => before.includes(s.operation_id) && s.assignee_user_id)
+      .sort((a, b) => before.indexOf(b.operation_id) - before.indexOf(a.operation_id))[0]
+    if (!step?.assignee_user_id) return null
+    return { step: step.name, name: nameOf().get(step.assignee_user_id) ?? 'Asignado' }
+  }
+
+  // Who makes the part, apart from who programs it (Daniel, 2026-11-10: Jesús programs
+  // parts he does not make). Gets the part's pieces in the weekly report.
+  const ownerMutation = createMutation(() => ({
+    mutationFn: (v: { id: string; userId: string | null }) => setPartOwner(v.id, v.userId),
+    onSuccess: (_d, v) => {
+      void qc.invalidateQueries({ queryKey: ['project-concepts', props.projectId] })
+      void qc.invalidateQueries({ queryKey: ['production'] })
+      const name = v.userId ? nameOf().get(v.userId) : null
+      toast.success(name ? `Responsable: ${name}` : 'Responsable: el programador')
+    },
+    onError: (err) => {
+      void qc.invalidateQueries({ queryKey: ['project-concepts', props.projectId] })
+      toast.error('No se pudo cambiar el responsable', humanizeError(err, 'Intenta de nuevo.'))
+    },
+  }))
+
+  // Programmers take a free part for themselves, or let go of their own (Daniel,
+  // 2026-11-10: "deberían desde esa pantalla poder tomar piezas"). Same as the board.
+  const takeMutation = createMutation(() => ({
+    mutationFn: (v: { id: string; take: boolean }) => (v.take ? takeWorkOrder(v.id) : releaseWorkOrder(v.id)),
+    onSuccess: (_d, v) => {
+      void qc.invalidateQueries({ queryKey: ['project-concepts', props.projectId] })
+      void qc.invalidateQueries({ queryKey: ['production'] })
+      toast.success(v.take ? 'La tomaste' : 'La soltaste')
+    },
+    onError: (err, v) => {
+      void qc.invalidateQueries({ queryKey: ['project-concepts', props.projectId] })
+      toast.error(
+        v.take ? 'No se pudo tomar' : 'No se pudo soltar',
+        humanizeError(err, 'Alguien más ya la tomó o ya no tiene un paso pendiente.'),
+      )
+    },
+  }))
 
   // Assigning here is the same as on the board: it sets who holds the current step.
   const assignMutation = createMutation(() => ({
@@ -679,12 +732,46 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
                         <Show
                           when={props.canAssign}
                           fallback={
-                            <Show
-                              when={holderOf(c)}
-                              fallback={<span class="text-xs text-amber-600">Libre</span>}
-                            >
-                              {(name) => <span class="font-medium text-foreground">{name()}</span>}
-                            </Show>
+                            <div class="space-y-0.5">
+                              <div class="flex items-center gap-2">
+                                <Show when={currentOpOf(c)}>
+                                  {(op) => <span class="text-xs text-muted-foreground">{op().name}:</span>}
+                                </Show>
+                                <Show
+                                  when={holderOf(c)}
+                                  fallback={<span class="text-xs text-amber-600">Libre</span>}
+                                >
+                                  {(name) => <span class="font-medium text-foreground">{name()}</span>}
+                                </Show>
+                                <Show when={props.canTake && currentOpOf(c) && !holderIdOf(c)}>
+                                  <Button
+                                    variant="outline"
+                                    class="h-7 px-2 text-xs"
+                                    disabled={takeMutation.isPending}
+                                    onClick={() => takeMutation.mutate({ id: c.id, take: true })}
+                                  >
+                                    Tomar
+                                  </Button>
+                                </Show>
+                                <Show when={props.canTake && currentOpOf(c) && props.myId && holderIdOf(c) === props.myId}>
+                                  <Button
+                                    variant="ghost"
+                                    class="h-7 px-2 text-xs"
+                                    disabled={takeMutation.isPending}
+                                    onClick={() => takeMutation.mutate({ id: c.id, take: false })}
+                                  >
+                                    Soltar
+                                  </Button>
+                                </Show>
+                              </div>
+                              <Show when={!holderIdOf(c) && previousHolderOf(c)}>
+                                {(p) => (
+                                  <p class="text-[11px] text-muted-foreground">
+                                    {p().step}: {p().name}
+                                  </p>
+                                )}
+                              </Show>
+                            </div>
                           }
                         >
                           <label class="sr-only" for={`assign-part-${c.id}`}>
@@ -711,6 +798,39 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
                             </For>
                           </select>
                         </Show>
+                        {/* Who makes the part, apart from who programs it: gets its pieces. */}
+                        <div class="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground">
+                          <span>Responsable:</span>
+                          <Show
+                            when={props.canAssign}
+                            fallback={
+                              <span class={c.owner_user_id ? 'font-medium text-foreground' : ''}>
+                                {c.owner_user_id ? (nameOf().get(c.owner_user_id) ?? 'Asignado') : 'el programador'}
+                              </span>
+                            }
+                          >
+                            <label class="sr-only" for={`owner-part-${c.id}`}>
+                              Responsable de {c.name}
+                            </label>
+                            <select
+                              id={`owner-part-${c.id}`}
+                              class="h-6 rounded border border-border bg-background px-1 text-[11px] text-foreground"
+                              disabled={ownerMutation.isPending}
+                              onChange={(e) => ownerMutation.mutate({ id: c.id, userId: e.currentTarget.value || null })}
+                            >
+                              <option value="" selected={!c.owner_user_id}>
+                                El programador
+                              </option>
+                              <For each={membersQuery.data ?? []}>
+                                {(m) => (
+                                  <option value={m.id} selected={c.owner_user_id === m.id}>
+                                    {m.name}
+                                  </option>
+                                )}
+                              </For>
+                            </select>
+                          </Show>
+                        </div>
                       </TableCell>
                     </Show>
                     <For each={activeOps()}>{(op) => (

@@ -140,6 +140,59 @@ pub fn resolve_status(
 
 /// Who programmed a part: the credit of the last net "Programa" completion, else whoever
 /// holds the programming step now.
+/// Who answers for the part's pieces: its responsible person, else its programmer.
+pub async fn responsible_of(
+    state: &AppState,
+    company_id: &ObjectId,
+    concept_id: &ObjectId,
+) -> Result<Option<ObjectId>> {
+    let owner = state
+        .project_concepts
+        .find_one(doc! { "_id": concept_id, "company_id": company_id })
+        .await?
+        .and_then(|c| c.owner_user_id);
+    match owner {
+        Some(o) => Ok(Some(o)),
+        None => programmer_of(state, company_id, concept_id).await,
+    }
+}
+
+/// Sets the part's responsible person (None clears it).
+pub async fn set_part_owner(
+    state: &AppState,
+    company_id: &ObjectId,
+    concept_id: &ObjectId,
+    owner: Option<ObjectId>,
+) -> Result<bool> {
+    let update = match owner {
+        Some(o) => doc! { "$set": { "owner_user_id": o, "updated_at": DateTime::now() } },
+        None => doc! { "$unset": { "owner_user_id": "" }, "$set": { "updated_at": DateTime::now() } },
+    };
+    let res = state
+        .project_concepts
+        .update_one(doc! { "_id": concept_id, "company_id": company_id }, update)
+        .await?;
+    Ok(res.matched_count > 0)
+}
+
+/// The first person who takes or is given a step past programming becomes responsible,
+/// unless someone already is.
+pub async fn claim_part_owner(
+    state: &AppState,
+    company_id: &ObjectId,
+    concept_id: &ObjectId,
+    user: ObjectId,
+) -> Result<()> {
+    state
+        .project_concepts
+        .update_one(
+            doc! { "_id": concept_id, "company_id": company_id, "owner_user_id": null },
+            doc! { "$set": { "owner_user_id": user } },
+        )
+        .await?;
+    Ok(())
+}
+
 pub async fn programmer_of(
     state: &AppState,
     company_id: &ObjectId,

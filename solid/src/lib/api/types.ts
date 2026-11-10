@@ -463,6 +463,8 @@ export interface ProjectConcept {
   name: string
   /** OT folio number (shown as OT-0001). */
   work_order_number?: number | null
+  /** Who makes the part (gets its pieces); may differ from who programs it. */
+  owner_user_id?: string | null
   quantity: number
   unit?: string | null
   description?: string | null

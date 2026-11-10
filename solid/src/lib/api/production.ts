@@ -62,3 +62,6 @@ export const getMyShift = (userId?: string | null) =>
 /** Admin only: everyone who opens "Mi turno", for the "ver el turno de" picker. */
 export const listMyShiftPeople = () =>
   apiGet<import('./types').WorkOrderPerson[]>('/api/production/my_shift/people')
+/** Who is responsible for making the part (null clears it). Board managers only. */
+export const setPartOwner = (conceptId: string, userId: string | null) =>
+  apiPost<{ ok: boolean }>(`/api/admin/project_concepts/${conceptId}/owner`, { user_id: userId })

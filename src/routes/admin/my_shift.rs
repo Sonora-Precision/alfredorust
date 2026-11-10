@@ -119,7 +119,7 @@ fn step_state(s: StepState) -> &'static str {
 }
 
 fn touches(concept: &ProjectConcept, user: ObjectId) -> bool {
-    concept.process_steps.iter().any(|s| s.assignee_user_id == Some(user))
+    concept.owner_user_id == Some(user) || concept.process_steps.iter().any(|s| s.assignee_user_id == Some(user))
 }
 
 fn part_data(

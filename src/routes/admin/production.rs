@@ -302,6 +302,44 @@ fn outcome_response(outcome: anyhow::Result<AssignOutcome>, conflict: &str) -> O
     }
 }
 
+/// Sets who is responsible for making a part (not necessarily who programs it). Whoever
+/// manages the board; null clears it (the programmer gets the pieces again).
+pub async fn api_part_owner_set(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(payload): Json<AssignPayload>,
+) -> Response {
+    if !can_manage(&session_user) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let company_id = require_active_company(&session_user);
+    let id = match parse_oid(&id) {
+        Ok(id) => id,
+        Err(resp) => return resp,
+    };
+    let owner = match payload.user_id.as_deref() {
+        None | Some("") => None,
+        Some(u) => match parse_oid(u) {
+            Ok(u) => Some(u),
+            Err(resp) => return resp,
+        },
+    };
+    if let Some(o) = owner {
+        let Ok(members) = list_board_members(&state, &company_id).await else {
+            return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load people");
+        };
+        if !members.iter().any(|m| m.user_id == o) {
+            return json_error(StatusCode::BAD_REQUEST, "that person cannot hold work orders in this company");
+        }
+    }
+    match crate::state::set_part_owner(&state, &company_id, &id, owner).await {
+        Ok(true) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Ok(false) => json_error(StatusCode::NOT_FOUND, "part not found"),
+        Err(_) => json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not save"),
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct AssignPayload {
     /// Who gets the order's current step; null clears it.
@@ -357,6 +395,9 @@ pub async fn api_work_order_assign(
     let mut e = event(order, kind, *session_user.user_id(), assignee);
     e.previous_user_id = order.assignee_user_id;
     log(&state, e).await;
+    if let (Some(a), true) = (assignee, order.queue != WorkQueue::Programming) {
+        let _ = crate::state::claim_part_owner(&state, &company_id, &id, a).await;
+    }
     Json(serde_json::json!({ "ok": true })).into_response()
 }
 
@@ -444,6 +485,9 @@ pub async fn api_work_order_take(
     e.related_to = related_to;
     e.reason = reason;
     log(&state, e).await;
+    if order.queue != WorkQueue::Programming {
+        let _ = crate::state::claim_part_owner(&state, &company_id, &id, me).await;
+    }
     Json(serde_json::json!({ "ok": true })).into_response()
 }
 
@@ -605,7 +649,7 @@ pub async fn api_work_order_complete(
 
 #[derive(Serialize)]
 pub struct PersonPiecesData {
-    /// null = pieces of parts nobody programmed yet.
+    /// null = pieces of parts with no responsible person nor programmer yet.
     pub id: Option<String>,
     pub name: String,
     pub pieces: f64,
@@ -671,7 +715,7 @@ pub async fn api_production_weekly_pieces(
         if programmer.contains_key(concept) {
             continue;
         }
-        let who = crate::state::programmer_of(&state, &company_id, concept)
+        let who = crate::state::responsible_of(&state, &company_id, concept)
             .await
             .ok()
             .flatten();
@@ -714,7 +758,7 @@ pub async fn api_production_weekly_pieces(
             id: id.map(|i| i.to_hex()),
             name: match id {
                 Some(i) => person(i, &names).name,
-                None => "Sin programador".to_string(),
+                None => "Sin responsable".to_string(),
             },
             pieces: now,
             previous_week: prev,
