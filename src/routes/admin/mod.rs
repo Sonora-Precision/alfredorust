@@ -60,7 +60,7 @@ pub use plant::{
 pub use quality::{api_quality_queue, api_quality_record};
 pub use traveler::api_traveler;
 pub use floor::api_production_floor;
-pub use my_shift::api_my_shift;
+pub use my_shift::{api_my_shift, api_my_shift_people};
 pub use material_cost::{
     api_material_quote_delete, api_project_material_quote_create, api_project_material_quotes, api_project_material_rates,
 };
