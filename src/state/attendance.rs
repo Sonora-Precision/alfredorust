@@ -218,6 +218,8 @@ pub async fn upsert_attendance_employee(
     alternates: Vec<AttendanceShift>,
     active: bool,
     intern: bool,
+    weekly_pay: Option<f64>,
+    weekly_hours: Option<f64>,
     // None = keep what they have (a new employee gets `default_start`); Some("") = clear it.
     start_date: Option<&str>,
     default_start: &str,
@@ -234,6 +236,8 @@ pub async fn upsert_attendance_employee(
         "alternates": alternates,
         "active": active,
         "intern": intern,
+        "weekly_pay": weekly_pay,
+        "weekly_hours": weekly_hours,
         "updated_at": DateTime::now(),
     };
     let mut update = doc! {};

@@ -103,6 +103,9 @@ const turno = (e: AttendanceEmployee): string => {
   return `${ventanas(e.shift)} · tolerancia ${e.shift.tolerance_min} min${flex.length ? ` · también puede: ${flex.join(', ')}` : ''}`
 }
 
+const pesos = (v: number): string =>
+  v.toLocaleString('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
 function InternBadge(): JSX.Element {
   return (
     <span class="ml-2 rounded-full bg-sky-500/15 px-2 py-0.5 align-middle text-[11px] font-medium text-sky-700 dark:text-sky-300">
@@ -274,6 +277,9 @@ export default function Attendance(): JSX.Element {
                     <TableHeadCell>Horas</TableHeadCell>
                     <TableHeadCell>Retardos</TableHeadCell>
                     <TableHeadCell>Faltas</TableHeadCell>
+                    <Show when={(report.data?.employees ?? []).some((e) => e.earned != null)}>
+                      <TableHeadCell>Acumulado</TableHeadCell>
+                    </Show>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -308,6 +314,17 @@ export default function Attendance(): JSX.Element {
                         <TableCell class="tnum align-top">
                           {e.shift ? e.totals.absences + (e.totals.incomplete ? ` · ${e.totals.incomplete} sin salida` : '') : '—'}
                         </TableCell>
+                        <Show when={(report.data?.employees ?? []).some((x) => x.earned != null)}>
+                          <TableCell class="tnum align-top whitespace-nowrap">
+                            <Show when={e.earned != null} fallback="—">
+                              <p class="font-medium text-foreground">{pesos(e.earned ?? 0)}</p>
+                              <p class="text-xs text-muted-foreground">
+                                {pesos(e.hourly_rate ?? 0)}/h
+                                {e.overtime_min ? ` · ${horas(e.overtime_min)} extra al doble` : ''}
+                              </p>
+                            </Show>
+                          </TableCell>
+                        </Show>
                       </TableRow>
                     )}
                   </For>
@@ -581,6 +598,9 @@ function EmployeeForm(props: { initial: AttendanceEmployee; onClose: () => void 
   const [active, setActive] = createSignal(props.initial.active)
   const [startDate, setStartDate] = createSignal(props.initial.start_date ?? '')
   const [intern, setIntern] = createSignal(props.initial.intern ?? false)
+  const [weeklyPay, setWeeklyPay] = createSignal(props.initial.weekly_pay != null ? String(props.initial.weekly_pay) : '')
+  const [weeklyHours, setWeeklyHours] = createSignal(props.initial.weekly_hours != null ? String(props.initial.weekly_hours) : '45')
+  const num = (v: string): number | null => (v.trim() === '' || !Number.isFinite(Number(v)) ? null : Number(v))
 
   const valid = createMemo(
     () =>
@@ -635,6 +655,8 @@ function EmployeeForm(props: { initial: AttendanceEmployee; onClose: () => void 
         active: active(),
         start_date: startDate(),
         intern: intern(),
+        weekly_pay: num(weeklyPay()),
+        weekly_hours: num(weeklyHours()),
       }),
     onSuccess: () => {
       toast.success('Guardado')
@@ -785,6 +807,23 @@ function EmployeeForm(props: { initial: AttendanceEmployee; onClose: () => void 
         </label>
 
         <Checkbox checked={intern()} onChange={setIntern} label="Practicante (sin sueldo; aparte de la nómina)" />
+
+        <Show when={!intern()}>
+          <div class="grid grid-cols-2 gap-2">
+            <label class="space-y-1">
+              <span class="text-sm font-medium text-foreground">Sueldo semanal</span>
+              <Input type="number" min="0" step="0.01" value={weeklyPay()} onInput={setWeeklyPay} placeholder="3110.38" />
+            </label>
+            <label class="space-y-1">
+              <span class="text-sm font-medium text-foreground">Por cuántas horas</span>
+              <Input type="number" min="1" max="120" step="0.5" value={weeklyHours()} onInput={setWeeklyHours} />
+            </label>
+          </div>
+          <span class="block text-xs text-muted-foreground">
+            Antes de impuestos (sueldo + séptimo día). Con esto la semana muestra cuánto lleva acumulado; las horas que pasen de estas se
+            pagan al doble. Vacío = no se calcula.
+          </span>
+        </Show>
 
         <Show when={!isNew}>
           <Checkbox checked={active()} onChange={setActive} label="Activo (sale en el reporte)" />

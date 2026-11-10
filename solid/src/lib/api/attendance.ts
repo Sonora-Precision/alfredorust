@@ -33,6 +33,10 @@ export interface AttendanceEmployee {
   start_date?: string | null
   /** Unpaid intern: checks in like everyone, not payroll. */
   intern?: boolean
+  /** Weekly pay before taxes (MXN). */
+  weekly_pay?: number | null
+  /** Hours that pay covers; null = 45. */
+  weekly_hours?: number | null
 }
 
 export interface ManualCheck {
@@ -83,6 +87,11 @@ export interface AttendanceEmployeeReport {
   shift?: AttendanceShift | null
   alternates?: AttendanceShift[]
   intern?: boolean
+  /** MXN per hour (weekly pay ÷ hours), before taxes. */
+  hourly_rate?: number | null
+  /** Earned in the range, before taxes; overtime at double. */
+  earned?: number | null
+  overtime_min?: number
   days: AttendanceDay[]
   totals: { worked_min: number; late_min: number; late_days: number; absences: number; incomplete: number }
 }

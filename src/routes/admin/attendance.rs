@@ -205,6 +205,8 @@ pub struct EmployeeData {
     pub active: bool,
     pub start_date: Option<String>,
     pub intern: bool,
+    pub weekly_pay: Option<f64>,
+    pub weekly_hours: Option<f64>,
 }
 
 fn shift_data(s: &AttendanceShift) -> ShiftData {
@@ -235,6 +237,8 @@ fn employee_data(e: &AttendanceEmployee) -> EmployeeData {
         active: e.active,
         start_date: e.start_date.clone(),
         intern: e.intern,
+        weekly_pay: e.weekly_pay,
+        weekly_hours: e.weekly_hours,
     }
 }
 
@@ -308,7 +312,14 @@ pub struct EmployeePayload {
     /// Unpaid intern (shown apart from payroll).
     #[serde(default)]
     pub intern: bool,
+    /// Weekly pay before taxes (MXN); null = none.
+    pub weekly_pay: Option<f64>,
+    /// Hours that pay covers; null = 45.
+    pub weekly_hours: Option<f64>,
 }
+
+/// Hours a weekly pay covers when none is given: the shop's shifts are 45 h.
+pub const DEFAULT_WEEKLY_HOURS: f64 = 45.0;
 
 fn yes() -> bool {
     true
@@ -411,6 +422,12 @@ pub async fn api_attendance_employee_save(
         },
         None => None,
     };
+    if p.weekly_pay.is_some_and(|v| !(0.0..=1_000_000.0).contains(&v)) {
+        return json_error(StatusCode::BAD_REQUEST, "weekly_pay must be 0-1,000,000");
+    }
+    if p.weekly_hours.is_some_and(|v| !(1.0..=120.0).contains(&v)) {
+        return json_error(StatusCode::BAD_REQUEST, "weekly_hours must be 1-120");
+    }
     let today = shop_date(DateTime::now()).format("%Y-%m-%d").to_string();
     match upsert_attendance_employee(
         &state,
@@ -422,6 +439,8 @@ pub async fn api_attendance_employee_save(
         alternates,
         p.active,
         p.intern,
+        p.weekly_pay,
+        p.weekly_hours,
         start_date.as_deref(),
         &today,
     )
@@ -725,6 +744,31 @@ pub struct EmployeeReport {
     pub intern: bool,
     pub days: Vec<DayData>,
     pub totals: Totals,
+    /// Weekly pay ÷ its hours (MXN/h, before taxes); None without a pay.
+    pub hourly_rate: Option<f64>,
+    /// Money earned in the range, before taxes: hours × hourly_rate, and the hours past their
+    /// weekly hours at double (overtime, as in the payroll).
+    pub earned: Option<f64>,
+    /// Minutes past their weekly hours (paid double).
+    pub overtime_min: i64,
+}
+
+/// (rate per hour, earned, overtime minutes) for `worked_min` over `days` days with a weekly
+/// pay. The weekly hours are prorated when the range is not a week.
+fn earnings(
+    weekly_pay: Option<f64>,
+    weekly_hours: Option<f64>,
+    worked_min: i64,
+    days: usize,
+) -> (Option<f64>, Option<f64>, i64) {
+    let Some(pay) = weekly_pay else { return (None, None, 0) };
+    let hours = weekly_hours.filter(|h| *h > 0.0).unwrap_or(DEFAULT_WEEKLY_HOURS);
+    let rate = pay / hours;
+    let regular_cap = (hours * 60.0 * days as f64 / 7.0).round() as i64;
+    let overtime = (worked_min - regular_cap).max(0);
+    let paid_min = (worked_min - overtime) + 2 * overtime;
+    let cents = |v: f64| (v * 100.0).round() / 100.0;
+    (Some(cents(rate)), Some(cents(rate * paid_min as f64 / 60.0)), overtime)
 }
 
 #[derive(Debug, Serialize)]
@@ -949,6 +993,8 @@ pub fn build_report(
                 day
             })
             .collect();
+        let (hourly_rate, earned, overtime_min) =
+            earnings(emp.weekly_pay, emp.weekly_hours, totals.worked_min, dates.len());
         reports.push(EmployeeReport {
             employee_no: emp.employee_no.clone(),
             name: emp.name.clone(),
@@ -956,6 +1002,9 @@ pub fn build_report(
             alternates: emp.alternates.iter().map(shift_data).collect(),
             intern: emp.intern,
             days,
+            hourly_rate,
+            earned,
+            overtime_min,
             totals,
         });
     }
@@ -1074,6 +1123,8 @@ mod tests {
             active: true,
             start_date: None,
             intern: false,
+            weekly_pay: None,
+            weekly_hours: None,
             updated_at: DateTime::now(),
         }
     }
@@ -1096,6 +1147,20 @@ mod tests {
         assert_eq!(days[1].status, "antes_alta"); // Sat
         assert_eq!(days[3].entry.as_deref(), Some("07:01")); // Mon, counted
         assert_eq!(r.employees[0].totals.absences, 0);
+    }
+
+    #[test]
+    fn earnings_from_weekly_pay() {
+        // 3000 for 45 h → 66.67/h; 8 h worked in a week → 533.33
+        assert_eq!(earnings(Some(3000.0), None, 480, 7), (Some(66.67), Some(533.33), 0));
+        assert_eq!(earnings(Some(2200.0), Some(45.0), 45 * 60, 7), (Some(48.89), Some(2200.0), 0));
+        assert_eq!(earnings(None, Some(45.0), 480, 7), (None, None, 0));
+        // Carlos's payroll (wk 44): 3110.38 for 48 h = 64.80/h; 6 extra hours at double = 777.59;
+        // total 3887.97 there (it rounds each line), 3887.98 here.
+        assert_eq!(
+            earnings(Some(3110.38), Some(48.0), 54 * 60, 7),
+            (Some(64.80), Some(3887.98), 360)
+        );
     }
 
     fn fix(no: &str, date: &str, entry: Option<&str>, exit: Option<&str>) -> AttendanceCorrection {

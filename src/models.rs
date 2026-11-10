@@ -2194,6 +2194,13 @@ pub struct AttendanceEmployee {
     /// school's hour count, but is not payroll.
     #[serde(default)]
     pub intern: bool,
+    /// Weekly pay before taxes, MXN (Daniel, 2026-11-09: "José gana 3000 + impuestos por 45 h"),
+    /// for the money each one has earned with the hours worked. Admin-only, like the report.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weekly_pay: Option<f64>,
+    /// Hours that weekly pay covers (45 in the shop's shifts).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weekly_hours: Option<f64>,
     pub updated_at: DateTime,
 }
 
