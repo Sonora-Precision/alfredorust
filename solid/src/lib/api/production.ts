@@ -59,3 +59,6 @@ export const getTraveler = () => apiGet<import('./types').TravelerData>('/api/ad
  *  may pass someone else's id to see their turn (it does not count as that person's look). */
 export const getMyShift = (userId?: string | null) =>
   apiGet<import('./types').MyShiftData>('/api/production/my_shift', userId ? { user_id: userId } : undefined)
+/** Admin only: everyone who opens "Mi turno", for the "ver el turno de" picker. */
+export const listMyShiftPeople = () =>
+  apiGet<import('./types').WorkOrderPerson[]>('/api/production/my_shift/people')

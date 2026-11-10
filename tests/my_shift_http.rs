@@ -216,6 +216,17 @@ async fn my_shift_shows_my_parts_and_what_changed() {
     assert_eq!(parts(&json(&body), "elsewhere"), ["PART-A"]);
     let (status, _) = get(jose.clone(), format!("{url}?user_id={}", carlos_id.to_hex())).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
+    // The admin's picker: people who open Mi turno, not admins nor project-only viewers.
+    let (status, body) = get(admin.clone(), format!("{url}/people")).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let mut ids: Vec<String> =
+        json(&body).as_array().unwrap().iter().map(|p| p["id"].as_str().unwrap().to_string()).collect();
+    ids.sort();
+    let mut want = vec![jose_id.to_hex(), carlos_id.to_hex()];
+    want.sort();
+    assert_eq!(ids, want, "{body}");
+    let (status, _) = get(jose.clone(), format!("{url}/people")).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
 
     // Next morning: only what happened since his last look.
     let visits = state.my_shift_visits.clone();

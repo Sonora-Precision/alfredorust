@@ -21,7 +21,7 @@ use super::finance::helpers::require_active_company;
 use super::production::{PersonData, folio, member_names, person};
 use super::project_backend::{iso, json_error, parse_oid};
 use crate::{
-    models::{ProcessOperation, Project, ProjectConcept, StepState, UserPermission, WorkOrderEvent, WorkOrderEventKind, WorkQueue},
+    models::{ProcessOperation, Project, ProjectConcept, StepState, UserPermission, UserRole, WorkOrderEvent, WorkOrderEventKind, WorkQueue},
     session::SessionUser,
     state::{
         AppState, WorkOrder, list_board_members, list_process_operations, list_work_order_events_since,
@@ -186,6 +186,45 @@ fn is_news(e: &WorkOrderEvent, me: ObjectId, mine: &HashSet<ObjectId>) -> bool {
         return false;
     }
     mine.contains(&e.concept_id) || e.subject_user_id == Some(me) || e.previous_user_id == Some(me)
+}
+
+/// Everyone who opens "Mi turno" (board viewers and people who take work), for the admin's
+/// "ver el turno de" picker (Daniel, 2026-11-09: "saber que estan viendo ellos"). Admin only.
+pub async fn api_my_shift_people(session_user: SessionUser, State(state): State<Arc<AppState>>) -> Response {
+    if !session_user.is_admin() {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let company_id = require_active_company(&session_user);
+    let err = || json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load people");
+    let Ok(mut cursor) = state.user_companies.find(doc! { "company_id": company_id }).await else {
+        return err();
+    };
+    let mut ids = Vec::new();
+    while let Ok(Some(m)) = cursor.try_next().await {
+        if m.role != UserRole::Admin
+            && (m.permissions.contains(&UserPermission::TakeWorkOrders)
+                || m.permissions.contains(&UserPermission::ViewProductionBoard))
+        {
+            ids.push(m.user_id);
+        }
+    }
+    let mut people = Vec::new();
+    if !ids.is_empty() {
+        let Ok(mut cursor) = state.users.find(doc! { "_id": { "$in": &ids } }).await else {
+            return err();
+        };
+        while let Ok(Some(u)) = cursor.try_next().await {
+            let Some(id) = u.id else { continue };
+            let name = u
+                .display_name
+                .clone()
+                .filter(|n| !n.trim().is_empty())
+                .unwrap_or_else(|| u.username.split('@').next().unwrap_or_default().to_string());
+            people.push(PersonData { id: id.to_hex(), username: u.username, name });
+        }
+    }
+    people.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    Json(people).into_response()
 }
 
 pub async fn api_my_shift(

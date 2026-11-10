@@ -13,7 +13,7 @@ import { PageHeader } from '../components/ui/PageHeader'
 import { Select } from '../components/ui/Select'
 import { Spinner } from '../components/ui/Spinner'
 import { listCompanyPartDrawings } from '../lib/api/partFiles'
-import { getMyShift, listBoardMembers } from '../lib/api/production'
+import { getMyShift, listMyShiftPeople } from '../lib/api/production'
 import type { MyChange, MyPart, MyStep } from '../lib/api/types'
 import { useAuth } from '../lib/auth/AuthContext'
 
@@ -94,8 +94,8 @@ export default function MyShift(): JSX.Element {
     refetchInterval: 60_000,
   }))
   const members = createQuery(() => ({
-    queryKey: ['production', 'members'],
-    queryFn: listBoardMembers,
+    queryKey: ['production', 'my-shift-people'],
+    queryFn: listMyShiftPeople,
     enabled: auth.isAdmin(),
   }))
   const drawings = createQuery(() => ({
@@ -124,9 +124,9 @@ export default function MyShift(): JSX.Element {
         actions={
           <Show when={auth.isAdmin()}>
             <Select value={viewAs()} onChange={setViewAs} class="sm:w-56" aria-label="Ver el turno de">
-              <option value="">Mi turno</option>
+              <option value="">Ver el turno de: yo</option>
               <For each={(members.data ?? []).filter((m) => m.id !== auth.userId())}>
-                {(m) => <option value={m.id}>{m.name}</option>}
+                {(m) => <option value={m.id}>Ver el turno de: {m.name}</option>}
               </For>
             </Select>
           </Show>
@@ -163,12 +163,12 @@ export default function MyShift(): JSX.Element {
               </Show>
             </section>
 
-            <PartSection title="Te toca ahora" empty="No tienes ningún paso a tu nombre ahorita." parts={d().now} drawingOf={drawingOf()} canOpenProject={canOpenProject()} />
+            <PartSection title={own() ? "Te toca ahora" : "Le toca ahora"} empty={own() ? "No tienes ningún paso a tu nombre ahorita." : "No tiene ningún paso a su nombre ahorita."} parts={d().now} drawingOf={drawingOf()} canOpenProject={canOpenProject()} />
             <Show when={d().blocked.length}>
               <PartSection title="Detenidas" parts={d().blocked} drawingOf={drawingOf()} canOpenProject={canOpenProject()} />
             </Show>
             <Show when={d().elsewhere.length}>
-              <PartSection title="Tuyas, en otro paso" hint="Ya hiciste tu parte o le toca a alguien más." parts={d().elsewhere} drawingOf={drawingOf()} canOpenProject={canOpenProject()} />
+              <PartSection title={own() ? "Tuyas, en otro paso" : "Suyas, en otro paso"} hint={own() ? "Ya hiciste tu parte o le toca a alguien más." : "Ya hizo su parte o le toca a alguien más."} parts={d().elsewhere} drawingOf={drawingOf()} canOpenProject={canOpenProject()} />
             </Show>
 
             <Show when={own()}>

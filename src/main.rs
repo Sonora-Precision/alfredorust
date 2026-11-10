@@ -771,6 +771,7 @@ async fn main() {
         .route("/api/production/plant", get(routes::api_production_plant))
         .route("/api/production/floor", get(routes::api_production_floor))
         .route("/api/production/my_shift", get(routes::api_my_shift))
+        .route("/api/production/my_shift/people", get(routes::api_my_shift_people))
         .route(
             "/api/production/plant_layout",
             post(routes::api_plant_layout_save),

@@ -504,6 +504,7 @@ pub fn build_app(state: Arc<AppState>) -> Router {
         .route("/api/production/plant", get(routes::api_production_plant))
         .route("/api/production/floor", get(routes::api_production_floor))
         .route("/api/production/my_shift", get(routes::api_my_shift))
+        .route("/api/production/my_shift/people", get(routes::api_my_shift_people))
         .route("/api/admin/attendance/employees", get(routes::api_attendance_employees).post(routes::api_attendance_employee_save))
         .route("/api/admin/attendance/manual", post(routes::api_attendance_manual_add))
         .route(
