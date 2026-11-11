@@ -135,6 +135,8 @@ pub struct ProjectConceptData {
     pub unit_price: Option<f64>,
     pub notes: Option<String>,
     pub position: i32,
+    /// Who the part is assigned to ("Asignado a"), apart from who programs it.
+    pub owner_user_id: Option<String>,
     /// Pieces produced (all steps ✔ or N/A).
     pub completed_quantity: f64,
     /// Pieces quality released (these count as finished) and rejected.
@@ -189,6 +191,7 @@ pub(crate) fn project_concept_data(c: ProjectConcept) -> Option<ProjectConceptDa
         unit_price: c.unit_price,
         notes: c.notes,
         position: c.position,
+        owner_user_id: c.owner_user_id.map(|id| id.to_hex()),
         completed_quantity: c.completed_quantity,
         released_quantity: c.released_quantity,
         rejected_quantity: c.rejected_quantity,

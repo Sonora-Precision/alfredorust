@@ -156,6 +156,17 @@ async fn responsible_gets_the_pieces_not_the_programmer() {
     assert_eq!(status, StatusCode::OK, "body: {body}");
     let (_, body) = get("/api/production/weekly_pieces", admin.clone()).await;
     assert_eq!(pieces_of(&json(&body), &jose_id), 4.0, "{body}");
+    // Seguimiento reads it back after a reload (Daniel, 2026-11-10: it showed "Sin asignar").
+    let (_, body) = get_with_cookie(
+        build_app(shared.clone()),
+        host,
+        &format!("/api/admin/projects/{}/concepts", project.to_hex()),
+        &admin,
+    )
+    .await;
+    let listed = json(&body);
+    let row = listed.as_array().unwrap().iter().find(|c| c["id"] == part).unwrap();
+    assert_eq!(row["owner_user_id"], jose_id.to_hex(), "{body}");
 
     // Clearing it gives the pieces back to the programmer.
     let (status, _) = post(owner, admin.clone(), serde_json::json!({ "user_id": null })).await;
