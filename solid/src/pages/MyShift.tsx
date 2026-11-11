@@ -9,6 +9,8 @@ import { type JSX, For, Show, createMemo, createSignal } from 'solid-js'
 
 import { ReadyBadge } from '../components/production/ReadyBadge'
 import { WeeklyPiecesCard } from '../components/production/WeeklyPiecesCard'
+import { DrawingHover } from '../components/projects/DrawingHover'
+import { Modal } from '../components/ui/Modal'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Select } from '../components/ui/Select'
 import { Spinner } from '../components/ui/Spinner'
@@ -240,12 +242,16 @@ function StepChip(props: { step: MyStep; quantity: number }): JSX.Element {
 function PartCard(props: { part: MyPart; drawing?: string; canOpenProject: boolean }): JSX.Element {
   const p = () => props.part
   const late = () => p().scheduled_at != null && new Date(p().scheduled_at!).getTime() < Date.now()
+  // The drawing opens inside the app, also on phones and tablets with no hover (Daniel,
+  // 2026-11-10: "debería de poder ver la vista previa de los planos").
+  const [drawingOpen, setDrawingOpen] = createSignal(false)
   return (
     <div class={`min-w-0 space-y-2 rounded-lg border p-3 ${p().blocked_note ? 'border-red-500/40' : p().new ? 'border-emerald-500/50' : 'border-border'}`}>
       <div class="flex items-start justify-between gap-2">
         <div class="min-w-0">
           <p class="truncate font-semibold text-foreground">
-            {p().part} <span class="text-xs font-normal text-muted-foreground">{p().folio}</span>
+            <DrawingHover url={props.drawing} label={p().part}>{p().part}</DrawingHover>{' '}
+            <span class="text-xs font-normal text-muted-foreground">{p().folio}</span>
           </p>
           <p class="truncate text-xs text-muted-foreground">
             <Show when={props.canOpenProject} fallback={p().project}>
@@ -286,11 +292,29 @@ function PartCard(props: { part: MyPart; drawing?: string; canOpenProject: boole
           {(at) => <span class={late() ? 'font-medium text-red-500' : ''}>Entrega {dayText(at())}</span>}
         </Show>
       </div>
-      <Show when={props.drawing}>
+      <Show when={props.drawing} fallback={<span class="text-xs text-muted-foreground">Sin plano</span>}>
         {(url) => (
-          <a href={url()} target="_blank" rel="noopener" class="inline-block text-xs font-medium text-sky-500 hover:underline">
-            Ver plano
-          </a>
+          <>
+            <button
+              type="button"
+              class="inline-block text-xs font-medium text-sky-500 hover:underline"
+              onClick={() => setDrawingOpen(true)}
+            >
+              Ver plano
+            </button>
+            <Modal open={drawingOpen()} onOpenChange={setDrawingOpen} title={`Plano · ${p().part}`} class="max-w-[960px]">
+              <div class="space-y-3">
+                <iframe
+                  src={`${url()}#toolbar=0&navpanes=0&view=Fit`}
+                  title={`Plano de ${p().part}`}
+                  class="h-[calc(100dvh-11rem)] w-full rounded-md border border-border bg-white"
+                />
+                <a href={url()} target="_blank" rel="noopener" class="inline-block text-sm font-medium text-sky-500 hover:underline">
+                  Abrir completo
+                </a>
+              </div>
+            </Modal>
+          </>
         )}
       </Show>
     </div>
