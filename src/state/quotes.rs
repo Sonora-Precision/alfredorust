@@ -150,7 +150,23 @@ pub async fn replace_draft_quote(state: &AppState, quote: &Quote) -> Result<bool
     Ok(res.matched_count > 0)
 }
 
-/// Stores the PDF drawing of a quote line.
+/// What a quote file is, from its first bytes: a PDF drawing or a PNG/JPG picture.
+pub fn quote_file_kind(bytes: &[u8]) -> Option<(&'static str, &'static str)> {
+    if super::looks_like_pdf(bytes) {
+        Some(("application/pdf", "pdf"))
+    } else if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        Some(("image/png", "png"))
+    } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        Some(("image/jpeg", "jpg"))
+    } else {
+        None
+    }
+}
+
+/// Largest picture accepted for a quote (bytes); drawings may be up to 40 MB.
+pub const MAX_QUOTE_IMAGE_BYTES: usize = 8 * 1024 * 1024;
+
+/// Stores a file of a quote line: its PDF drawing or the picture printed in the quote.
 pub async fn save_quote_file(
     state: &AppState,
     company_id: &ObjectId,
@@ -161,14 +177,17 @@ pub async fn save_quote_file(
     if bytes.is_empty() {
         anyhow::bail!("el archivo está vacío");
     }
+    let Some((content_type, ext)) = quote_file_kind(bytes) else {
+        anyhow::bail!("el archivo debe ser un PDF (plano) o una imagen PNG / JPG");
+    };
     if bytes.len() > super::MAX_PART_FILE_BYTES {
         anyhow::bail!("el plano excede el tamaño máximo (40 MB)");
     }
-    if !super::looks_like_pdf(bytes) {
-        anyhow::bail!("el plano debe ser un PDF");
+    if ext != "pdf" && bytes.len() > MAX_QUOTE_IMAGE_BYTES {
+        anyhow::bail!("la imagen excede el tamaño máximo (8 MB)");
     }
     let id = ObjectId::new();
-    let storage_key = format!("quotes/{}/{}.pdf", company_id.to_hex(), id.to_hex());
+    let storage_key = format!("quotes/{}/{}.{ext}", company_id.to_hex(), id.to_hex());
     let path = super::part_file_store_root().join(&storage_key);
     if let Some(dir) = path.parent() {
         tokio::fs::create_dir_all(dir).await?;
@@ -178,7 +197,8 @@ pub async fn save_quote_file(
     let file = QuoteFile {
         id: Some(id),
         company_id: *company_id,
-        original_filename: if name.is_empty() { "plano.pdf".into() } else { name.chars().take(160).collect() },
+        original_filename: if name.is_empty() { format!("archivo.{ext}") } else { name.chars().take(160).collect() },
+        content_type: content_type.to_string(),
         size_bytes: bytes.len() as i64,
         sha256: {
             use sha2::{Digest, Sha256};
@@ -283,12 +303,13 @@ mod tests {
             lines: lines
                 .iter()
                 .enumerate()
-                .map(|(i, (q, p))| QuoteItem { item: i as i32 + 1, quantity: *q, description: "P".into(), unit_price: *p, concept_id: None, material: None, weight_kg: None, multiplier: None, drawing_id: None, drawing_name: None, programming_h: None, setup_h: None, cycle_min: None })
+                .map(|(i, (q, p))| QuoteItem { item: i as i32 + 1, quantity: *q, description: "P".into(), unit_price: *p, concept_id: None, material: None, weight_kg: None, multiplier: None, drawing_id: None, drawing_name: None, image_id: None, image_name: None, programming_h: None, setup_h: None, cycle_min: None })
                 .collect(),
             sent_at: None,
             created_by: ObjectId::new(),
             created_at: DateTime::now(),
             draft: false,
+            delivery_from: None,
         }
     }
 

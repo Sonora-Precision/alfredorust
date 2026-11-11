@@ -110,7 +110,7 @@ const ROUTES = [
   // Cotizaciones (antes del proyecto). Los planos se suben con sp_upload_quote_drawing.
   ["GET", "/api/admin/quotes", "Listar cotizaciones (cada revisión; draft=true son borradores)"],
   ["GET", "/api/admin/quotes/{id}", "Ver cotización con totales y datos de la empresa"],
-  ["POST", "/api/admin/quotes", "Crear cotización ({contact_id, attention?, draft?, lines:[{quantity, description, unit_price?, drawing_id?, material?, weight_kg?, multiplier?}]}); draft=true permite partidas sin precio"],
+  ["POST", "/api/admin/quotes", "Crear cotización ({contact_id, attention?, draft?, delivery_from?: orden|planos, lines:[{quantity, description (renglones con \n; el primero lleva el precio), unit_price?, drawing_id? (PDF), image_id? (PNG/JPG impresa en la cotización), material?, weight_kg?, multiplier?, programming_h?, setup_h?, cycle_min?}]}); draft=true permite partidas sin precio"],
   ["POST", "/api/admin/quotes/{id}/update", "Reescribir un borrador (mismo cuerpo que crear, completo); draft=false lo genera (todas con precio)"],
   ["POST", "/api/admin/quotes/{id}/sent", "Marcar cotización como enviada"],
   ["POST", "/api/admin/quotes/{id}/revise", "Nueva revisión de una cotización generada"],
@@ -409,11 +409,11 @@ server.registerTool(
   {
     title: "Subir plano de cotización",
     description:
-      "Sube un PDF local (el plano de una partida) a POST /api/admin/quote_files y regresa su id para usarlo como " +
-      "`drawing_id` en las partidas de una cotización; al convertirla en proyecto pasa a la parte. " +
+      "Sube un archivo local a POST /api/admin/quote_files: un PDF (el plano de la partida, se usa como `drawing_id`) o una imagen PNG/JPG (la foto o render que se imprime en la cotización, se usa como `image_id`). Regresa su id. " +
+      "Al convertir la cotización en proyecto el plano pasa a la parte. " +
       "REGLA: igual que sp_write, primero sin confirm (vista previa) y confirm=true sólo con el sí del usuario.",
     inputSchema: {
-      file_path: z.string().describe("Ruta absoluta del PDF en esta computadora"),
+      file_path: z.string().describe("Ruta absoluta del PDF o de la imagen PNG/JPG en esta computadora"),
       company: companyArg,
       confirm: z.boolean().optional().describe("true sólo después de que el usuario aprobó en el chat"),
     },
@@ -426,18 +426,25 @@ server.registerTool(
       const size = statSync(file_path).size;
       if (size > 40 * 1024 * 1024) throw new Error("El plano pasa de 40 MB.");
       const data = readFileSync(file_path);
-      if (!data.subarray(0, 1024).includes("%PDF-")) throw new Error("El archivo no es un PDF.");
+      const kind = data.subarray(0, 1024).includes("%PDF-")
+        ? "application/pdf"
+        : data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4e && data[3] === 0x47
+          ? "image/png"
+          : data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff
+            ? "image/jpeg"
+            : null;
+      if (!kind) throw new Error("El archivo debe ser PDF, PNG o JPG.");
       const name = basename(file_path);
       if (confirm !== true) {
         return ok(
-          `VISTA PREVIA — no se envió nada.\nEmpresa: ${hostFor(company)}\nAcción: subir plano de cotización\n` +
+          `VISTA PREVIA — no se envió nada.\nEmpresa: ${hostFor(company)}\nAcción: subir ${kind === "application/pdf" ? "plano" : "imagen"} de cotización\n` +
             `Archivo: ${name} (${(size / 1024).toFixed(0)} KB)\n\nPide confirmación al usuario y vuelve a llamar con confirm=true.`
         );
       }
       const boundary = `----spmcp${Date.now().toString(16)}`;
       const safe = name.replace(/["\r\n]/g, "_");
       const body = Buffer.concat([
-        Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${safe}"\r\nContent-Type: application/pdf\r\n\r\n`),
+        Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${safe}"\r\nContent-Type: ${kind}\r\n\r\n`),
         data,
         Buffer.from(`\r\n--${boundary}--\r\n`),
       ]);

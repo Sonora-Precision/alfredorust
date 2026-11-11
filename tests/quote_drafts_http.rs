@@ -131,11 +131,35 @@ async fn quote_draft_with_drawings_becomes_a_project() {
     assert_eq!((q["id"].as_str(), q["folio"].as_str(), q["draft"].as_bool()), (Some(id.as_str()), Some(folio.as_str()), Some(true)));
     assert_eq!(q["lines"][0]["material"]["part_length"], 2.362);
 
-    // Generated with every price: no longer a draft, and no longer edited in place.
+    // The picture printed under a line, like the render of quote 261102-00-01: PNG or JPG,
+    // never where the drawing goes (and a PDF never as the picture).
+    let png: &[u8] = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR";
+    let (status, body) =
+        post_multipart_with_cookie(build_app(shared.clone()), host, "/api/admin/quote_files", &admin, &[("file", Some("pieza.png"), png)]).await;
+    assert_eq!(status, StatusCode::CREATED, "body: {body}");
+    let picture = json(&body);
+    assert_eq!(picture["content_type"], "image/png");
+    let picture_id = picture["id"].as_str().unwrap().to_string();
+    let (status, _) = get_with_cookie(build_app(shared.clone()), host, picture["url"].as_str().unwrap(), &admin).await;
+    assert_eq!(status, StatusCode::OK);
+    for (drawing, image) in [(picture_id.as_str(), ""), ("", drawing_id.as_str())] {
+        let (status, _) = post(
+            format!("/api/admin/quotes/{id}/update"),
+            serde_json::json!({ "contact_id": client.to_hex(), "draft": true,
+                "lines": [{ "quantity": 1, "description": "X", "drawing_id": drawing, "image_id": image }] }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    // Generated with every price: no longer a draft, and no longer edited in place. The first
+    // line's description is printed as rows (the first names the part), with its picture, and
+    // the delivery counts from the approval of the drawings.
     let (status, body) = post(
         format!("/api/admin/quotes/{id}/update"),
-        serde_json::json!({ "contact_id": client.to_hex(), "lines": [
-            { "quantity": 20, "description": "PA-1001", "drawing_id": drawing_id, "material": alu, "unit_price": 350, "programming_h": 2, "setup_h": 1.5, "cycle_min": 12 },
+        serde_json::json!({ "contact_id": client.to_hex(), "delivery_from": "planos", "lines": [
+            { "quantity": 20, "description": "  PA-1001\r\nMaquinado y soldado.\n\nIncluye material.\n ", "drawing_id": drawing_id,
+              "image_id": picture_id, "material": alu, "unit_price": 350, "programming_h": 2, "setup_h": 1.5, "cycle_min": 12 },
             { "quantity": 4, "description": "PA-1002", "unit_price": 900 },
         ] }),
     )
@@ -143,6 +167,14 @@ async fn quote_draft_with_drawings_becomes_a_project() {
     assert_eq!(status, StatusCode::OK, "body: {body}");
     let q = json(&body);
     assert_eq!((q["draft"].as_bool(), q["subtotal"].as_f64()), (Some(false), Some(10_600.0)));
+    assert_eq!(q["lines"][0]["description"], "PA-1001\nMaquinado y soldado.\n\nIncluye material.");
+    assert_eq!((q["lines"][0]["image_name"].as_str(), q["delivery_from"].as_str()), (Some("pieza.png"), Some("planos")));
+    let (status, _) = post(
+        format!("/api/admin/quotes/{id}/update"),
+        serde_json::json!({ "contact_id": client.to_hex(), "draft": true, "delivery_from": "mañana", "lines": lines }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "a generated quote is not rewritten");
     let (status, _) = post(format!("/api/admin/quotes/{id}/update"), serde_json::json!({ "contact_id": client.to_hex(), "draft": true, "lines": lines })).await;
     assert_eq!(status, StatusCode::CONFLICT);
 
@@ -156,6 +188,8 @@ async fn quote_draft_with_drawings_becomes_a_project() {
     assert_eq!(files.len(), 1);
     assert_eq!((files[0].concept_id, files[0].original_filename.as_str()), (parts[0].id.unwrap(), "PA-1001 Rev A.pdf"));
     assert_eq!(parts[0].material.as_ref().and_then(|m| m.part_length), Some(2.362));
+    // The part is named by the first line of the description.
+    assert_eq!(parts[0].name, "PA-1001");
     // The quoted time is the part's estimate: 2 + 1.5 + 20 × 12 min = 7.5 h.
     assert_eq!((parts[0].estimated_hours, parts[1].estimated_hours), (Some(7.5), None));
 }

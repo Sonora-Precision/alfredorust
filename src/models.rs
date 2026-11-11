@@ -1228,6 +1228,10 @@ pub struct Quote {
     /// not sent, revised or turned into a project until it is generated.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub draft: bool,
+    /// What the delivery time counts from: None = the purchase order and advance; "planos"
+    /// = the approval of the drawings and the advance (Daniel's quote 261102-00-01).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivery_from: Option<String>,
 }
 
 /// A PDF drawing attached to a quote line, before there is a part (it is copied to the part
@@ -1238,11 +1242,19 @@ pub struct QuoteFile {
     pub id: Option<ObjectId>,
     pub company_id: ObjectId,
     pub original_filename: String,
+    /// "application/pdf" (a drawing) or "image/png" / "image/jpeg" (the picture printed in the
+    /// quote). Files from before pictures are drawings.
+    #[serde(default = "default_pdf")]
+    pub content_type: String,
     pub size_bytes: i64,
     pub sha256: String,
     pub storage_key: String,
     pub uploaded_by: ObjectId,
     pub uploaded_at: DateTime,
+}
+
+fn default_pdf() -> String {
+    "application/pdf".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1267,6 +1279,12 @@ pub struct QuoteItem {
     pub drawing_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub drawing_name: Option<String>,
+    /// A picture of the part printed in the quote under the line, like a render (a quote
+    /// file, PNG or JPG).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_name: Option<String>,
     /// Estimated time (Daniel, 2026-11-07): programming / engineering once per part number,
     /// setup once per order, and the cycle per piece. They give the time-based suggested
     /// price and become the part's estimated hours in the project.

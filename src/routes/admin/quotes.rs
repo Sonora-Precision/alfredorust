@@ -193,6 +193,9 @@ pub struct QuoteLinePayload {
     /// A drawing uploaded with POST /api/admin/quote_files.
     #[serde(default)]
     pub drawing_id: Option<String>,
+    /// A picture of the part (PNG/JPG quote file) printed in the document.
+    #[serde(default)]
+    pub image_id: Option<String>,
     /// Estimated time: programming (h, once per part number), setup (h), cycle (min/pc).
     #[serde(default)]
     pub programming_h: Option<f64>,
@@ -239,6 +242,10 @@ pub struct QuoteCreatePayload {
     pub delivery_time: Option<i32>,
     #[serde(default)]
     pub delivery_unit: Option<String>,
+    /// "orden" (default: from the purchase order and advance) or "planos" (from the approval
+    /// of the drawings and the advance).
+    #[serde(default)]
+    pub delivery_from: Option<String>,
     #[serde(default)]
     pub validity_days: Option<i32>,
     #[serde(default)]
@@ -277,6 +284,8 @@ pub struct QuoteData {
     pub discount: f64,
     pub delivery_time: i32,
     pub delivery_unit: String,
+    /// "orden" or "planos": what the delivery time counts from.
+    pub delivery_from: String,
     pub validity_days: i32,
     pub advance_pct: f64,
     pub remaining_pct: f64,
@@ -323,6 +332,7 @@ async fn quote_data(state: &AppState, q: Quote) -> Option<QuoteData> {
         discount: q.discount,
         delivery_time: q.delivery_time,
         delivery_unit: q.delivery_unit,
+        delivery_from: q.delivery_from.clone().unwrap_or_else(|| "orden".into()),
         validity_days: q.validity_days,
         advance_pct: q.advance_pct,
         remaining_pct: t.remaining_pct,
@@ -364,11 +374,27 @@ async fn lines_from_parts(state: &AppState, company_id: &ObjectId, project_id: &
             multiplier: c.quote.as_ref().and_then(|q| q.multiplier),
             drawing_id: None,
             drawing_name: None,
+            image_id: None,
+            image_name: None,
             programming_h: None,
             setup_h: None,
             cycle_min: None,
         })
         .collect())
+}
+
+/// A line's description as printed: up to 6 lines (the first one names the part), each
+/// trimmed, without empty lines at the ends; 300 characters at most.
+pub fn clean_description(s: &str) -> String {
+    let lines: Vec<&str> = s.lines().map(str::trim).collect();
+    let start = lines.iter().position(|l| !l.is_empty()).unwrap_or(lines.len());
+    let end = lines.iter().rposition(|l| !l.is_empty()).map_or(start, |e| e + 1);
+    lines[start..end].iter().take(6).copied().collect::<Vec<_>>().join("\n").chars().take(300).collect()
+}
+
+/// The first line of a description: the part's name in the project and in past prices.
+pub fn first_line(s: &str) -> &str {
+    s.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("")
 }
 
 fn positive(v: Option<f64>) -> Result<Option<f64>, Response> {
@@ -405,27 +431,37 @@ async fn lines_from_payload(
         if !draft && l.unit_price <= 0.0 {
             return Err(json_error(StatusCode::BAD_REQUEST, "cada partida necesita su precio unitario (o guárdala como borrador)"));
         }
-        let description: String = l.description.trim().chars().take(300).collect();
+        let description = clean_description(&l.description);
         if description.is_empty() {
             return Err(json_error(StatusCode::BAD_REQUEST, "cada partida necesita su número de parte o descripción"));
         }
-        // The drawing has to be one of this company's quote files.
-        let drawing = match l.drawing_id.as_deref().filter(|d| !d.is_empty()) {
-            Some(d) => {
-                let id = parse_oid(d)?;
-                match get_quote_file(state, company_id, &id).await {
-                    Ok(Some(f)) => Some((id.to_hex(), f.original_filename)),
-                    Ok(None) => return Err(json_error(StatusCode::BAD_REQUEST, "el plano de la partida no existe")),
-                    Err(_) => return Err(json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load the drawing")),
+        // The drawing (a PDF) and the picture shown in the document have to be this company's
+        // quote files.
+        let file = |id: Option<String>, pdf: bool| async move {
+            match id.as_deref().filter(|d| !d.is_empty()) {
+                Some(d) => {
+                    let oid = parse_oid(d)?;
+                    match get_quote_file(state, company_id, &oid).await {
+                        Ok(Some(f)) if (f.content_type == "application/pdf") == pdf => Ok(Some((oid.to_hex(), f.original_filename))),
+                        Ok(Some(_)) => Err(json_error(
+                            StatusCode::BAD_REQUEST,
+                            if pdf { "el plano debe ser un PDF" } else { "la imagen debe ser PNG o JPG" },
+                        )),
+                        Ok(None) => Err(json_error(StatusCode::BAD_REQUEST, "el archivo de la partida no existe")),
+                        Err(_) => Err(json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load the file")),
+                    }
                 }
+                None => Ok(None),
             }
-            None => None,
         };
-        let (drawing_id, drawing_name) = drawing.unzip();
+        let (drawing_id, drawing_name) = file(l.drawing_id.clone(), true).await?.unzip();
+        let (image_id, image_name) = file(l.image_id.clone(), false).await?.unzip();
         let time = |v: Option<f64>| v.filter(|x| x.is_finite() && *x > 0.0);
         out.push(QuoteItem {
             drawing_id,
             drawing_name,
+            image_id,
+            image_name,
             programming_h: time(l.programming_h),
             setup_h: time(l.setup_h),
             cycle_min: time(l.cycle_min),
@@ -489,6 +525,11 @@ async fn build_quote(
     let validity_days = p.validity_days.or(defaults.as_ref().map(|d| d.validity_days)).unwrap_or(15);
     let advance_pct = p.advance_pct.or(defaults.as_ref().map(|d| d.advance_pct)).unwrap_or(50.0);
     valid_terms(&currency, &language, advance_pct, validity_days)?;
+    let delivery_from = match p.delivery_from.as_deref().unwrap_or("orden") {
+        "orden" => None,
+        "planos" => Some("planos".to_string()),
+        _ => return Err(json_error(StatusCode::BAD_REQUEST, "la entrega cuenta desde la orden o desde los planos")),
+    };
     let delivery_unit = p.delivery_unit.unwrap_or_else(|| "dias".into());
     if !matches!(delivery_unit.as_str(), "dias" | "semanas") {
         return Err(json_error(StatusCode::BAD_REQUEST, "entrega en dias o semanas"));
@@ -553,6 +594,7 @@ async fn build_quote(
         discount,
         delivery_time: p.delivery_time.unwrap_or(10).clamp(0, 999),
         delivery_unit,
+        delivery_from,
         validity_days,
         advance_pct,
         notes: p.notes.into_iter().filter_map(|n| text(Some(n), 300)).take(3).collect(),
@@ -801,6 +843,8 @@ pub async fn api_quote_update(
 pub struct QuoteFileData {
     pub id: String,
     pub filename: String,
+    /// "application/pdf" for a drawing, "image/png" / "image/jpeg" for a picture.
+    pub content_type: String,
     pub size_bytes: i64,
     pub url: String,
 }
@@ -832,7 +876,13 @@ pub async fn api_quote_file_upload(
             let id = f.id.unwrap_or_default().to_hex();
             (
                 StatusCode::CREATED,
-                Json(QuoteFileData { url: format!("/api/admin/quote_files/{id}"), id, filename: f.original_filename, size_bytes: f.size_bytes }),
+                Json(QuoteFileData {
+                    url: format!("/api/admin/quote_files/{id}"),
+                    id,
+                    filename: f.original_filename,
+                    content_type: f.content_type,
+                    size_bytes: f.size_bytes,
+                }),
             )
                 .into_response()
         }
@@ -851,8 +901,19 @@ pub async fn api_quote_file_download(session_user: SessionUser, State(state): St
         return json_error(StatusCode::NOT_FOUND, "drawing not found");
     };
     match read_quote_file(&file).await {
-        Ok(bytes) => super::part_files::pdf_inline(bytes, &file.original_filename),
-        Err(_) => json_error(StatusCode::NOT_FOUND, "drawing file missing"),
+        Ok(bytes) if file.content_type == "application/pdf" => super::part_files::pdf_inline(bytes, &file.original_filename),
+        // A picture: shown in the quote document, cached a while (it never changes).
+        Ok(bytes) => {
+            let mut resp = bytes.into_response();
+            let h = resp.headers_mut();
+            if let Ok(v) = axum::http::HeaderValue::from_str(&file.content_type) {
+                h.insert(axum::http::header::CONTENT_TYPE, v);
+            }
+            h.insert(axum::http::header::CACHE_CONTROL, axum::http::HeaderValue::from_static("private, max-age=86400"));
+            h.insert(axum::http::header::X_CONTENT_TYPE_OPTIONS, axum::http::HeaderValue::from_static("nosniff"));
+            resp
+        }
+        Err(_) => json_error(StatusCode::NOT_FOUND, "file missing"),
     }
 }
 
@@ -1018,7 +1079,7 @@ pub async fn api_quote_to_project(
         // The quoted time becomes the part's estimated hours (programming + setup + cycles).
         let hours = time_price(None, line.quantity, line.programming_h, line.setup_h, line.cycle_min, 0.0, 0.0).map(|t| t.hours);
         let concept_id = match create_project_concept(
-            &state, &company_id, &project_id, None, &line.description, line.quantity, None, None, hours, None, None, i as i32 + 1,
+            &state, &company_id, &project_id, None, first_line(&line.description), line.quantity, None, None, hours, None, None, i as i32 + 1,
         )
         .await
         {
@@ -1129,9 +1190,9 @@ async fn part_references(state: &AppState, company_id: &ObjectId) -> anyhow::Res
             if let Some(c) = l.concept_id {
                 from_quotes.insert(c);
             }
-            out.entry(part_key(&l.description)).or_default().push(PartReferenceData {
+            out.entry(part_key(first_line(&l.description))).or_default().push(PartReferenceData {
                 kind: if q.project_id.is_some() { "aprobada" } else { "cotizada" },
-                description: l.description.clone(),
+                description: first_line(&l.description).to_string(),
                 unit_price: l.unit_price,
                 quantity: l.quantity,
                 currency: q.currency.clone(),

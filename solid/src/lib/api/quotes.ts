@@ -14,6 +14,9 @@ export interface QuoteItem {
   /** The line's PDF drawing (a quote file), copied to the part on "Convertir en proyecto". */
   drawing_id?: string | null
   drawing_name?: string | null
+  /** Picture printed in the quote under the line (PNG/JPG quote file). */
+  image_id?: string | null
+  image_name?: string | null
   /** Estimated time: programming (h, once per part number), setup (h), cycle (min/pc). */
   programming_h?: number | null
   setup_h?: number | null
@@ -43,6 +46,8 @@ export interface QuoteView {
   discount: number
   delivery_time: number
   delivery_unit: 'dias' | 'semanas'
+  /** What the delivery time counts from: the purchase order, or the approval of the drawings. */
+  delivery_from?: 'orden' | 'planos'
   validity_days: number
   advance_pct: number
   remaining_pct: number
@@ -101,6 +106,7 @@ export interface QuoteLinePayload {
   weight_kg?: number | null
   multiplier?: number | null
   drawing_id?: string | null
+  image_id?: string | null
   programming_h?: number | null
   setup_h?: number | null
   cycle_min?: number | null
@@ -118,6 +124,7 @@ export interface QuoteCreatePayload {
   discount?: number
   delivery_time?: number
   delivery_unit?: 'dias' | 'semanas'
+  delivery_from?: 'orden' | 'planos'
   validity_days?: number
   advance_pct?: number
   notes?: string[]
@@ -166,6 +173,7 @@ export const updateDraftQuote = (id: string, payload: QuoteCreatePayload) => api
 export interface QuoteFile {
   id: string
   filename: string
+  content_type: string
   size_bytes: number
   url: string
 }

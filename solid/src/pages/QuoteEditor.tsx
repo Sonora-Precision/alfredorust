@@ -8,7 +8,7 @@
 // "Generar cotización" turns it into the quote once every line has its price.
 import { A, useNavigate, useSearchParams } from '@solidjs/router'
 import { createMutation, createQuery, useQueryClient } from '@tanstack/solid-query'
-import { ArrowLeft, FileText, Paperclip, Plus, Trash2 } from 'lucide-solid'
+import { ArrowLeft, FileText, Image as ImageIcon, Paperclip, Plus, Trash2 } from 'lucide-solid'
 import { type JSX, For, Show, createEffect, createMemo, createSignal } from 'solid-js'
 import { createStore, produce } from 'solid-js/store'
 
@@ -43,6 +43,9 @@ interface Line {
   /** The PDF drawing of the part (a quote file), shown while the measures are taken. */
   drawingId: string | null
   drawingName: string | null
+  /** The picture printed in the quote under the line, like a render (PNG/JPG). */
+  imageId: string | null
+  imageName: string | null
   /** Estimated time: programming (h, once per part number), setup (h, once per order) and
    * cycle (min per piece), for the time-based price (Daniel, 2026-11-07). */
   prog: string
@@ -51,7 +54,7 @@ interface Line {
 }
 
 const emptyLine = (): Line => ({
-  description: '', quantity: '1', mat: null, weight: '', multiplier: '', price: '', drawingId: null, drawingName: null, prog: '', setup: '', cycle: '',
+  description: '', quantity: '1', mat: null, weight: '', multiplier: '', price: '', drawingId: null, drawingName: null, imageId: null, imageName: null, prog: '', setup: '', cycle: '',
 })
 const num = (s: string) => {
   const t = s.trim()
@@ -93,6 +96,7 @@ export default function QuoteEditor(): JSX.Element {
   const [discount, setDiscount] = createSignal('0')
   const [delivery, setDelivery] = createSignal('10')
   const [unit, setUnit] = createSignal<'dias' | 'semanas'>('dias')
+  const [deliveryFrom, setDeliveryFrom] = createSignal<'orden' | 'planos'>('orden')
   const [validity, setValidity] = createSignal('15')
   const [advance, setAdvance] = createSignal('50')
   const [notes, setNotes] = createSignal<string[]>([])
@@ -113,6 +117,7 @@ export default function QuoteEditor(): JSX.Element {
     setDiscount(String(q.discount))
     setDelivery(String(q.delivery_time))
     setUnit(q.delivery_unit)
+    setDeliveryFrom(q.delivery_from ?? 'orden')
     setValidity(String(q.validity_days))
     setAdvance(String(q.advance_pct))
     setNotes(q.notes)
@@ -126,6 +131,8 @@ export default function QuoteEditor(): JSX.Element {
         price: l.unit_price > 0 ? String(l.unit_price) : '',
         drawingId: l.drawing_id ?? null,
         drawingName: l.drawing_name ?? null,
+        imageId: l.image_id ?? null,
+        imageName: l.image_name ?? null,
         prog: str(l.programming_h),
         setup: str(l.setup_h),
         cycle: str(l.cycle_min),
@@ -208,7 +215,7 @@ export default function QuoteEditor(): JSX.Element {
 
   // Daniel, 2026-11-06: remember each part, and what it was sold or quoted for, as a reference.
   const partNames = createQuery(() => ({ queryKey: ['quote-part-names'], queryFn: quotesApi.listPartNames, staleTime: 60_000 }))
-  const lineNames = createMemo(() => lines.map((l) => l.description.trim()))
+  const lineNames = createMemo(() => lines.map((l) => firstOf(l.description).trim()))
   const references = createQuery(() => ({
     queryKey: ['quote-references', JSON.stringify(lineNames())],
     queryFn: () => quotesApi.partReferences(lineNames()),
@@ -244,6 +251,7 @@ export default function QuoteEditor(): JSX.Element {
         discount: num(discount()) ?? 0,
         delivery_time: num(delivery()) ?? 0,
         delivery_unit: unit(),
+        delivery_from: deliveryFrom(),
         validity_days: num(validity()) ?? 0,
         advance_pct: num(advance()) ?? 0,
         notes: notes(),
@@ -257,6 +265,7 @@ export default function QuoteEditor(): JSX.Element {
             weight_kg: num(l.weight),
             multiplier: num(l.multiplier),
             drawing_id: l.drawingId,
+            image_id: l.imageId,
             programming_h: num(l.prog),
             setup_h: num(l.setup),
             cycle_min: num(l.cycle),
@@ -296,11 +305,26 @@ export default function QuoteEditor(): JSX.Element {
     setUploading(i)
     try {
       const f = await quotesApi.uploadQuoteDrawing(file)
+      if (f.content_type !== 'application/pdf') return toast.error('El plano debe ser un PDF', 'La foto o el render van en "Imagen"')
       setLines(i, { drawingId: f.id, drawingName: f.filename })
       // A line without a part number takes it from the drawing's name ("PA-1001 Rev A.pdf").
       if (!lines[i]!.description.trim()) setLines(i, 'description', f.filename.replace(/\.pdf$/i, ''))
     } catch (err) {
       toast.error('No se pudo subir el plano', humanizeError(err, 'Debe ser un PDF'))
+    } finally {
+      setUploading(null)
+    }
+  }
+
+  // The picture printed under the line in the quote (a render or a photo of the sample).
+  const attachImage = async (i: number, file: File) => {
+    setUploading(i)
+    try {
+      const f = await quotesApi.uploadQuoteDrawing(file)
+      if (f.content_type === 'application/pdf') return toast.error('La imagen debe ser PNG o JPG', 'El PDF va en "Plano"')
+      setLines(i, { imageId: f.id, imageName: f.filename })
+    } catch (err) {
+      toast.error('No se pudo subir la imagen', humanizeError(err, 'Debe ser PNG o JPG, de menos de 8 MB'))
     } finally {
       setUploading(null)
     }
@@ -370,6 +394,15 @@ export default function QuoteEditor(): JSX.Element {
                   <option value="semanas" selected={unit() === 'semanas'}>semanas</option>
                 </select>
               </div>
+              <select
+                class={`${field} mt-1`}
+                aria-label="La entrega cuenta desde"
+                value={deliveryFrom()}
+                onChange={(e) => setDeliveryFrom(e.currentTarget.value as 'orden' | 'planos')}
+              >
+                <option value="orden" selected={deliveryFrom() === 'orden'}>desde la orden de compra y anticipo</option>
+                <option value="planos" selected={deliveryFrom() === 'planos'}>desde la aprobación de planos y anticipo</option>
+              </select>
             </label>
             <label class={label}>
               Validez (días) · Anticipo %
@@ -436,8 +469,15 @@ export default function QuoteEditor(): JSX.Element {
                           <input
                             class={cell}
                             list="quote-parts"
-                            value={l.description}
-                            onInput={(e) => set(i(), 'description', e.currentTarget.value)}
+                            value={firstOf(l.description)}
+                            onInput={(e) => set(i(), 'description', withFirst(l.description, e.currentTarget.value))}
+                          />
+                          <textarea
+                            class="mt-1 w-full resize-y rounded border border-border bg-background px-1 py-0.5 text-xs leading-snug"
+                            rows={Math.max(1, restOf(l.description).split('\n').length)}
+                            placeholder="Renglones abajo en la cotización (opcional)"
+                            value={restOf(l.description)}
+                            onInput={(e) => set(i(), 'description', withRest(l.description, e.currentTarget.value))}
                           />
                           <PastPrices refs={references.data?.[i()] ?? []} onUse={(p) => set(i(), 'price', String(p))} />
                         </td>
@@ -448,6 +488,13 @@ export default function QuoteEditor(): JSX.Element {
                             busy={uploading() === i()}
                             disabled={uploading() != null}
                             onFile={(f) => void attach(i(), f)}
+                          />
+                          <ImageButton
+                            id={l.imageId}
+                            name={l.imageName}
+                            disabled={uploading() != null}
+                            onFile={(f) => void attachImage(i(), f)}
+                            onClear={() => setLines(i(), { imageId: null, imageName: null })}
                           />
                         </td>
                         <td class="py-1.5 pr-1">
@@ -834,6 +881,60 @@ function QuoteDrawingPanel(props: {
   )
 }
 
+/** A line's description is its first line (the part, on the priced row) plus the rows printed
+ * below it in the quote, like "Maquinado y soldado." (Daniel, 2026-11-11). */
+const firstOf = (d: string) => d.split('\n')[0] ?? ''
+const restOf = (d: string) => d.split('\n').slice(1).join('\n')
+const withFirst = (d: string, first: string) => [first.replace(/\n/g, ' '), ...d.split('\n').slice(1)].join('\n')
+const withRest = (d: string, rest: string) => (rest ? `${firstOf(d)}\n${rest}` : firstOf(d))
+
+/** The picture printed under the line in the quote: upload it, see it, change or remove it. */
+function ImageButton(props: {
+  id: string | null
+  name: string | null
+  disabled: boolean
+  onFile: (f: File) => void
+  onClear: () => void
+}): JSX.Element {
+  const pick = (label: string, cls: string) => (
+    <label class={`cursor-pointer ${cls} ${props.disabled ? 'pointer-events-none opacity-50' : ''}`}>
+      <ImageIcon class="inline h-3.5 w-3.5" /> {label}
+      <input
+        type="file"
+        accept="image/png,image/jpeg,.png,.jpg,.jpeg"
+        class="hidden"
+        disabled={props.disabled}
+        onChange={(e) => {
+          const f = e.currentTarget.files?.[0]
+          e.currentTarget.value = ''
+          if (f) props.onFile(f)
+        }}
+      />
+    </label>
+  )
+  return (
+    <div class="mt-1">
+      <Show
+        when={props.id}
+        fallback={pick('Imagen', 'inline-flex h-7 items-center gap-1 rounded border border-dashed border-border px-2 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground')}
+      >
+        {(id) => (
+          <div class="space-y-0.5">
+            <a href={quotesApi.quoteDrawingUrl(id())} target="_blank" rel="noopener" title={props.name ?? 'Imagen'}>
+              <img src={quotesApi.quoteDrawingUrl(id())} alt="" class="h-10 w-16 rounded border border-border object-cover" />
+            </a>
+            <div class="flex gap-2 text-[11px] text-muted-foreground">
+              {pick('Cambiar', 'hover:text-foreground')}
+              <button type="button" class="hover:text-destructive" onClick={() => props.onClear()}>
+                Quitar
+              </button>
+            </div>
+          </div>
+        )}
+      </Show>
+    </div>
+  )
+}
 function initialsOf(name: string): string | null {
   const parts = name.trim().split(/\s+/).filter(Boolean)
   return parts.length ? parts.slice(0, 2).map((p) => p[0]!.toUpperCase()).join('') : null

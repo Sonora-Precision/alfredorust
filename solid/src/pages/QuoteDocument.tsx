@@ -1,10 +1,9 @@
-// Cotización as the shop's template prints it (00-PLANTILLA COTIZACIONES SONORA PRECISION V5,
-// quote 261103-01-00): A4, black bars, header with logo and company data, striped lines,
+// Cotización as the shop prints it (template V5, laid out like quote 261102-00-01: A4, black bars, header with logo and company data, striped lines,
 // terms 1–5 plus notes and the totals with NETO. "Guardar PDF" prints it from the browser;
 // the toolbar never prints. openspec add-quote-document. Admin only.
 import { A, useNavigate, useParams } from '@solidjs/router'
 import { createMutation, createQuery, useQueryClient } from '@tanstack/solid-query'
-import { ArrowLeft, Copy, FileDown, FolderPlus, Send } from 'lucide-solid'
+import { ArrowLeft, Copy, FileDown, FolderPlus, Globe, Mail, MapPin, Phone, Send, User } from 'lucide-solid'
 import { type JSX, For, Show } from 'solid-js'
 
 import { Button } from '../components/ui/Button'
@@ -22,7 +21,8 @@ const TXT = {
     thanks: 'Gracias por su Preferencia!!!',
     t1: (d: number) => `1.- Duración de la Oferta ${d} días`,
     t2: (a: number) => `2.- Anticipo del ${a}% antes de la producción.`,
-    t3: (n: number, u: string) => `3.- Tiempo de entrega: ${n} ${u} a partir de entregada la orden de compra y anticipo.`,
+    t3: (n: number, u: string, planos = false) =>
+      `3.- Tiempo de entrega: ${n} ${u} a partir de ${planos ? 'la aprobación de planos y el anticipo' : 'entregada la orden de compra y anticipo'}.`,
     t4: (r: number) => `4.- ${r}% restante contra entrega.`,
     t5: (m: string) => `5.- Precio en ${m}.`,
     days: 'días hábiles', weeks: 'semanas', MXN: 'Pesos Mexicanos (MXN)', USD: 'Dólares Americanos (USD)',
@@ -34,7 +34,8 @@ const TXT = {
     thanks: 'Thank you for your business!!!',
     t1: (d: number) => `1.- Offer validity: ${d} days`,
     t2: (a: number) => `2.- ${a}% down payment prior to production.`,
-    t3: (n: number, u: string) => `3.- Delivery time: ${n} ${u} from receipt of the purchase order and advance payment.`,
+    t3: (n: number, u: string, planos = false) =>
+      `3.- Delivery time: ${n} ${u} from ${planos ? 'approval of the drawings and advance payment' : 'receipt of the purchase order and advance payment'}.`,
     t4: (r: number) => `4.- The remaining ${r}% payable upon delivery.`,
     t5: (m: string) => `5.- Price in ${m}.`,
     days: 'business days', weeks: 'weeks', MXN: 'Mexican Pesos (MXN)', USD: 'United States Dollars (USD)',
@@ -140,6 +141,43 @@ export default function QuoteDocument(): JSX.Element {
   )
 }
 
+// The sheet as Daniel's quote 261102-00-01 (cruceta) prints it: no ITEM column, each line's
+// description in short rows (the first one carries quantity and price), the line's picture
+// over the rows below it, icons by the company data and the contact, and the retention with
+// its rate (Daniel, 2026-11-11).
+const ROW_H = 21 // px, every row of the table
+const MIN_ROWS = 17
+const PIC_ROWS = 9 // rows a picture covers
+
+interface Row {
+  qty?: number
+  desc?: string
+  price?: number
+  /** A picture starts at this row and covers the next PIC_ROWS. */
+  image?: string
+}
+
+/** The table rows of the lines: price row, a blank row, the other description rows, the
+ * picture, and a blank row before the next line. */
+export function sheetRows(lines: Doc['lines']): Row[] {
+  const rows: Row[] = []
+  lines.forEach((l, i) => {
+    if (i > 0) rows.push({})
+    const [first, ...rest] = l.description.split('\n')
+    rows.push({ qty: l.quantity, desc: first, price: l.unit_price })
+    if (rest.length) {
+      rows.push({})
+      for (const r of rest) rows.push({ desc: r })
+    }
+    if (l.image_id) {
+      rows.push({ image: quotesApi.quoteDrawingUrl(l.image_id) })
+      for (let k = 1; k < PIC_ROWS; k++) rows.push({})
+    }
+  })
+  while (rows.length < MIN_ROWS) rows.push({})
+  return rows
+}
+
 function Sheet(props: { d: Doc }): JSX.Element {
   const d = () => props.d
   const t = () => TXT[d().language] ?? TXT.es
@@ -150,108 +188,142 @@ function Sheet(props: { d: Doc }): JSX.Element {
     return `${at.getDate()}/${at.getMonth() + 1}/${at.getFullYear()}`
   }
   const c = () => d().company
-  // At least 16 rows, like the printed template.
-  const rows = () => {
-    const lines = d().lines.map((l) => ({ ...l, empty: false }))
-    const pad = Math.max(0, 16 - lines.length)
-    return [...lines, ...Array.from({ length: pad }, (_, i) => ({ item: lines.length + i + 1, quantity: 0, description: '', unit_price: 0, empty: true }))]
-  }
+  const rows = () => sheetRows(d().lines)
+  const pics = () => rows().flatMap((r, i) => (r.image ? [{ src: r.image, top: i * ROW_H }] : []))
+  const icon = 'h-5 w-5 shrink-0 text-neutral-600'
+  const box = 'flex h-5 w-5 items-center justify-center rounded bg-neutral-600 text-white'
   return (
-    <div class="quote-sheet mx-auto bg-white text-[11px] text-neutral-900 shadow-lg" style={{ width: '210mm', 'min-height': '297mm' }}>
-      <div class="h-3 bg-black" />
-      <div class="flex items-start gap-6 bg-neutral-100 px-6 py-4">
-        <Show when={c().logo_data_url} fallback={<div class="h-28 w-36 bg-black" />}>
-          <img src={c().logo_data_url!} alt={c().company_name} class="h-28 w-36 object-contain" />
+    <div class="quote-sheet mx-auto flex flex-col bg-white pt-7 text-[11px] text-neutral-900 shadow-lg" style={{ width: '210mm', height: '297mm' }}>
+      <div class="h-3.5 bg-black" />
+      <div class="flex items-start gap-4 bg-neutral-100 px-2 pb-3.5 pt-3">
+        <Show when={c().logo_data_url} fallback={<div class="h-32 w-36 bg-black" />}>
+          <img src={c().logo_data_url!} alt={c().company_name} class="h-32 w-36 bg-black object-cover" />
         </Show>
-        <div class="flex-1 space-y-0.5 pt-2 text-neutral-600">
-          <p class="text-base text-neutral-800">{c().company_name}</p>
-          <p>{c().address1}</p>
-          <p>{c().address2}</p>
-          <p class="pt-1">{c().phone}</p>
-          <p class="text-sky-700 underline">{c().email}</p>
-          <p class="text-sky-700 underline">{c().web}</p>
+        <div class="flex-1 space-y-0.5 pt-3.5 text-[11.5px] leading-snug text-neutral-600">
+          <p class="ml-8 text-lg text-neutral-800">{c().company_name}</p>
+          <p class="flex gap-2">
+            <MapPin class={icon} />
+            <span>
+              {c().address1}
+              <br />
+              {c().address2}
+            </span>
+          </p>
+          <p class="flex items-center gap-2">
+            <Phone class={icon} />
+            {c().phone}
+          </p>
+          <p class="flex items-center gap-2">
+            <Mail class={icon} />
+            <span class="text-blue-700 underline">{c().email}</span>
+          </p>
+          <p class="flex items-center gap-2">
+            <Globe class={icon} />
+            <span class="text-blue-700 underline">{c().web}</span>
+          </p>
         </div>
-        <div class="w-48 text-center">
-          <p class="text-3xl font-light text-neutral-500">{t().title}</p>
-          <p class="mt-5 border-b border-neutral-300 font-semibold text-sky-900">{t().date}</p>
-          <p class="py-0.5">{date()}</p>
-          <p class="border-b border-neutral-300 font-semibold text-sky-900">{t().number}</p>
-          <p class="py-0.5">{d().folio}</p>
+        <div class="mr-4 w-48 text-center">
+          <p class="mb-6 mt-0.5 text-[31px] text-neutral-500">{t().title}</p>
+          <p class="border-b border-neutral-300 text-[12.5px] font-bold text-sky-900">{t().date}</p>
+          <p class="pb-1 pt-0.5">{date()}</p>
+          <p class="border-b border-neutral-300 text-[12.5px] font-bold text-sky-900">{t().number}</p>
+          <p class="pt-0.5 text-sky-700">{d().folio}</p>
         </div>
       </div>
-      <div class="grid grid-cols-2 px-24 pb-3 pt-2">
-        <div>
-          <p class="text-[10px] text-neutral-500">{t().attention}</p>
-          <p class="font-semibold text-sky-900">{d().attention ?? ''}</p>
+      <div class="flex items-start gap-3 px-6 pt-10">
+        <div class="flex flex-col gap-px">
+          <span class={box}><User class="h-3.5 w-3.5" /></span>
+          <span class={box}><Phone class="h-3.5 w-3.5" /></span>
+          <span class={box}><Mail class="h-3.5 w-3.5" /></span>
         </div>
-        <div>
-          <p class="text-[10px] text-neutral-500">{t().client}</p>
-          <p class="font-semibold text-sky-900">{d().client_name}</p>
-        </div>
+        <p class="flex-1 border-b border-neutral-300 pl-1.5 pt-1.5 text-[12.5px] font-bold text-sky-900">{d().attention ?? ''}</p>
+        <div class="w-10" />
+        <p class="flex-1 border-b border-neutral-300 pl-1.5 pt-1.5 text-[12.5px] font-bold text-sky-900">{d().client_name}</p>
       </div>
-      <div class="px-6">
-        <table class="w-full border-collapse border border-neutral-700">
+      <div class="relative ml-[108px] mr-6 mt-16">
+        <table class="w-full border-collapse border border-neutral-500">
           <thead>
-            <tr class="bg-black text-white">
-              <th class="w-14 py-1">{t().item}</th>
-              <th class="w-24">{t().qty}</th>
+            <tr class="bg-black text-[13px] text-white">
+              <th class="w-20 py-0.5">{t().qty}</th>
               <th>{t().desc}</th>
-              <th class="w-24">{t().pu}</th>
-              <th class="w-28">{t().total}</th>
+              <th class="w-28">{t().pu}</th>
+              <th class="w-36">{t().total}</th>
             </tr>
           </thead>
           <tbody>
             <For each={rows()}>
-              {(l, i) => (
-                <tr class={i() % 2 ? 'bg-neutral-200' : ''}>
-                  <td class="border-x border-neutral-400 py-0.5 text-center">{l.item}</td>
-                  <td class="border-x border-neutral-400 text-center">{l.empty ? '' : l.quantity}</td>
-                  <td class="border-x border-neutral-400 text-center">{l.description}</td>
-                  <td class="border-x border-neutral-400 text-center">{l.empty ? '' : money(l.unit_price)}</td>
-                  <td class="border-x border-neutral-400 text-center">{l.empty ? '' : money(l.quantity * l.unit_price)}</td>
+              {(r, i) => (
+                <tr class={i() % 2 ? 'bg-neutral-300/70' : ''} style={{ height: `${ROW_H}px` }}>
+                  <td class="border-x border-neutral-500 text-center">{r.qty ?? ''}</td>
+                  <td class="border-x border-neutral-500 px-1 text-center">{r.desc ?? ''}</td>
+                  <td class="border-x border-neutral-500 text-center">{r.price != null ? money(r.price) : ''}</td>
+                  <td class="border-x border-neutral-500 text-center">{r.price != null && r.qty != null ? money(r.qty * r.price) : ''}</td>
                 </tr>
               )}
             </For>
           </tbody>
         </table>
+        <For each={pics()}>
+          {(p) => (
+            <img
+              src={p.src}
+              alt=""
+              class="absolute left-1/2 -translate-x-1/2 bg-white object-contain ring-[6px] ring-white"
+              style={{ top: `${p.top + 26}px`, height: `${PIC_ROWS * ROW_H - 12}px`, 'max-width': '60%' }}
+            />
+          )}
+        </For>
       </div>
-      <div class="mt-10 grid grid-cols-[1fr_15rem] gap-6 px-6">
-        <div class="space-y-1.5">
-          <p class="pl-16 text-sm font-semibold text-neutral-700">{t().terms}</p>
+      <div class="flex justify-between gap-6 px-6 pl-8 pt-1.5">
+        <div class="space-y-1.5 leading-snug">
+          <p class="pl-20 text-sm font-bold text-neutral-700">{t().terms}</p>
           <p>{t().t1(d().validity_days)}</p>
           <p>{t().t2(+pct(d().advance_pct))}</p>
-          <p>{t().t3(d().delivery_time, d().delivery_unit === 'semanas' ? t().weeks : t().days)}</p>
-          <p>{t().t4(+pct(d().remaining_pct))}</p>
-          <p>{t().t5(t()[d().currency])}</p>
-          <For each={d().notes}>{(n, i) => <p>{`${i() + 6}.- ${n}`}</p>}</For>
+          <p>{t().t3(d().delivery_time, d().delivery_unit === 'semanas' ? t().weeks : t().days, d().delivery_from === 'planos')}</p>
+          <p class="text-[9.5px] text-neutral-600">{t().t4(+pct(d().remaining_pct))}</p>
+          <p class="text-[9.5px] text-neutral-600">{t().t5(t()[d().currency])}</p>
+          <For each={d().notes}>{(n, i) => <p class="text-[9.5px] text-neutral-600">{`${i() + 6}.- ${n}`}</p>}</For>
         </div>
-        <table class="w-full self-start text-right">
+        <table class="w-[262px] shrink-0 self-start text-[12px]">
           <tbody>
-            <tr class="border-t border-neutral-300">
-              <td class="py-1 pr-2 font-semibold">{t().subtotal}</td>
-              <td class="w-28 border-b border-neutral-300 text-center font-semibold">{money(d().subtotal)}</td>
-            </tr>
             <tr>
-              <td class="pt-4 pr-2 font-semibold">{t().discount}</td>
-              <td class="border-y border-neutral-300 pt-4 text-center">{money(d().discount)}</td>
+              <td class="whitespace-nowrap py-0.5 pr-2 text-right font-bold">{t().subtotal}</td>
+              <td class="w-32 border-b border-neutral-300 text-center font-bold">{money(d().subtotal)}</td>
             </tr>
+            <Show
+              when={d().discount > 0}
+              fallback={
+                <tr>
+                  <td />
+                  <td class="border-b border-neutral-300 bg-neutral-100">&nbsp;</td>
+                </tr>
+              }
+            >
+              <tr>
+                <td class="whitespace-nowrap py-0.5 pr-2 text-right font-bold">{t().discount}</td>
+                <td class="border-b border-neutral-300 text-center">{money(d().discount)}</td>
+              </tr>
+            </Show>
             <tr>
-              <td class="py-1 pr-2 font-semibold">{t().iva}</td>
+              <td class="whitespace-nowrap py-0.5 pr-2 text-right font-bold">{t().iva}</td>
               <td class="border-b border-neutral-300 text-center">{money(d().iva_amount)}</td>
             </tr>
-            <tr>
-              <td class="py-1 pr-2 font-semibold">{t().retention}</td>
-              <td class="border-b border-neutral-300 bg-neutral-100 text-center">{money(d().retention_amount)}</td>
-            </tr>
+            <Show when={d().retention}>
+              <tr>
+                <td class="whitespace-nowrap py-0.5 pr-2 text-right font-bold">{`${t().retention} (${+(d().retention_rate * 100).toFixed(2)}%)`}</td>
+                <td class="border-b border-neutral-300 text-center">{money(d().retention_amount)}</td>
+              </tr>
+            </Show>
             <tr class="border-2 border-black">
-              <td class="py-1.5 pr-2 text-lg font-bold">{t().net}</td>
-              <td class="border-l-2 border-black bg-green-200 text-center text-base font-bold">{money(d().net)}</td>
+              <td class="py-2 text-center text-lg font-bold">{t().net}</td>
+              <td class="border-l-2 border-black bg-green-200 text-center text-[17px] font-bold">{money(d().net)}</td>
             </tr>
           </tbody>
         </table>
       </div>
-      <p class="mt-6 text-center text-neutral-700">{t().thanks}</p>
-      <div class="mt-1 h-3 bg-black" />
+      <div class="flex-1" />
+      <p class="text-center text-neutral-700">{t().thanks}</p>
+      <div class="mb-20 h-5 bg-black" />
     </div>
   )
 }
