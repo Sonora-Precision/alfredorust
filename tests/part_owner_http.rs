@@ -61,6 +61,7 @@ async fn responsible_gets_the_pieces_not_the_programmer() {
     let admin = token(admin_id).await;
     let jesus = token(jesus_id).await;
     let carlos = token(carlos_id).await;
+    let jose = token(jose_id).await;
     let host = "dueno-a.miapp.local";
     let post = |path: String, tok: String, body: serde_json::Value| {
         let shared = shared.clone();
@@ -147,10 +148,10 @@ async fn responsible_gets_the_pieces_not_the_programmer() {
     let (_, body) = get("/api/production/my_shift", carlos.clone()).await;
     assert!(body.contains("CG-1"), "{body}");
 
-    // The admin moves it to José; programmers cannot.
+    // The admin moves it to José; a programmer cannot hand it to someone else.
     let owner = format!("/api/admin/project_concepts/{part}/owner");
     let (status, _) = post(owner.clone(), carlos.clone(), serde_json::json!({ "user_id": jose_id.to_hex() })).await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(status, StatusCode::CONFLICT);
     let (status, body) = post(owner.clone(), admin.clone(), serde_json::json!({ "user_id": jose_id.to_hex() })).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
     let (_, body) = get("/api/production/weekly_pieces", admin.clone()).await;
@@ -161,6 +162,39 @@ async fn responsible_gets_the_pieces_not_the_programmer() {
     assert_eq!(status, StatusCode::OK);
     let (_, body) = get("/api/production/weekly_pieces", admin.clone()).await;
     assert_eq!(pieces_of(&json(&body), &jesus_id), 4.0, "{body}");
+
+    // A second part: Jesús takes its program; Carlos takes the part from Seguimiento and
+    // gets its setup, while the program stays Jesús's.
+    let part2 = create_project_concept(&state, &company, &project, None, "CG-2", 5.0, None, None, None, None, None, 2)
+        .await
+        .unwrap();
+    let (status, body) = post(
+        format!("/api/production/work_orders/{}/take", part2.to_hex()),
+        jesus.clone(),
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let owner2 = format!("/api/admin/project_concepts/{}/owner", part2.to_hex());
+    let (status, body) = post(owner2.clone(), carlos.clone(), serde_json::json!({ "user_id": carlos_id.to_hex() })).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let c2 = get_project_concept_by_id_for_company(&state, &part2, &company).await.unwrap().unwrap();
+    assert_eq!(c2.owner_user_id, Some(carlos_id));
+    let holder = |c: &alfredodev::models::ProjectConcept, step: &str| {
+        c.process_steps.iter().find(|s| s.name == step).and_then(|s| s.assignee_user_id)
+    };
+    assert_eq!(holder(&c2, "Programa"), Some(jesus_id));
+    assert_eq!(holder(&c2, "Setup 1"), Some(carlos_id));
+    // José cannot take it while Carlos is responsible.
+    let (status, _) = post(owner2.clone(), jose.clone(), serde_json::json!({ "user_id": jose_id.to_hex() })).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    // Carlos lets go: the setup is free again, the program untouched.
+    let (status, body) = post(owner2, carlos.clone(), serde_json::json!({ "user_id": null })).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let c2 = get_project_concept_by_id_for_company(&state, &part2, &company).await.unwrap().unwrap();
+    assert_eq!(c2.owner_user_id, None);
+    assert_eq!(holder(&c2, "Setup 1"), None);
+    assert_eq!(holder(&c2, "Programa"), Some(jesus_id));
 
     common::teardown(Some(ctx)).await;
 }

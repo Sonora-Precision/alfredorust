@@ -188,34 +188,15 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
     for (const m of membersQuery.data ?? []) names.set(m.id, m.name)
     return names
   })
-  /** Id of who holds the part's current (first pending) step, else its last held step. */
-  const holderIdOf = (concept: ProjectConcept): string | null => {
-    // Same rule as the board: only steps that belong to a queue (Programa, …) are held;
-    // "Material" and the like have no holder.
-    const current = activeOps().find((op) => op.queue && stepState(concept, op.id) === 'pending')
-    const step = current
-      ? concept.process_steps.find((s) => s.operation_id === current.id && s.assignee_user_id)
-      : [...concept.process_steps].reverse().find((s) => s.assignee_user_id)
-    return step?.assignee_user_id ?? null
-  }
-  const holderOf = (concept: ProjectConcept): string | null => {
-    const id = holderIdOf(concept)
-    return id ? (nameOf().get(id) ?? 'Asignado') : null
-  }
   /** The queued step the part waits on now ("Programa", "Setup 1"…), as on the board. */
   const currentOpOf = (concept: ProjectConcept): ProcessOperation | undefined =>
     activeOps().find((op) => op.queue && stepState(concept, op.id) === 'pending')
-  /** When the current step is free: who held the step before it ("Programa: José"), so a
-   *  part that shows in someone's "Mi turno" does not look unowned here (Daniel, 2026-11-10). */
-  const previousHolderOf = (concept: ProjectConcept): { step: string; name: string } | null => {
-    const current = currentOpOf(concept)
-    if (!current) return null
-    const before = activeOps().slice(0, activeOps().indexOf(current)).map((op) => op.id)
-    const step = [...concept.process_steps]
-      .filter((s) => before.includes(s.operation_id) && s.assignee_user_id)
-      .sort((a, b) => before.indexOf(b.operation_id) - before.indexOf(a.operation_id))[0]
-    if (!step?.assignee_user_id) return null
-    return { step: step.name, name: nameOf().get(step.assignee_user_id) ?? 'Asignado' }
+  /** The programming step ("Programa"): who programs is apart from who is responsible. */
+  const programOp = createMemo(() => activeOps().find((op) => op.queue === 'programming'))
+  const programmerIdOf = (concept: ProjectConcept): string | null => {
+    const op = programOp()
+    if (!op) return null
+    return concept.process_steps.find((s) => s.operation_id === op.id)?.assignee_user_id ?? null
   }
 
   // Who makes the part, apart from who programs it (Daniel, 2026-11-10: Jesús programs
@@ -226,11 +207,11 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
       void qc.invalidateQueries({ queryKey: ['project-concepts', props.projectId] })
       void qc.invalidateQueries({ queryKey: ['production'] })
       const name = v.userId ? nameOf().get(v.userId) : null
-      toast.success(name ? `Responsable: ${name}` : 'Responsable: el programador')
+      toast.success(name ? `Programador: ${name}` : 'Sin programador')
     },
     onError: (err) => {
       void qc.invalidateQueries({ queryKey: ['project-concepts', props.projectId] })
-      toast.error('No se pudo cambiar el responsable', humanizeError(err, 'Intenta de nuevo.'))
+      toast.error('No se pudo cambiar el programador', humanizeError(err, 'Intenta de nuevo.'))
     },
   }))
 
@@ -241,7 +222,7 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
     onSuccess: (_d, v) => {
       void qc.invalidateQueries({ queryKey: ['project-concepts', props.projectId] })
       void qc.invalidateQueries({ queryKey: ['production'] })
-      toast.success(v.take ? 'La tomaste' : 'La soltaste')
+      toast.success(v.take ? 'Tomaste el programa' : 'Soltaste el programa')
     },
     onError: (err, v) => {
       void qc.invalidateQueries({ queryKey: ['project-concepts', props.projectId] })
@@ -605,7 +586,7 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
                 </Show>
                 <TableHeadCell class={cn('sticky z-10 bg-card', byMaterial() ? 'left-10' : 'left-0')}>Número de parte</TableHeadCell>
                 <Show when={props.canSeeAssignees}>
-                  <TableHeadCell>Asignado a</TableHeadCell>
+                  <TableHeadCell>Programador</TableHeadCell>
                 </Show>
                 <For each={activeOps()}>{(op) => (
                   <TableHeadCell class="px-1 text-center">
@@ -729,108 +710,123 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
                     </TableCell>
                     <Show when={props.canSeeAssignees}>
                       <TableCell class="whitespace-nowrap text-sm">
+                        {/* The responsible person makes the part and holds its setups; the
+                            programmer may be someone else (Daniel, 2026-11-10). */}
                         <Show
                           when={props.canAssign}
                           fallback={
-                            <div class="space-y-0.5">
-                              <div class="flex items-center gap-2">
-                                <Show when={currentOpOf(c)}>
-                                  {(op) => <span class="text-xs text-muted-foreground">{op().name}:</span>}
-                                </Show>
-                                <Show
-                                  when={holderOf(c)}
-                                  fallback={<span class="text-xs text-amber-600">Libre</span>}
+                            <div class="flex items-center gap-2">
+                              <Show
+                                when={c.owner_user_id}
+                                fallback={<span class="text-xs text-amber-600">Sin programador</span>}
+                              >
+                                {(id) => <span class="font-medium text-foreground">{nameOf().get(id()) ?? 'Asignado'}</span>}
+                              </Show>
+                              <Show when={props.canTake && !c.owner_user_id}>
+                                <Button
+                                  variant="outline"
+                                  class="h-7 px-2 text-xs"
+                                  disabled={ownerMutation.isPending}
+                                  onClick={() => ownerMutation.mutate({ id: c.id, userId: props.myId ?? null })}
                                 >
-                                  {(name) => <span class="font-medium text-foreground">{name()}</span>}
-                                </Show>
-                                <Show when={props.canTake && currentOpOf(c) && !holderIdOf(c)}>
-                                  <Button
-                                    variant="outline"
-                                    class="h-7 px-2 text-xs"
-                                    disabled={takeMutation.isPending}
-                                    onClick={() => takeMutation.mutate({ id: c.id, take: true })}
-                                  >
-                                    Tomar
-                                  </Button>
-                                </Show>
-                                <Show when={props.canTake && currentOpOf(c) && props.myId && holderIdOf(c) === props.myId}>
-                                  <Button
-                                    variant="ghost"
-                                    class="h-7 px-2 text-xs"
-                                    disabled={takeMutation.isPending}
-                                    onClick={() => takeMutation.mutate({ id: c.id, take: false })}
-                                  >
-                                    Soltar
-                                  </Button>
-                                </Show>
-                              </div>
-                              <Show when={!holderIdOf(c) && previousHolderOf(c)}>
-                                {(p) => (
-                                  <p class="text-[11px] text-muted-foreground">
-                                    {p().step}: {p().name}
-                                  </p>
-                                )}
+                                  Tomar
+                                </Button>
+                              </Show>
+                              <Show when={props.canTake && props.myId && c.owner_user_id === props.myId}>
+                                <Button
+                                  variant="ghost"
+                                  class="h-7 px-2 text-xs"
+                                  disabled={ownerMutation.isPending}
+                                  onClick={() => ownerMutation.mutate({ id: c.id, userId: null })}
+                                >
+                                  Soltar
+                                </Button>
                               </Show>
                             </div>
                           }
                         >
-                          <label class="sr-only" for={`assign-part-${c.id}`}>
-                            Asignar {c.name}
+                          <label class="sr-only" for={`owner-part-${c.id}`}>
+                            Programador de {c.name}
                           </label>
                           {/* `selected` per option: a select-level value applies before <For> renders. */}
                           <select
-                            id={`assign-part-${c.id}`}
+                            id={`owner-part-${c.id}`}
                             class="h-8 rounded-md border border-border bg-background px-2 text-sm text-foreground"
-                            disabled={assignMutation.isPending}
-                            onChange={(e) =>
-                              assignMutation.mutate({ id: c.id, userId: e.currentTarget.value || null })
-                            }
+                            disabled={ownerMutation.isPending}
+                            onChange={(e) => ownerMutation.mutate({ id: c.id, userId: e.currentTarget.value || null })}
                           >
-                            <option value="" selected={!holderIdOf(c)}>
-                              Libre
+                            <option value="" selected={!c.owner_user_id}>
+                              Sin programador
                             </option>
                             <For each={membersQuery.data ?? []}>
                               {(m) => (
-                                <option value={m.id} selected={holderIdOf(c) === m.id}>
+                                <option value={m.id} selected={c.owner_user_id === m.id}>
                                   {m.name}
                                 </option>
                               )}
                             </For>
                           </select>
                         </Show>
-                        {/* Who makes the part, apart from who programs it: gets its pieces. */}
-                        <div class="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground">
-                          <span>Responsable:</span>
-                          <Show
-                            when={props.canAssign}
-                            fallback={
-                              <span class={c.owner_user_id ? 'font-medium text-foreground' : ''}>
-                                {c.owner_user_id ? (nameOf().get(c.owner_user_id) ?? 'Asignado') : 'el programador'}
-                              </span>
-                            }
-                          >
-                            <label class="sr-only" for={`owner-part-${c.id}`}>
-                              Responsable de {c.name}
-                            </label>
-                            <select
-                              id={`owner-part-${c.id}`}
-                              class="h-6 rounded border border-border bg-background px-1 text-[11px] text-foreground"
-                              disabled={ownerMutation.isPending}
-                              onChange={(e) => ownerMutation.mutate({ id: c.id, userId: e.currentTarget.value || null })}
-                            >
-                              <option value="" selected={!c.owner_user_id}>
-                                El programador
-                              </option>
-                              <For each={membersQuery.data ?? []}>
-                                {(m) => (
-                                  <option value={m.id} selected={c.owner_user_id === m.id}>
-                                    {m.name}
+                        {/* Who programs it: its own step, taken or given apart. */}
+                        <Show when={programOp()}>
+                          {(op) => (
+                            <div class="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground">
+                              <span>Programa:</span>
+                              <Show
+                                when={props.canAssign && currentOpOf(c)?.id === op().id}
+                                fallback={
+                                  <>
+                                    <span class={programmerIdOf(c) ? 'text-foreground' : ''}>
+                                      {programmerIdOf(c) ? (nameOf().get(programmerIdOf(c)!) ?? 'Asignado') : 'libre'}
+                                      {stepState(c, op().id) === 'done' ? ' ✓' : ''}
+                                    </span>
+                                    <Show when={props.canTake && currentOpOf(c)?.id === op().id && !programmerIdOf(c)}>
+                                      <button
+                                        type="button"
+                                        class="text-sky-600 hover:underline dark:text-sky-400"
+                                        disabled={takeMutation.isPending}
+                                        onClick={() => takeMutation.mutate({ id: c.id, take: true })}
+                                      >
+                                        Tomar programa
+                                      </button>
+                                    </Show>
+                                    <Show when={props.canTake && currentOpOf(c)?.id === op().id && props.myId && programmerIdOf(c) === props.myId}>
+                                      <button
+                                        type="button"
+                                        class="text-muted-foreground hover:underline"
+                                        disabled={takeMutation.isPending}
+                                        onClick={() => takeMutation.mutate({ id: c.id, take: false })}
+                                      >
+                                        Soltar
+                                      </button>
+                                    </Show>
+                                  </>
+                                }
+                              >
+                                <label class="sr-only" for={`program-part-${c.id}`}>
+                                  Quién programa {c.name}
+                                </label>
+                                <select
+                                  id={`program-part-${c.id}`}
+                                  class="h-6 rounded border border-border bg-background px-1 text-[11px] text-foreground"
+                                  disabled={assignMutation.isPending}
+                                  onChange={(e) => assignMutation.mutate({ id: c.id, userId: e.currentTarget.value || null })}
+                                >
+                                  <option value="" selected={!programmerIdOf(c)}>
+                                    Libre
                                   </option>
-                                )}
-                              </For>
-                            </select>
-                          </Show>
-                        </div>
+                                  <For each={membersQuery.data ?? []}>
+                                    {(m) => (
+                                      <option value={m.id} selected={programmerIdOf(c) === m.id}>
+                                        {m.name}
+                                      </option>
+                                    )}
+                                  </For>
+                                </select>
+                              </Show>
+                            </div>
+                          )}
+                        </Show>
                       </TableCell>
                     </Show>
                     <For each={activeOps()}>{(op) => (
