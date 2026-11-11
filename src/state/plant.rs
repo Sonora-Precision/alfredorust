@@ -7,7 +7,7 @@ use mongodb::bson::{DateTime, doc, oid::ObjectId};
 use std::collections::HashMap;
 
 use crate::models::{
-    MachineRun, MachineState, MachineStatus, PlantLayout, WorkOrderEventKind, WorkQueue,
+    MachineRun, MachineState, MachineStatus, PartStep, PlantLayout, StepState, WorkOrderEventKind, WorkQueue,
 };
 
 use super::AppState;
@@ -157,16 +157,60 @@ pub async fn responsible_of(
     }
 }
 
-/// Sets the part's responsible person (None clears it).
+/// Sets the part's responsible person (None clears it) and gives them its pending steps
+/// past programming (Setup 1…) that are free or were the previous responsible's (Daniel,
+/// 2026-11-10: "al que se le asigna debería ser el responsable, pero no necesariamente
+/// quien programa la pieza"). The programming step is left alone.
 pub async fn set_part_owner(
     state: &AppState,
     company_id: &ObjectId,
     concept_id: &ObjectId,
     owner: Option<ObjectId>,
 ) -> Result<bool> {
+    let Some(mut concept) = state
+        .project_concepts
+        .find_one(doc! { "_id": concept_id, "company_id": company_id })
+        .await?
+    else {
+        return Ok(false);
+    };
+    let previous = concept.owner_user_id;
+    let now = DateTime::now();
+    let operations = super::list_process_operations(state, company_id, false).await?;
+    for op in operations.iter().filter(|op| op.is_active) {
+        let (Some(id), Some(queue)) = (op.id, op.queue) else { continue };
+        if queue == WorkQueue::Programming {
+            continue;
+        }
+        match concept.process_steps.iter_mut().find(|s| s.operation_id == id) {
+            Some(step) => {
+                let open = matches!(step.state, StepState::Pending | StepState::Blocked);
+                let was_owners = step.assignee_user_id.is_none() || step.assignee_user_id == previous;
+                if open && was_owners && step.assignee_user_id != owner {
+                    step.assignee_user_id = owner;
+                    step.assigned_at = Some(now);
+                }
+            }
+            None if owner.is_some() => concept.process_steps.push(PartStep {
+                operation_id: id,
+                name: op.name.clone(),
+                state: StepState::Pending,
+                updated_by: None,
+                updated_at: None,
+                assignee_user_id: owner,
+                assigned_at: Some(now),
+                note: None,
+                pieces: None,
+                programmed: false,
+                programmed_by: None,
+            }),
+            None => {}
+        }
+    }
+    let steps = mongodb::bson::to_bson(&concept.process_steps)?;
     let update = match owner {
-        Some(o) => doc! { "$set": { "owner_user_id": o, "updated_at": DateTime::now() } },
-        None => doc! { "$unset": { "owner_user_id": "" }, "$set": { "updated_at": DateTime::now() } },
+        Some(o) => doc! { "$set": { "owner_user_id": o, "process_steps": steps, "updated_at": now } },
+        None => doc! { "$unset": { "owner_user_id": "" }, "$set": { "process_steps": steps, "updated_at": now } },
     };
     let res = state
         .project_concepts
@@ -176,20 +220,21 @@ pub async fn set_part_owner(
 }
 
 /// The first person who takes or is given a step past programming becomes responsible,
-/// unless someone already is.
+/// unless someone already is, and gets the part's other open steps past programming.
 pub async fn claim_part_owner(
     state: &AppState,
     company_id: &ObjectId,
     concept_id: &ObjectId,
     user: ObjectId,
 ) -> Result<()> {
-    state
+    let owned = state
         .project_concepts
-        .update_one(
-            doc! { "_id": concept_id, "company_id": company_id, "owner_user_id": null },
-            doc! { "$set": { "owner_user_id": user } },
-        )
-        .await?;
+        .find_one(doc! { "_id": concept_id, "company_id": company_id })
+        .await?
+        .is_some_and(|c| c.owner_user_id.is_some());
+    if !owned {
+        set_part_owner(state, company_id, concept_id, Some(user)).await?;
+    }
     Ok(())
 }
 

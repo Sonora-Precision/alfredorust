@@ -302,15 +302,18 @@ fn outcome_response(outcome: anyhow::Result<AssignOutcome>, conflict: &str) -> O
     }
 }
 
-/// Sets who is responsible for making a part (not necessarily who programs it). Whoever
-/// manages the board; null clears it (the programmer gets the pieces again).
+/// Sets who is responsible for making a part (not necessarily who programs it); they get
+/// its open steps past programming. Whoever manages the board sets anyone; a programmer
+/// takes a part with nobody responsible, or lets go of their own. Null clears it (the
+/// programmer gets the pieces again).
 pub async fn api_part_owner_set(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
     Json(payload): Json<AssignPayload>,
 ) -> Response {
-    if !can_manage(&session_user) {
+    let manager = can_manage(&session_user);
+    if !manager && !can_take(&session_user) {
         return StatusCode::FORBIDDEN.into_response();
     }
     let company_id = require_active_company(&session_user);
@@ -325,6 +328,25 @@ pub async fn api_part_owner_set(
             Err(resp) => return resp,
         },
     };
+    // A programmer takes a part nobody is responsible for, or lets go of their own.
+    if !manager {
+        let me = *session_user.user_id();
+        let current = match get_project_concept_by_id_for_company(&state, &id, &company_id).await {
+            Ok(Some(c)) => c.owner_user_id,
+            Ok(None) => return json_error(StatusCode::NOT_FOUND, "part not found"),
+            Err(_) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load the part"),
+        };
+        let allowed = match owner {
+            Some(o) => o == me && current.is_none(),
+            None => current == Some(me),
+        };
+        if !allowed {
+            return json_error(
+                StatusCode::CONFLICT,
+                if owner.is_some() { "someone is already responsible for this part" } else { "you can only let go of your own parts" },
+            );
+        }
+    }
     if let Some(o) = owner {
         let Ok(members) = list_board_members(&state, &company_id).await else {
             return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load people");
@@ -758,7 +780,7 @@ pub async fn api_production_weekly_pieces(
             id: id.map(|i| i.to_hex()),
             name: match id {
                 Some(i) => person(i, &names).name,
-                None => "Sin responsable".to_string(),
+                None => "Sin programador".to_string(),
             },
             pieces: now,
             previous_week: prev,
