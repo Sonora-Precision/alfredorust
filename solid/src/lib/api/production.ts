@@ -65,3 +65,6 @@ export const listMyShiftPeople = () =>
 /** Who is responsible for making the part (null clears it). Board managers only. */
 export const setPartOwner = (conceptId: string, userId: string | null) =>
   apiPost<{ ok: boolean }>(`/api/admin/project_concepts/${conceptId}/owner`, { user_id: userId })
+/** "Programado por": who made (or should make) the part's program. Board managers only. */
+export const setPartProgrammer = (conceptId: string, userId: string | null) =>
+  apiPost<{ ok: boolean }>(`/api/admin/project_concepts/${conceptId}/programmer`, { user_id: userId })

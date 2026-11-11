@@ -96,6 +96,7 @@ pub use production::{
     api_production_weekly_pieces,
     api_work_order_assign,
     api_part_owner_set,
+    api_part_programmer_set,
     api_work_order_complete, api_work_order_release, api_work_order_sequence,
     api_work_order_take,
 };

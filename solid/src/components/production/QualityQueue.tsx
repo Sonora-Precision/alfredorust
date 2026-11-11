@@ -119,7 +119,7 @@ function QualityRow(props: {
               <p class="truncate text-xs text-muted-foreground">
                 {it().project}
                 <Show when={it().client}> · {it().client}</Show>
-                <Show when={it().programmer}>{(p) => <> · programador <ProgrammerName id={p().id} name={p().name} /></>}</Show>
+                <Show when={it().programmer}>{(p) => <> · asignado a <ProgrammerName id={p().id} name={p().name} /></>}</Show>
               </p>
             </div>
             <div class="tnum text-right text-xs text-muted-foreground">

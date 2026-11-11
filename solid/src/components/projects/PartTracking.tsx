@@ -18,7 +18,7 @@ import {
   updatePartProgress,
   updateProcessOperation,
 } from '../../lib/api/operations'
-import { assignWorkOrder, getPlant, listBoardMembers, releaseWorkOrder, setPartOwner, takeWorkOrder } from '../../lib/api/production'
+import { getPlant, listBoardMembers, releaseWorkOrder, setPartOwner, setPartProgrammer, takeWorkOrder } from '../../lib/api/production'
 import { PartMachines, placesByPart } from './PartMachines'
 import { folioOf, matchesWorkOrder } from '../production/WorkOrderSearch'
 import { type PartFile, listProjectPartFiles } from '../../lib/api/partFiles'
@@ -207,11 +207,11 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
       void qc.invalidateQueries({ queryKey: ['project-concepts', props.projectId] })
       void qc.invalidateQueries({ queryKey: ['production'] })
       const name = v.userId ? nameOf().get(v.userId) : null
-      toast.success(name ? `Programador: ${name}` : 'Sin programador')
+      toast.success(name ? `Asignado a ${name}` : 'Sin asignar')
     },
     onError: (err) => {
       void qc.invalidateQueries({ queryKey: ['project-concepts', props.projectId] })
-      toast.error('No se pudo cambiar el programador', humanizeError(err, 'Intenta de nuevo.'))
+      toast.error('No se pudo asignar', humanizeError(err, 'Intenta de nuevo.'))
     },
   }))
 
@@ -233,21 +233,19 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
     },
   }))
 
-  // Assigning here is the same as on the board: it sets who holds the current step.
-  const assignMutation = createMutation(() => ({
-    mutationFn: (v: { id: string; userId: string | null }) => assignWorkOrder(v.id, v.userId),
+  // "Programado por": who made the program, or who should make it, at any time (Daniel,
+  // 2026-11-10). Does not change who the part is assigned to.
+  const programmerMutation = createMutation(() => ({
+    mutationFn: (v: { id: string; userId: string | null }) => setPartProgrammer(v.id, v.userId),
     onSuccess: (_d, v) => {
       void qc.invalidateQueries({ queryKey: ['project-concepts', props.projectId] })
       void qc.invalidateQueries({ queryKey: ['production'] })
       const name = v.userId ? nameOf().get(v.userId) : null
-      toast.success(name ? `Asignado a ${name}` : 'Asignación quitada')
+      toast.success(name ? `Programado por ${name}` : 'Sin quien programe')
     },
     onError: (err) => {
       void qc.invalidateQueries({ queryKey: ['project-concepts', props.projectId] })
-      toast.error(
-        'No se pudo asignar',
-        humanizeError(err, 'Solo se asignan partes con un paso pendiente en un proyecto abierto.'),
-      )
+      toast.error('No se pudo cambiar quién programa', humanizeError(err, 'Intenta de nuevo.'))
     },
   }))
 
@@ -586,7 +584,7 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
                 </Show>
                 <TableHeadCell class={cn('sticky z-10 bg-card', byMaterial() ? 'left-10' : 'left-0')}>Número de parte</TableHeadCell>
                 <Show when={props.canSeeAssignees}>
-                  <TableHeadCell>Programador</TableHeadCell>
+                  <TableHeadCell>Asignado a</TableHeadCell>
                 </Show>
                 <For each={activeOps()}>{(op) => (
                   <TableHeadCell class="px-1 text-center">
@@ -718,7 +716,7 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
                             <div class="flex items-center gap-2">
                               <Show
                                 when={c.owner_user_id}
-                                fallback={<span class="text-xs text-amber-600">Sin programador</span>}
+                                fallback={<span class="text-xs text-amber-600">Sin asignar</span>}
                               >
                                 {(id) => <span class="font-medium text-foreground">{nameOf().get(id()) ?? 'Asignado'}</span>}
                               </Show>
@@ -746,7 +744,7 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
                           }
                         >
                           <label class="sr-only" for={`owner-part-${c.id}`}>
-                            Programador de {c.name}
+                            Asignar {c.name}
                           </label>
                           {/* `selected` per option: a select-level value applies before <For> renders. */}
                           <select
@@ -756,7 +754,7 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
                             onChange={(e) => ownerMutation.mutate({ id: c.id, userId: e.currentTarget.value || null })}
                           >
                             <option value="" selected={!c.owner_user_id}>
-                              Sin programador
+                              Sin asignar
                             </option>
                             <For each={membersQuery.data ?? []}>
                               {(m) => (
@@ -771,9 +769,9 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
                         <Show when={programOp()}>
                           {(op) => (
                             <div class="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground">
-                              <span>Programa:</span>
+                              <span>Programado por:</span>
                               <Show
-                                when={props.canAssign && currentOpOf(c)?.id === op().id}
+                                when={props.canAssign}
                                 fallback={
                                   <>
                                     <span class={programmerIdOf(c) ? 'text-foreground' : ''}>
@@ -809,11 +807,11 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
                                 <select
                                   id={`program-part-${c.id}`}
                                   class="h-6 rounded border border-border bg-background px-1 text-[11px] text-foreground"
-                                  disabled={assignMutation.isPending}
-                                  onChange={(e) => assignMutation.mutate({ id: c.id, userId: e.currentTarget.value || null })}
+                                  disabled={programmerMutation.isPending}
+                                  onChange={(e) => programmerMutation.mutate({ id: c.id, userId: e.currentTarget.value || null })}
                                 >
                                   <option value="" selected={!programmerIdOf(c)}>
-                                    Libre
+                                    Nadie
                                   </option>
                                   <For each={membersQuery.data ?? []}>
                                     {(m) => (
