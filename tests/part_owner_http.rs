@@ -196,5 +196,20 @@ async fn responsible_gets_the_pieces_not_the_programmer() {
     assert_eq!(holder(&c2, "Setup 1"), None);
     assert_eq!(holder(&c2, "Programa"), Some(jesus_id));
 
+    // "Programado por" can be set any time by the admin, even with the program done, and
+    // leaves who the part is assigned to alone; programmers cannot.
+    let programmed_by = format!("/api/admin/project_concepts/{part}/programmer");
+    let (status, _) = post(programmed_by.clone(), carlos.clone(), serde_json::json!({ "user_id": jose_id.to_hex() })).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, body) = post(programmed_by, admin.clone(), serde_json::json!({ "user_id": jose_id.to_hex() })).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let c1 = get_project_concept_by_id_for_company(&state, &ObjectId::parse_str(&part).unwrap(), &company)
+        .await
+        .unwrap()
+        .unwrap();
+    let programa = c1.process_steps.iter().find(|s| s.name == "Programa").unwrap();
+    assert_eq!(programa.assignee_user_id, Some(jose_id));
+    assert_eq!(programa.state, alfredodev::models::StepState::Done);
+
     common::teardown(Some(ctx)).await;
 }

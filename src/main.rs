@@ -789,6 +789,7 @@ async fn main() {
             post(routes::api_work_order_assign),
         )
         .route("/api/admin/project_concepts/{id}/owner", post(routes::api_part_owner_set))
+        .route("/api/admin/project_concepts/{id}/programmer", post(routes::api_part_programmer_set))
         .route(
             "/api/production/work_orders/{id}/take",
             post(routes::api_work_order_take),

@@ -362,6 +362,56 @@ pub async fn api_part_owner_set(
     }
 }
 
+/// "Programado por": who made the part's program, or who should make it (Daniel,
+/// 2026-11-10). Sets the programming step's person at any time, done or not, without
+/// touching who the part is assigned to. Whoever manages the board; null clears it.
+pub async fn api_part_programmer_set(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(payload): Json<AssignPayload>,
+) -> Response {
+    if !can_manage(&session_user) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let company_id = require_active_company(&session_user);
+    let id = match parse_oid(&id) {
+        Ok(id) => id,
+        Err(resp) => return resp,
+    };
+    let programmer = match payload.user_id.as_deref() {
+        None | Some("") => None,
+        Some(u) => match parse_oid(u) {
+            Ok(u) => Some(u),
+            Err(resp) => return resp,
+        },
+    };
+    let (Ok(members), Ok(operations)) = (
+        list_board_members(&state, &company_id).await,
+        crate::state::list_process_operations(&state, &company_id, false).await,
+    ) else {
+        return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load the board");
+    };
+    if let Some(p) = programmer {
+        if !members.iter().any(|m| m.user_id == p) {
+            return json_error(StatusCode::BAD_REQUEST, "that person cannot hold work orders in this company");
+        }
+    }
+    let Some(op) = operations.iter().find(|op| op.is_active && op.queue == Some(WorkQueue::Programming)) else {
+        return json_error(StatusCode::BAD_REQUEST, "there is no programming step");
+    };
+    match get_project_concept_by_id_for_company(&state, &id, &company_id).await {
+        Ok(Some(_)) => {}
+        Ok(None) => return json_error(StatusCode::NOT_FOUND, "part not found"),
+        Err(_) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load the part"),
+    }
+    let outcome = set_step_assignee(&state, &company_id, &id, op, programmer, None).await;
+    if let Some(resp) = outcome_response(outcome, "the part changed, try again") {
+        return resp;
+    }
+    Json(serde_json::json!({ "ok": true })).into_response()
+}
+
 #[derive(Debug, Deserialize)]
 pub struct AssignPayload {
     /// Who gets the order's current step; null clears it.
@@ -780,7 +830,7 @@ pub async fn api_production_weekly_pieces(
             id: id.map(|i| i.to_hex()),
             name: match id {
                 Some(i) => person(i, &names).name,
-                None => "Sin programador".to_string(),
+                None => "Sin asignar".to_string(),
             },
             pieces: now,
             previous_week: prev,
