@@ -15,7 +15,7 @@ use axum::{
 use mongodb::bson::{DateTime, oid::ObjectId};
 use serde::Serialize;
 
-use super::attendance::{DayData, build_report, shop_date, shop_midnight};
+use super::attendance::{DayData, build_report, work_date, work_day_start};
 use super::finance::helpers::{require_active_company, require_admin_active};
 use super::production::folio;
 use super::project_backend::json_error;
@@ -100,7 +100,7 @@ pub fn build_people(
     with_attendance: bool,
     now: DateTime,
 ) -> Vec<FloorPerson> {
-    let today = shop_date(now);
+    let today = work_date(now);
     // Today as the clock saw it: an admin's corrections are for the weekly report.
     let report = build_report(employees, events, &[], today, today, now);
     let days: HashMap<&str, &DayData> = report
@@ -152,10 +152,10 @@ pub async fn api_production_floor(session_user: SessionUser, State(state): State
     let company_id = require_active_company(&session_user);
     let with_attendance = require_admin_active(&session_user).is_ok();
     let now = DateTime::now();
-    let today = shop_date(now);
+    let today = work_date(now);
     let loaded = tokio::try_join!(
         list_attendance_employees(&state, &company_id),
-        list_attendance_events(&state, &company_id, shop_midnight(today), shop_midnight(today + chrono::Duration::days(1))),
+        list_attendance_events(&state, &company_id, work_day_start(today), work_day_start(today + chrono::Duration::days(1))),
         list_board_members(&state, &company_id),
         list_work_orders(&state, &company_id),
     );

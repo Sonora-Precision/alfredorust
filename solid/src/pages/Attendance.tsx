@@ -124,6 +124,11 @@ function DayCell(props: { day: AttendanceDay; onDeleteManual: (id: string) => vo
           <Show when={props.day.entry} fallback={<span />}>
             <p class="tnum text-foreground">
               {props.day.entry} – {props.day.exit ?? '¿?'}
+              <Show when={props.day.overnight}>
+                <span class="ml-1 text-[11px] text-muted-foreground" title="Salió después de medianoche">
+                  (+1 día)
+                </span>
+              </Show>
             </p>
           </Show>
           <button
@@ -424,7 +429,9 @@ function CorrectionForm(props: { employee_no: string; name: string; day: Attenda
   const [entry, setEntry] = createSignal(fix?.entry ?? '')
   const [exit, setExit] = createSignal(fix?.exit ?? '')
   const [note, setNote] = createSignal(fix?.note ?? '')
-  const valid = () => (entry() !== '' || exit() !== '') && (!entry() || !exit() || entry() < exit())
+  // an exit before 06:00 is the next morning (overnight)
+  const nextMorning = () => exit() !== '' && exit() < '06:00'
+  const valid = () => (entry() !== '' || exit() !== '') && (!entry() || !exit() || nextMorning() || entry() < exit())
 
   const save = createMutation(() => ({
     mutationFn: (clear: boolean) =>
@@ -465,8 +472,14 @@ function CorrectionForm(props: { employee_no: string; name: string; day: Attenda
             <Input type="time" value={exit()} onInput={setExit} />
           </label>
         </div>
-        <p class="text-xs text-muted-foreground">Deja vacía la que esté bien: se toma la del checador.</p>
-        <Show when={entry() && exit() && entry() >= exit()}>
+        <p class="text-xs text-muted-foreground">
+          Deja vacía la que esté bien: se toma la del checador. Una salida antes de las 6:00 es la madrugada siguiente (se quedaron
+          de noche).
+        </p>
+        <Show when={nextMorning()}>
+          <p class="text-xs text-sky-700 dark:text-sky-300">Salida al día siguiente a las {exit()}.</p>
+        </Show>
+        <Show when={entry() && exit() && !nextMorning() && entry() >= exit()}>
           <p class="text-xs text-red-600">La salida debe ser después de la entrada.</p>
         </Show>
         <label class="block space-y-1">

@@ -530,10 +530,10 @@ pub async fn api_attendance_manual_add(
             "date must be YYYY-MM-DD and time HH:MM",
         );
     };
-    let at = DateTime::from_millis(
-        shop_midnight(date).timestamp_millis()
-            + i64::from(time.hour() * 60 + time.minute()) * 60_000,
-    );
+    // `date` is the work day: a time before 06:00 is that night, the next calendar morning.
+    let minute = i64::from(time.hour() * 60 + time.minute());
+    let minute = if minute < DAY_START_MIN { minute + 1440 } else { minute };
+    let at = DateTime::from_millis(shop_midnight(date).timestamp_millis() + minute * 60_000);
     let note: Option<String> = p
         .note
         .as_deref()
@@ -643,7 +643,10 @@ pub async fn api_attendance_correction_save(
         return json_error(StatusCode::BAD_REQUEST, "entry and exit must be HH:MM");
     };
     if let (Some(a), Some(b)) = (entry, exit) {
-        if b <= a {
+        // an exit before 06:00 is the next morning (overnight)
+        let at = |t: NaiveTime| i64::from(t.hour() * 60 + t.minute());
+        let b_min = if at(b) < DAY_START_MIN { at(b) + 1440 } else { at(b) };
+        if b_min <= at(a) {
             return json_error(StatusCode::BAD_REQUEST, "exit must be after entry");
         }
     }
@@ -693,6 +696,8 @@ pub struct DayData {
     pub checks: Vec<String>,
     pub entry: Option<String>,
     pub exit: Option<String>,
+    /// The exit was after midnight (the next calendar day).
+    pub overnight: bool,
     pub worked_min: i64,
     /// Minutes after the shift start, only when past the tolerance.
     pub late_min: i64,
@@ -807,8 +812,37 @@ pub(crate) fn shop_midnight(date: NaiveDate) -> DateTime {
     DateTime::from_millis(ms)
 }
 
+/// The work day starts at 06:00 (Daniel, 2026-11-12: an urgent job kept the night shift until
+/// 3 a.m.): a check from midnight to 06:00 belongs to the day before, as its exit. No shop
+/// shift starts before 07:00.
+pub(crate) const DAY_START_MIN: i64 = 6 * 60;
+
+/// The work day a check belongs to.
+pub(crate) fn work_date(at: DateTime) -> NaiveDate {
+    shop_date(DateTime::from_millis(at.timestamp_millis() - DAY_START_MIN * 60_000))
+}
+
+/// Minutes since the midnight that starts its work day: 02:59 the next morning = 26:59.
+fn work_minute(at: DateTime) -> i64 {
+    let m = shop_minute(at);
+    if m < DAY_START_MIN { m + 1440 } else { m }
+}
+
+/// UTC instant where the work day `date` starts (06:00 shop time).
+pub(crate) fn work_day_start(date: NaiveDate) -> DateTime {
+    DateTime::from_millis(shop_midnight(date).timestamp_millis() + DAY_START_MIN * 60_000)
+}
+
+/// "HH:MM" on the clock; minutes past midnight of the next day show as their clock time.
 fn hm(minute: i64) -> String {
-    format!("{:02}:{:02}", minute / 60, minute % 60)
+    let m = minute.rem_euclid(1440);
+    format!("{:02}:{:02}", m / 60, m % 60)
+}
+
+/// A corrected exit before 06:00 is the next morning.
+fn exit_minute(value: &str) -> i64 {
+    let m = minute_of(value);
+    if m < DAY_START_MIN { m + 1440 } else { m }
 }
 
 /// Minutes since midnight of an "HH:MM" already validated.
@@ -830,7 +864,7 @@ fn day_data(
         .filter(|e| e.device == MANUAL_DEVICE)
         .map(|e| ManualCheckData {
             id: e.id.map(|id| id.to_hex()).unwrap_or_default(),
-            time: hm(shop_minute(e.at)),
+            time: hm(work_minute(e.at)),
             note: e.note.clone(),
             author: e.author.clone(),
         })
@@ -844,9 +878,9 @@ fn day_data(
             checks.push(s);
         }
     }
-    let minutes: Vec<i64> = checks.iter().map(|&c| shop_minute(c)).collect();
+    let minutes: Vec<i64> = checks.iter().map(|&c| work_minute(c)).collect();
     let fixed_entry = correction.and_then(|c| c.entry.as_deref()).map(minute_of);
-    let fixed_exit = correction.and_then(|c| c.exit.as_deref()).map(minute_of);
+    let fixed_exit = correction.and_then(|c| c.exit.as_deref()).map(exit_minute);
     let entry = fixed_entry.or(minutes.first().copied());
     let exit = match (fixed_exit, fixed_entry) {
         (Some(x), _) => Some(x),
@@ -916,6 +950,7 @@ fn day_data(
         checks: minutes.iter().map(|&m| hm(m)).collect(),
         entry: entry.map(hm),
         exit: exit.map(hm),
+        overnight: exit.is_some_and(|x| x >= 1440),
         worked_min,
         late_min,
         status: status.to_string(),
@@ -947,7 +982,7 @@ pub fn build_report(
     let mut by_employee: BTreeMap<&str, BTreeMap<NaiveDate, Vec<&AttendanceEvent>>> =
         BTreeMap::new();
     for e in events {
-        let date = shop_date(e.at);
+        let date = work_date(e.at);
         if date < from || date > to {
             continue;
         }
@@ -1066,7 +1101,7 @@ pub async fn api_attendance_report(
             None => return json_error(StatusCode::BAD_REQUEST, "from must be YYYY-MM-DD"),
         },
         None => {
-            let today = shop_date(now);
+            let today = work_date(now);
             today - Duration::days(i64::from(today.weekday().num_days_from_monday()))
         }
     };
@@ -1083,14 +1118,15 @@ pub async fn api_attendance_report(
             &format!("to must be after from, at most {MAX_REPORT_DAYS} days"),
         );
     }
-    let range_end = shop_midnight(to + Duration::days(1));
+    // work days run 06:00 to 06:00
+    let range_end = work_day_start(to + Duration::days(1));
     let (from_s, to_s) = (
         from.format("%Y-%m-%d").to_string(),
         to.format("%Y-%m-%d").to_string(),
     );
     let (employees, events, corrections) = match tokio::try_join!(
         list_attendance_employees(&state, &company_id),
-        list_attendance_events(&state, &company_id, shop_midnight(from), range_end),
+        list_attendance_events(&state, &company_id, work_day_start(from), range_end),
         list_attendance_corrections(&state, &company_id, &from_s, &to_s),
     ) {
         Ok(v) => v,
@@ -1161,6 +1197,34 @@ mod tests {
             earnings(Some(3110.38), Some(48.0), 54 * 60, 7),
             (Some(64.80), Some(3887.98), 360)
         );
+    }
+
+    #[test]
+    fn night_overtime_belongs_to_the_day_it_started() {
+        // Wed 11 Nov: José in at 13:55, out at 02:59 Thu (urgent job); Thu: back at 13:58.
+        let emp = employee("0004", Some(tarde()));
+        let events = vec![
+            check("0004", "2026-11-11T20:55:00Z"), // 13:55
+            check("0004", "2026-11-12T09:59:00Z"), // 02:59 next morning
+            check("0004", "2026-11-12T20:58:00Z"), // 13:58 Thu
+        ];
+        let now = t("2026-11-12T22:00:00Z"); // Thu 15:00
+        let r = build_report(&[emp.clone()], &events, &[], d("2026-11-11"), d("2026-11-12"), now);
+        let (wed, thu) = (&r.employees[0].days[0], &r.employees[0].days[1]);
+        assert_eq!(
+            (wed.entry.as_deref(), wed.exit.as_deref(), wed.overnight, wed.worked_min, wed.status.as_str()),
+            (Some("13:55"), Some("02:59"), true, 13 * 60 + 4, "ok")
+        );
+        assert_eq!(wed.checks, vec!["13:55", "02:59"]);
+        assert_eq!((thu.entry.as_deref(), thu.status.as_str()), (Some("13:58"), "pendiente"));
+
+        // Without the 02:59 check, an admin types the exit as "03:00": the next morning.
+        let fixes = vec![fix("0004", "2026-11-11", None, Some("03:00"))];
+        let r = build_report(&[emp], &events[..1], &fixes, d("2026-11-11"), d("2026-11-11"), now);
+        let wed = &r.employees[0].days[0];
+        assert_eq!((wed.exit.as_deref(), wed.overnight, wed.worked_min), (Some("03:00"), true, 13 * 60 + 5));
+        assert_eq!(work_date(t("2026-11-12T12:59:00Z")), d("2026-11-11")); // 05:59 still Wed
+        assert_eq!(work_date(t("2026-11-12T13:00:00Z")), d("2026-11-12")); // 06:00 Thu
     }
 
     fn fix(no: &str, date: &str, entry: Option<&str>, exit: Option<&str>) -> AttendanceCorrection {

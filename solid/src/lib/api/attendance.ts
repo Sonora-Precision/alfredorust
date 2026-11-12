@@ -62,6 +62,8 @@ export interface AttendanceDay {
   checks: string[]
   entry?: string | null
   exit?: string | null
+  /** The exit was after midnight (work days run 06:00–06:00). */
+  overnight?: boolean
   worked_min: number
   late_min: number
   status: AttendanceStatus
