@@ -505,6 +505,9 @@ pub fn build_app(state: Arc<AppState>) -> Router {
         .route("/api/production/floor", get(routes::api_production_floor))
         .route("/api/production/my_shift", get(routes::api_my_shift))
         .route("/api/production/my_shift/people", get(routes::api_my_shift_people))
+        .route("/api/admin/outsourcing", get(routes::api_outsourcing_index).post(routes::api_outsourcing_create))
+        .route("/api/admin/outsourcing/{id}/update", axum::routing::post(routes::api_outsourcing_update))
+        .route("/api/admin/outsourcing/{id}/delete", axum::routing::post(routes::api_outsourcing_delete))
         .route("/api/admin/attendance/employees", get(routes::api_attendance_employees).post(routes::api_attendance_employee_save))
         .route("/api/admin/attendance/manual", post(routes::api_attendance_manual_add))
         .route(

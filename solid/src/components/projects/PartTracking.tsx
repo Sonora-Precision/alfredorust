@@ -25,6 +25,8 @@ import { type PartFile, listProjectPartFiles } from '../../lib/api/partFiles'
 import { PartDrawing } from './PartDrawing'
 import { PartCost } from './PartCost'
 import { PartComments } from './PartComments'
+import { PartOutsourcing } from './PartOutsourcing'
+import { type OutsourceJob, listProjectOutsourcing } from '../../lib/api/outsourcing'
 import { SetupProgress, activeCounts, isCountOp, isSetupOp, programaDone, stepPieces } from './SetupProgress'
 import { GAP_LABEL, type Gap, GapBar, QuickPrices, gapsOf } from './PartGaps'
 import { getProjectQuote } from '../../lib/api/quoting'
@@ -378,6 +380,16 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
     for (const c of commentsQuery.data ?? []) map.set(c.concept_id, [...(map.get(c.concept_id) ?? []), c])
     return map
   })
+  // Maquila: pieces of each part with a supplier (Daniel, 2026-11-13).
+  const outsourcingQuery = createQuery(() => ({
+    queryKey: ['outsourcing', props.projectId],
+    queryFn: () => listProjectOutsourcing(props.projectId),
+  }))
+  const outsourcingOf = createMemo(() => {
+    const map = new Map<string, OutsourceJob[]>()
+    for (const j of outsourcingQuery.data ?? []) map.set(j.concept_id, [...(map.get(j.concept_id) ?? []), j])
+    return map
+  })
   // Each part's row in the saw's cut list ("Pasar a corte" / place in the queue).
   const cutQuery = createQuery(() => ({ queryKey: ['cut-list'], queryFn: getCutList }))
   const cutOf = createMemo(() => new Map((cutQuery.data ?? []).map((i) => [i.concept_id, i])))
@@ -690,6 +702,16 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
                         partName={c.name}
                         comments={commentsOf().get(c.id) ?? []}
                       />
+                      <Show when={props.canConfigure || (outsourcingOf().get(c.id) ?? []).length > 0}>
+                        <PartOutsourcing
+                          projectId={props.projectId}
+                          concept={c}
+                          jobs={outsourcingOf().get(c.id) ?? []}
+                          operations={activeOps()}
+                          canEdit={props.canConfigure && !cancelled()}
+                          canSeeMoney={!!props.canSeeMoney}
+                        />
+                      </Show>
                       <Show when={props.canSeeMoney}>
                         <PartCost
                           projectId={props.projectId}

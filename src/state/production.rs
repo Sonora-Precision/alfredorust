@@ -208,6 +208,9 @@ pub async fn list_work_orders(state: &AppState, company_id: &ObjectId) -> Result
         }
     }
 
+    // Steps a supplier has for every piece are not ours to do on the floor (maquila).
+    let outsourcing = super::outsourcing_by_part(state, company_id).await?;
+
     let project_ids: Vec<ObjectId> = projects.keys().cloned().collect();
     let mut cursor = state
         .project_concepts
@@ -224,6 +227,11 @@ pub async fn list_work_orders(state: &AppState, company_id: &ObjectId) -> Result
         let Some((op, assignee)) = current_step(&concept, &operations) else {
             continue;
         };
+        if let (Some(jobs), Some(op_id)) = (concept.id.and_then(|id| outsourcing.get(&id)), op.id) {
+            if super::is_outsourced(jobs, &concept, &op_id) {
+                continue;
+            }
+        }
         let Some(project) = projects.get(&concept.project_id) else {
             continue;
         };

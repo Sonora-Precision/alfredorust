@@ -30,6 +30,9 @@ pub enum UserPermission {
     ManageProductionBoard,
     /// Quality: release or reject produced pieces. Only released pieces count as finished.
     ReleaseParts,
+    /// See which supplier machines an outsourced part (Daniel, 2026-11-13: off by default,
+    /// programmers only see "En maquila"). Never prices.
+    ViewOutsourcingSupplier,
 }
 
 impl UserPermission {
@@ -44,6 +47,7 @@ impl UserPermission {
             UserPermission::TakeWorkOrders => "take_work_orders",
             UserPermission::ManageProductionBoard => "manage_production_board",
             UserPermission::ReleaseParts => "release_parts",
+            UserPermission::ViewOutsourcingSupplier => "view_outsourcing_supplier",
         }
     }
 
@@ -58,6 +62,7 @@ impl UserPermission {
             "take_work_orders" => Some(UserPermission::TakeWorkOrders),
             "manage_production_board" => Some(UserPermission::ManageProductionBoard),
             "release_parts" => Some(UserPermission::ReleaseParts),
+            "view_outsourcing_supplier" => Some(UserPermission::ViewOutsourcingSupplier),
             _ => None,
         }
     }
@@ -401,6 +406,73 @@ pub struct Contact {
     /// (Daniel, 2026-11-13: maquila suppliers, given as an alias or with full data).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<ContactProfile>,
+}
+
+/// Where an outsourcing job stands.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum OutsourceStatus {
+    /// Decided, not sent yet.
+    Planned,
+    /// With the supplier.
+    Sent,
+    /// Back from the supplier (all or part of the pieces).
+    Received,
+    Cancelled,
+}
+
+impl OutsourceStatus {
+    /// Planned or with the supplier: the work is not ours to do on the floor.
+    pub fn is_open(self) -> bool {
+        matches!(self, OutsourceStatus::Planned | OutsourceStatus::Sent)
+    }
+}
+
+/// Pieces of a part sent to a supplier (maquila), whole or for some steps (Daniel,
+/// 2026-11-13: some parts have processes we do not do, or the supplier starts them and we
+/// finish them; a part may be split among several suppliers).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OutsourceJob {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub company_id: ObjectId,
+    pub project_id: ObjectId,
+    pub concept_id: ObjectId,
+    pub supplier_id: ObjectId,
+    /// Steps the supplier does; empty means the whole part.
+    #[serde(default)]
+    pub operation_ids: Vec<ObjectId>,
+    pub quantity: f64,
+    /// What we pay per piece (admin only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unit_cost: Option<f64>,
+    /// We give the material; by default the supplier buys it.
+    #[serde(default)]
+    pub material_by_us: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub due_date: Option<DateTime>,
+    pub status: OutsourceStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sent_at: Option<DateTime>,
+    #[serde(default)]
+    pub received_quantity: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub received_at: Option<DateTime>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_by: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<DateTime>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<DateTime>,
+}
+
+impl OutsourceJob {
+    /// Does this job take care of `op` (a step of the part)?
+    pub fn covers(&self, op: &ObjectId) -> bool {
+        self.operation_ids.is_empty() || self.operation_ids.contains(op)
+    }
 }
 
 /// The fuller card of a contact, mainly for suppliers. Everything is optional: a supplier
