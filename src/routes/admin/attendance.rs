@@ -754,26 +754,35 @@ pub struct EmployeeReport {
     /// Money earned in the range, before taxes: hours × hourly_rate, and the hours past their
     /// weekly hours at double (overtime, as in the payroll).
     pub earned: Option<f64>,
-    /// Minutes past their weekly hours (paid double).
+    /// Minutes past their weekly hours (all overtime).
     pub overtime_min: i64,
+    /// Of those, the minutes past 9 overtime hours a week, paid triple (LFT art. 68).
+    pub triple_min: i64,
 }
 
-/// (rate per hour, earned, overtime minutes) for `worked_min` over `days` days with a weekly
-/// pay. The weekly hours are prorated when the range is not a week.
+/// Overtime hours a week paid double; past them, triple (Ley Federal del Trabajo, art. 67-68).
+pub const DOUBLE_OVERTIME_HOURS: f64 = 9.0;
+
+/// (rate per hour, earned, overtime minutes, triple minutes) for `worked_min` over `days` days
+/// with a weekly pay. The weekly hours (and the 9 double hours) are prorated when the range is
+/// not a week.
 fn earnings(
     weekly_pay: Option<f64>,
     weekly_hours: Option<f64>,
     worked_min: i64,
     days: usize,
-) -> (Option<f64>, Option<f64>, i64) {
-    let Some(pay) = weekly_pay else { return (None, None, 0) };
+) -> (Option<f64>, Option<f64>, i64, i64) {
+    let Some(pay) = weekly_pay else { return (None, None, 0, 0) };
     let hours = weekly_hours.filter(|h| *h > 0.0).unwrap_or(DEFAULT_WEEKLY_HOURS);
     let rate = pay / hours;
-    let regular_cap = (hours * 60.0 * days as f64 / 7.0).round() as i64;
+    let week = days as f64 / 7.0;
+    let regular_cap = (hours * 60.0 * week).round() as i64;
+    let double_cap = (DOUBLE_OVERTIME_HOURS * 60.0 * week).round() as i64;
     let overtime = (worked_min - regular_cap).max(0);
-    let paid_min = (worked_min - overtime) + 2 * overtime;
+    let triple = (overtime - double_cap).max(0);
+    let paid_min = (worked_min - overtime) + 2 * (overtime - triple) + 3 * triple;
     let cents = |v: f64| (v * 100.0).round() / 100.0;
-    (Some(cents(rate)), Some(cents(rate * paid_min as f64 / 60.0)), overtime)
+    (Some(cents(rate)), Some(cents(rate * paid_min as f64 / 60.0)), overtime, triple)
 }
 
 #[derive(Debug, Serialize)]
@@ -1028,7 +1037,7 @@ pub fn build_report(
                 day
             })
             .collect();
-        let (hourly_rate, earned, overtime_min) =
+        let (hourly_rate, earned, overtime_min, triple_min) =
             earnings(emp.weekly_pay, emp.weekly_hours, totals.worked_min, dates.len());
         reports.push(EmployeeReport {
             employee_no: emp.employee_no.clone(),
@@ -1040,6 +1049,7 @@ pub fn build_report(
             hourly_rate,
             earned,
             overtime_min,
+            triple_min,
             totals,
         });
     }
@@ -1188,14 +1198,19 @@ mod tests {
     #[test]
     fn earnings_from_weekly_pay() {
         // 3000 for 45 h → 66.67/h; 8 h worked in a week → 533.33
-        assert_eq!(earnings(Some(3000.0), None, 480, 7), (Some(66.67), Some(533.33), 0));
-        assert_eq!(earnings(Some(2200.0), Some(45.0), 45 * 60, 7), (Some(48.89), Some(2200.0), 0));
-        assert_eq!(earnings(None, Some(45.0), 480, 7), (None, None, 0));
+        assert_eq!(earnings(Some(3000.0), None, 480, 7), (Some(66.67), Some(533.33), 0, 0));
+        assert_eq!(earnings(Some(2200.0), Some(45.0), 45 * 60, 7), (Some(48.89), Some(2200.0), 0, 0));
+        assert_eq!(earnings(None, Some(45.0), 480, 7), (None, None, 0, 0));
+        // 45 h at 60/h = 2700; 58 h worked: 9 h double (1080) + 4 h triple (720) = 4500
+        assert_eq!(
+            earnings(Some(2700.0), Some(45.0), 58 * 60, 7),
+            (Some(60.0), Some(4500.0), 13 * 60, 4 * 60)
+        );
         // Carlos's payroll (wk 44): 3110.38 for 48 h = 64.80/h; 6 extra hours at double = 777.59;
         // total 3887.97 there (it rounds each line), 3887.98 here.
         assert_eq!(
             earnings(Some(3110.38), Some(48.0), 54 * 60, 7),
-            (Some(64.80), Some(3887.98), 360)
+            (Some(64.80), Some(3887.98), 360, 0)
         );
     }
 

@@ -325,7 +325,11 @@ export default function Attendance(): JSX.Element {
                               <p class="font-medium text-foreground">{pesos(e.earned ?? 0)}</p>
                               <p class="text-xs text-muted-foreground">
                                 {pesos(e.hourly_rate ?? 0)}/h
-                                {e.overtime_min ? ` · ${horas(e.overtime_min)} extra al doble` : ''}
+                                {e.overtime_min
+                                  ? e.triple_min
+                                    ? ` · ${horas(e.overtime_min - e.triple_min)} extra al doble, ${horas(e.triple_min)} al triple`
+                                    : ` · ${horas(e.overtime_min)} extra al doble`
+                                  : ''}
                               </p>
                             </Show>
                           </TableCell>

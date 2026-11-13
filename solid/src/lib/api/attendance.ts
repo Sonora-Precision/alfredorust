@@ -94,6 +94,8 @@ export interface AttendanceEmployeeReport {
   /** Earned in the range, before taxes; overtime at double. */
   earned?: number | null
   overtime_min?: number
+  /** Overtime past 9 h a week, paid triple. */
+  triple_min?: number
   days: AttendanceDay[]
   totals: { worked_min: number; late_min: number; late_days: number; absences: number; incomplete: number }
 }
