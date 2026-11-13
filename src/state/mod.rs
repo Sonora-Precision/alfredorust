@@ -9,7 +9,7 @@ use crate::models::{
     Account, ApiToken, Category, Company, ConceptStatus, Contact, Forecast, MachineRun,
     PlannedEntry, ProcessOperation, Project, ProjectConcept, RecurringPlan, Resource, ResourceLog,
     ResourceUsage, ResourceUsageAllocation, SatConfig, ServiceOrder, Session, Transaction, User,
-    UserCompany, WorkOrderEvent, MachineQueueEntry, MachineState, MaterialPrice, MaterialPricePoint, MaterialQuote, MaterialReceipt, PartComment, PartFile, ProjectDocument, Suggestion, PlantLayout, Quote, QuoteFile, QuoteSettings, ClientQuoteDefaults,
+    UserCompany, WorkOrderEvent, MachineQueueEntry, MachineState, MaterialPrice, MaterialPricePoint, MaterialQuote, MaterialReceipt, OutsourceJob, PartComment, PartFile, ProjectDocument, Suggestion, PlantLayout, Quote, QuoteFile, QuoteSettings, ClientQuoteDefaults,
     ShopDailyReport, AttendanceCorrection, AttendanceEmployee, AttendanceEvent,
 };
 use bson::Document;
@@ -58,6 +58,7 @@ mod shop_reports;
 mod orders;
 mod plant;
 mod part_files;
+mod outsourcing;
 mod project_documents;
 mod my_shift;
 mod process_operations;
@@ -86,6 +87,7 @@ pub use shop_reports::*;
 pub use orders::*;
 pub use plant::*;
 pub use part_files::*;
+pub use outsourcing::*;
 pub use project_documents::*;
 pub use my_shift::*;
 pub use process_operations::*;
@@ -153,6 +155,7 @@ pub struct AppState {
     pub my_shift_visits: Collection<Document>,
     pub quote_files: Collection<QuoteFile>,
     pub attendance_events: Collection<AttendanceEvent>,
+    pub outsourcing_jobs: Collection<OutsourceJob>,
     pub attendance_employees: Collection<AttendanceEmployee>,
     pub attendance_corrections: Collection<AttendanceCorrection>,
 }
@@ -373,6 +376,14 @@ pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppStat
         )
         .await
         .context("creating the project documents index")?;
+    db.collection::<OutsourceJob>("outsourcing_jobs")
+        .create_index(
+            IndexModel::builder()
+                .keys(mongodb::bson::doc! { "company_id": 1, "concept_id": 1 })
+                .build(),
+        )
+        .await
+        .context("creating the outsourcing jobs index")?;
     // Time-clock checks are re-sent by the agent; the unique key makes that a no-op.
     db.collection::<AttendanceEvent>("attendance_events")
         .create_index(
@@ -474,6 +485,7 @@ pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppStat
         my_shift_visits: db.collection::<Document>("my_shift_visits"),
         quote_files: db.collection::<QuoteFile>("quote_files"),
         attendance_events: db.collection::<AttendanceEvent>("attendance_events"),
+        outsourcing_jobs: db.collection::<OutsourceJob>("outsourcing_jobs"),
         attendance_employees: db.collection::<AttendanceEmployee>("attendance_employees"),
         attendance_corrections: db.collection::<AttendanceCorrection>("attendance_corrections"),
     };

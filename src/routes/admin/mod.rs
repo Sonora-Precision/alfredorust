@@ -14,6 +14,7 @@ pub mod material_cost;
 pub mod traveler;
 pub mod floor;
 pub mod my_shift;
+pub mod outsourcing;
 pub mod notes;
 pub mod part_files;
 pub mod project_documents;
@@ -61,6 +62,7 @@ pub use quality::{api_quality_queue, api_quality_record};
 pub use traveler::api_traveler;
 pub use floor::api_production_floor;
 pub use my_shift::{api_my_shift, api_my_shift_people};
+pub use outsourcing::{api_outsourcing_create, api_outsourcing_delete, api_outsourcing_index, api_outsourcing_update};
 pub use material_cost::{
     api_material_quote_delete, api_project_material_quote_create, api_project_material_quotes, api_project_material_rates,
 };
