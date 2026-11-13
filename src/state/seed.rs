@@ -377,6 +377,7 @@ pub(super) async fn seed_sample_finance(db: &Database, company_id: Option<Object
                 created_at: contact.created_at,
                 updated_at: contact.updated_at,
                 notes: contact.notes,
+                profile: contact.profile,
             })
             .await?;
         let new_id = res

@@ -14,9 +14,11 @@ use serde::{Deserialize, Serialize};
 use crate::filters;
 
 use crate::{
+    models::{Contact, ContactProfile, ContactType},
     session::SessionUser,
     state::{
-        AppState, create_contact, delete_contact, get_contact_by_id, list_contacts, update_contact,
+        AppState, create_contact, delete_contact, get_contact_by_id, list_contacts, set_contact_profile,
+        update_contact,
     },
 };
 
@@ -28,6 +30,37 @@ struct ContactsIndexTemplate {
     contacts: Vec<ContactRow>,
 }
 
+/// One list row. Suppliers say what their card still lacks (Daniel, 2026-11-13).
+fn contact_row(c: Contact, company: &str) -> Option<ContactRow> {
+    let id = c.id?;
+    let profile = c.profile.unwrap_or_default();
+    let mut missing = Vec::new();
+    if c.contact_type == ContactType::Supplier {
+        if c.rfc.is_none() {
+            missing.push("rfc");
+        }
+        if profile.address.is_none() {
+            missing.push("address");
+        }
+        if c.email.is_none() && c.phone.is_none() && profile.whatsapp.is_none() {
+            missing.push("contact");
+        }
+    }
+    Some(ContactRow {
+        id: id.to_hex(),
+        name: c.name,
+        company: company.to_string(),
+        kind: contact_type_value(&c.contact_type).to_string(),
+        email: c.email.unwrap_or_else(|| "-".into()),
+        alias: profile.alias,
+        rfc: c.rfc,
+        phone: c.phone,
+        outsourcing: profile.outsourcing,
+        processes: profile.processes,
+        missing,
+    })
+}
+
 #[derive(Serialize)]
 pub struct ContactRow {
     pub id: String,
@@ -35,6 +68,14 @@ pub struct ContactRow {
     pub company: String,
     pub kind: String,
     pub email: String,
+    /// Shop name of a supplier (maquila), when it has one.
+    pub alias: Option<String>,
+    pub rfc: Option<String>,
+    pub phone: Option<String>,
+    pub outsourcing: bool,
+    pub processes: Vec<String>,
+    /// What a supplier card still lacks: "rfc", "address", "contact".
+    pub missing: Vec<&'static str>,
 }
 
 #[derive(Serialize)]
@@ -48,6 +89,7 @@ pub struct ContactDetail {
     pub email: Option<String>,
     pub phone: Option<String>,
     pub notes: Option<String>,
+    pub profile: ContactProfile,
 }
 
 #[derive(Deserialize, utoipa::ToSchema)]
@@ -58,6 +100,9 @@ pub struct ContactCreatePayload {
     pub email: Option<String>,
     pub phone: Option<String>,
     pub notes: Option<String>,
+    /// Supplier card; left out, it is not touched.
+    #[serde(default)]
+    pub profile: Option<ContactProfile>,
 }
 
 #[derive(Deserialize, utoipa::ToSchema)]
@@ -68,6 +113,9 @@ pub struct ContactUpdatePayload {
     pub email: Option<String>,
     pub phone: Option<String>,
     pub notes: Option<String>,
+    /// Supplier card; left out, it is not touched.
+    #[serde(default)]
+    pub profile: Option<ContactProfile>,
 }
 
 #[utoipa::path(
@@ -94,15 +142,7 @@ pub async fn contacts_data_api(
     let rows = contacts
         .into_iter()
         .filter(|c| c.company_id == active_company)
-        .filter_map(|c| {
-            c.id.map(|id| ContactRow {
-                id: id.to_hex(),
-                name: c.name,
-                company: active_name.clone(),
-                kind: contact_type_value(&c.contact_type).to_string(),
-                email: c.email.unwrap_or_else(|| "-".into()),
-            })
-        })
+        .filter_map(|c| contact_row(c, &active_name))
         .collect();
 
     Ok(Json(rows))
@@ -161,11 +201,14 @@ pub async fn contacts_create_api(
     )
     .await
     {
-        Ok(id) => (
-            StatusCode::CREATED,
-            Json(serde_json::json!({ "id": id.to_hex() })),
-        )
-            .into_response(),
+        Ok(id) => {
+            if let Some(profile) = payload.profile {
+                if set_contact_profile(&state, &id, &company_id, profile).await.is_err() {
+                    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                }
+            }
+            (StatusCode::CREATED, Json(serde_json::json!({ "id": id.to_hex() }))).into_response()
+        }
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
@@ -206,6 +249,7 @@ pub async fn contact_data_api(
         email: contact.email,
         phone: contact.phone,
         notes: contact.notes,
+        profile: contact.profile.unwrap_or_default(),
     }))
 }
 
@@ -279,7 +323,14 @@ pub async fn contact_update_api(
     )
     .await
     {
-        Ok(_) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Ok(_) => {
+            if let Some(profile) = payload.profile {
+                if set_contact_profile(&state, &object_id, &company_id, profile).await.is_err() {
+                    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                }
+            }
+            Json(serde_json::json!({ "ok": true })).into_response()
+        }
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
@@ -377,15 +428,7 @@ pub async fn contacts_index(
     let rows = contacts
         .into_iter()
         .filter(|c| c.company_id == active_company)
-        .filter_map(|c| {
-            c.id.map(|id| ContactRow {
-                id: id.to_hex(),
-                name: c.name,
-                company: active_name.clone(),
-                kind: contact_type_value(&c.contact_type).to_string(),
-                email: c.email.unwrap_or_else(|| "-".into()),
-            })
-        })
+        .filter_map(|c| contact_row(c, &active_name))
         .collect();
 
     render(ContactsIndexTemplate { contacts: rows })

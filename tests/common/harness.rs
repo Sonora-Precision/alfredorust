@@ -191,7 +191,7 @@ pub fn build_app(state: Arc<AppState>) -> Router {
             "/admin/contacts",
             get(routes::contacts_index).post(routes::contacts_create),
         )
-        .route("/api/admin/contacts", get(routes::contacts_data_api))
+        .route("/api/admin/contacts", get(routes::contacts_data_api).post(routes::contacts_create_api))
         .route("/api/admin/contacts/{id}", get(routes::contact_data_api))
         .route(
             "/api/admin/contacts/{id}/update",

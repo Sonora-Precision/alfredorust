@@ -201,6 +201,32 @@ export interface Contact {
   name: string
   kind: ContactType
   email?: string
+  /** Shop name of a supplier ("Ripasa"); `name` is the legal name. */
+  alias?: string | null
+  rfc?: string | null
+  phone?: string | null
+  outsourcing?: boolean
+  processes?: string[]
+  /** What a supplier card still lacks. */
+  missing?: ('rfc' | 'address' | 'contact')[]
+}
+
+/** Supplier card: everything optional, a supplier can start as just an alias. */
+export interface ContactProfile {
+  alias?: string | null
+  tax_regime?: string | null
+  address?: string | null
+  city?: string | null
+  state?: string | null
+  postal_code?: string | null
+  contact_person?: string | null
+  whatsapp?: string | null
+  website?: string | null
+  bank?: string | null
+  clabe?: string | null
+  credit_days?: number | null
+  outsourcing: boolean
+  processes: string[]
 }
 
 export interface ContactPayload {
@@ -210,6 +236,8 @@ export interface ContactPayload {
   email?: string | null
   phone?: string | null
   notes?: string | null
+  /** Left out, the card is not touched. */
+  profile?: ContactProfile
 }
 
 export interface ContactDetail {
@@ -219,6 +247,7 @@ export interface ContactDetail {
   email?: string | null
   phone?: string | null
   notes?: string | null
+  profile?: ContactProfile
 }
 
 // --- recurring plans ------------------------------------------------------------

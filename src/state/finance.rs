@@ -5,7 +5,7 @@ use mongodb::bson::{DateTime, doc, oid::ObjectId};
 use std::time::SystemTime;
 
 use crate::models::{
-    Account, AccountType, Category, Contact, ContactType, FlowType, Forecast, PlannedEntry,
+    Account, AccountType, Category, Contact, ContactProfile, ContactType, FlowType, Forecast, PlannedEntry,
     PlannedStatus, RecurringPlan, Transaction, TransactionType,
 };
 
@@ -280,6 +280,7 @@ pub async fn create_contact(
             created_at: Some(DateTime::from_system_time(SystemTime::now())),
             updated_at: None,
             notes,
+            profile: None,
         })
         .await?;
     res.inserted_id
@@ -339,6 +340,27 @@ pub async fn update_contact(
                 "email": email,
                 "phone": phone,
                 "notes": notes,
+                "updated_at": DateTime::from_system_time(SystemTime::now()),
+            } },
+        )
+        .await?;
+    Ok(())
+}
+
+/// Saves the supplier card of a contact (alias, tax and contact data, maquila).
+pub async fn set_contact_profile(
+    state: &AppState,
+    id: &ObjectId,
+    company_id: &ObjectId,
+    profile: ContactProfile,
+) -> Result<()> {
+    let profile = mongodb::bson::to_bson(&profile.cleaned())?;
+    state
+        .contacts
+        .update_one(
+            doc! { "_id": id, "company_id": company_id },
+            doc! { "$set": {
+                "profile": profile,
                 "updated_at": DateTime::from_system_time(SystemTime::now()),
             } },
         )

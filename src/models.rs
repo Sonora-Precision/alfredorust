@@ -396,6 +396,80 @@ pub struct Contact {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
+
+    /// Supplier card: alias, tax and contact data, and whether they machine parts for us
+    /// (Daniel, 2026-11-13: maquila suppliers, given as an alias or with full data).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<ContactProfile>,
+}
+
+/// The fuller card of a contact, mainly for suppliers. Everything is optional: a supplier
+/// can start as just an alias and be filled in later.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+pub struct ContactProfile {
+    /// Short name used in the shop ("Ripasa", "V3"); `name` stays the legal name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alias: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tax_regime: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub address: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub city: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub postal_code: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contact_person: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub whatsapp: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub website: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bank: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clabe: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credit_days: Option<i32>,
+    /// Machines parts or does processes for us (maquila).
+    #[serde(default)]
+    pub outsourcing: bool,
+    /// What they do: "Torno", "Tratamiento térmico"…
+    #[serde(default)]
+    pub processes: Vec<String>,
+}
+
+impl ContactProfile {
+    /// Trimmed, empty text as none, processes without blanks or repeats.
+    pub fn cleaned(self) -> Self {
+        fn t(v: Option<String>) -> Option<String> {
+            v.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+        }
+        let mut processes: Vec<String> = Vec::new();
+        for p in self.processes {
+            let p = p.trim().to_string();
+            if !p.is_empty() && !processes.iter().any(|q| q.eq_ignore_ascii_case(&p)) {
+                processes.push(p);
+            }
+        }
+        Self {
+            alias: t(self.alias),
+            tax_regime: t(self.tax_regime),
+            address: t(self.address),
+            city: t(self.city),
+            state: t(self.state),
+            postal_code: t(self.postal_code),
+            contact_person: t(self.contact_person),
+            whatsapp: t(self.whatsapp),
+            website: t(self.website),
+            bank: t(self.bank),
+            clabe: t(self.clabe).map(|c| c.chars().filter(|ch| !ch.is_whitespace()).collect()),
+            credit_days: self.credit_days.filter(|d| *d >= 0),
+            outsourcing: self.outsourcing,
+            processes,
+        }
+    }
 }
 
 /// RecurringPlan: template for recurring income/expense,
