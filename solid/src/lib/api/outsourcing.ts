@@ -53,3 +53,56 @@ export const createOutsourcing = (payload: OutsourceJobPayload) =>
 export const updateOutsourcing = (id: string, payload: OutsourceJobPayload) =>
   apiPost<void>(`/api/admin/outsourcing/${id}/update`, payload)
 export const deleteOutsourcing = (id: string) => apiPost<void>(`/api/admin/outsourcing/${id}/delete`)
+
+// ---------- Proveedores de maquila (admin only) ----------
+
+export interface SupplierJobRow {
+  id: string
+  project_id: string
+  project_title: string
+  concept_id: string
+  part: string
+  steps: string[]
+  whole: boolean
+  quantity: number
+  received_quantity: number
+  unit_cost?: number | null
+  unit_price?: number | null
+  cost_total?: number | null
+  sale_total?: number | null
+  status: OutsourceStatus
+  due_date?: string | null
+  sent_at?: string | null
+  received_at?: string | null
+  late: boolean
+}
+
+export interface SupplierSummary {
+  id: string
+  name: string
+  legal_name: string
+  rfc?: string | null
+  phone?: string | null
+  email?: string | null
+  contact_person?: string | null
+  outsourcing: boolean
+  processes: string[]
+  parts: number
+  open_jobs: number
+  received_jobs: number
+  pieces_sent: number
+  pieces_received: number
+  cost: number
+  jobs_without_cost: number
+  whole_cost: number
+  whole_sale: number
+  whole_margin: number
+  partial_cost: number
+  partial_sale: number
+  on_time: number
+  late: number
+  short: number
+  jobs: SupplierJobRow[]
+}
+
+export const listOutsourcingSuppliers = () => apiGet<SupplierSummary[]>('/api/admin/outsourcing/suppliers')

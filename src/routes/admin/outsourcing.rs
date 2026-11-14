@@ -370,3 +370,212 @@ pub async fn api_outsourcing_delete(
         Err(_) => json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not delete"),
     }
 }
+
+// ---------- Proveedores de maquila (admin only) ----------
+
+#[derive(Serialize, Default)]
+pub struct SupplierJobRow {
+    pub id: String,
+    pub project_id: String,
+    pub project_title: String,
+    pub concept_id: String,
+    pub part: String,
+    /// Empty means the whole part.
+    pub steps: Vec<String>,
+    pub whole: bool,
+    pub quantity: f64,
+    pub received_quantity: f64,
+    pub unit_cost: Option<f64>,
+    pub unit_price: Option<f64>,
+    /// unit_cost × pieces sent.
+    pub cost_total: Option<f64>,
+    /// unit_price × pieces sent.
+    pub sale_total: Option<f64>,
+    pub status: OutsourceStatus,
+    pub due_date: Option<String>,
+    pub sent_at: Option<String>,
+    pub received_at: Option<String>,
+    pub late: bool,
+}
+
+#[derive(Serialize, Default)]
+pub struct SupplierSummary {
+    pub id: String,
+    pub name: String,
+    pub legal_name: String,
+    pub rfc: Option<String>,
+    pub phone: Option<String>,
+    pub email: Option<String>,
+    pub contact_person: Option<String>,
+    pub outsourcing: bool,
+    pub processes: Vec<String>,
+    /// Distinct part numbers (not cancelled).
+    pub parts: usize,
+    pub open_jobs: usize,
+    pub received_jobs: usize,
+    pub pieces_sent: f64,
+    pub pieces_received: f64,
+    /// What we pay for everything not cancelled.
+    pub cost: f64,
+    /// Jobs without a price yet.
+    pub jobs_without_cost: usize,
+    /// Whole parts: what we sell them for and what we keep.
+    pub whole_cost: f64,
+    pub whole_sale: f64,
+    pub whole_margin: f64,
+    /// Some steps only: what we pay against what the client pays for those pieces.
+    pub partial_cost: f64,
+    pub partial_sale: f64,
+    pub on_time: usize,
+    pub late: usize,
+    /// Came back with fewer pieces than were sent.
+    pub short: usize,
+    pub jobs: Vec<SupplierJobRow>,
+}
+
+impl Default for OutsourceStatus {
+    fn default() -> Self {
+        OutsourceStatus::Planned
+    }
+}
+
+pub async fn api_outsourcing_suppliers(session_user: SessionUser, State(state): State<Arc<AppState>>) -> Response {
+    if !session_user.is_admin() {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    use futures::stream::TryStreamExt;
+    let company_id = require_active_company(&session_user);
+    let jobs = match list_outsourcing_jobs(&state, &company_id, Document::new()).await {
+        Ok(jobs) => jobs,
+        Err(_) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not list maquila"),
+    };
+    let with_jobs: Vec<ObjectId> = jobs.iter().map(|j| j.supplier_id).collect();
+    // Suppliers marked "hace maquila" plus whoever has jobs.
+    let contact_filter = doc! {
+        "company_id": &company_id,
+        "$or": [ { "_id": { "$in": &with_jobs } }, { "profile.outsourcing": true } ],
+    };
+    let mut contacts = Vec::new();
+    match state.contacts.find(contact_filter).await {
+        Ok(mut cursor) => {
+            while let Ok(Some(c)) = cursor.try_next().await {
+                contacts.push(c);
+            }
+        }
+        Err(_) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load suppliers"),
+    }
+    let concept_ids: Vec<ObjectId> = jobs.iter().map(|j| j.concept_id).collect();
+    let mut concepts = HashMap::new();
+    if let Ok(mut cursor) =
+        state.project_concepts.find(doc! { "company_id": &company_id, "_id": { "$in": &concept_ids } }).await
+    {
+        while let Ok(Some(c)) = cursor.try_next().await {
+            if let Some(id) = c.id {
+                concepts.insert(id, c);
+            }
+        }
+    }
+    let project_ids: Vec<ObjectId> = jobs.iter().map(|j| j.project_id).collect();
+    let mut projects = HashMap::new();
+    if let Ok(mut cursor) = state.projects.find(doc! { "company_id": &company_id, "_id": { "$in": &project_ids } }).await {
+        while let Ok(Some(p)) = cursor.try_next().await {
+            if let Some(id) = p.id {
+                projects.insert(id, p.title);
+            }
+        }
+    }
+    let step_names: HashMap<ObjectId, String> = list_process_operations(&state, &company_id, true)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|o| Some((o.id?, o.name)))
+        .collect();
+
+    let now = DateTime::now();
+    let mut out: Vec<SupplierSummary> = contacts
+        .into_iter()
+        .filter_map(|c| {
+            let id = c.id?;
+            let profile = c.profile.clone().unwrap_or_default();
+            let mut s = SupplierSummary {
+                id: id.to_hex(),
+                name: profile.alias.clone().unwrap_or_else(|| c.name.clone()),
+                legal_name: c.name.clone(),
+                rfc: c.rfc.clone(),
+                phone: c.phone.clone(),
+                email: c.email.clone(),
+                contact_person: profile.contact_person.clone(),
+                outsourcing: profile.outsourcing,
+                processes: profile.processes.clone(),
+                ..Default::default()
+            };
+            let mut parts = std::collections::HashSet::new();
+            for j in jobs.iter().filter(|j| j.supplier_id == id) {
+                let Some(job_id) = j.id else { continue };
+                let concept = concepts.get(&j.concept_id);
+                let unit_price = concept.and_then(|c| c.unit_price);
+                let whole = j.operation_ids.is_empty();
+                let cost_total = j.unit_cost.map(|u| u * j.quantity);
+                let sale_total = unit_price.map(|u| u * j.quantity);
+                let late = job_late(j, now);
+                if j.status != OutsourceStatus::Cancelled {
+                    parts.insert(j.concept_id);
+                    s.pieces_sent += j.quantity;
+                    s.pieces_received += j.received_quantity;
+                    if j.status.is_open() {
+                        s.open_jobs += 1;
+                    } else {
+                        s.received_jobs += 1;
+                        if j.received_quantity < j.quantity {
+                            s.short += 1;
+                        }
+                        if j.due_date.is_some() && !late {
+                            s.on_time += 1;
+                        }
+                    }
+                    if late {
+                        s.late += 1;
+                    }
+                    match cost_total {
+                        Some(cost) => s.cost += cost,
+                        None => s.jobs_without_cost += 1,
+                    }
+                    if whole {
+                        s.whole_cost += cost_total.unwrap_or(0.0);
+                        s.whole_sale += sale_total.unwrap_or(0.0);
+                    } else {
+                        s.partial_cost += cost_total.unwrap_or(0.0);
+                        s.partial_sale += sale_total.unwrap_or(0.0);
+                    }
+                }
+                s.jobs.push(SupplierJobRow {
+                    id: job_id.to_hex(),
+                    project_id: j.project_id.to_hex(),
+                    project_title: projects.get(&j.project_id).cloned().unwrap_or_default(),
+                    concept_id: j.concept_id.to_hex(),
+                    part: concept.map(|c| c.name.clone()).unwrap_or_default(),
+                    steps: j.operation_ids.iter().filter_map(|o| step_names.get(o).cloned()).collect(),
+                    whole,
+                    quantity: j.quantity,
+                    received_quantity: j.received_quantity,
+                    unit_cost: j.unit_cost,
+                    unit_price,
+                    cost_total,
+                    sale_total,
+                    status: j.status,
+                    due_date: j.due_date.map(iso),
+                    sent_at: j.sent_at.map(iso),
+                    received_at: j.received_at.map(iso),
+                    late,
+                });
+            }
+            s.parts = parts.len();
+            s.whole_margin = s.whole_sale - s.whole_cost;
+            // Open first, then newest.
+            s.jobs.sort_by(|a, b| b.status.is_open().cmp(&a.status.is_open()).then(b.sent_at.cmp(&a.sent_at)));
+            Some(s)
+        })
+        .collect();
+    out.sort_by(|a, b| b.cost.total_cmp(&a.cost).then(a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+    Json(out).into_response()
+}

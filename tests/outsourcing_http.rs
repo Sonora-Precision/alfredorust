@@ -231,5 +231,36 @@ async fn outsourced_parts_leave_the_board_until_they_come_back() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
+    // Proveedores de maquila: what each supplier has, what we pay, what we sell.
+    state
+        .project_concepts
+        .update_one(mongodb::bson::doc! { "_id": whole }, mongodb::bson::doc! { "$set": { "unit_price": 700.0 } })
+        .await
+        .unwrap();
+    let (status, _) = get("/api/admin/outsourcing/suppliers".into(), carlos.clone()).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, body) = get("/api/admin/outsourcing/suppliers".into(), admin.clone()).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let rows = json(&body);
+    let rows = rows.as_array().unwrap();
+    // Ripasa does maquila even with nothing left; the customer is not listed.
+    assert_eq!(rows.len(), 2, "{body}");
+    let zz_row = &rows[0];
+    assert_eq!(zz_row["name"], "ZZ Desarrollos");
+    assert_eq!(zz_row["parts"], 2);
+    assert_eq!(zz_row["open_jobs"], 1);
+    assert_eq!(zz_row["received_jobs"], 1);
+    assert_eq!(zz_row["cost"], 4500.0);
+    assert_eq!(zz_row["jobs_without_cost"], 1);
+    assert_eq!(zz_row["whole_sale"], 7000.0);
+    assert_eq!(zz_row["whole_margin"], 2500.0);
+    assert_eq!(zz_row["jobs"].as_array().unwrap().len(), 2);
+    let partial = zz_row["jobs"].as_array().unwrap().iter().find(|j| j["whole"] == false).unwrap();
+    assert_eq!(partial["steps"][0], "Setup 1");
+    assert_eq!(partial["part"], "BASE-2");
+    assert_eq!(partial["project_title"], "Bases");
+    assert_eq!(rows[1]["name"], "Ripasa");
+    assert_eq!(rows[1]["jobs"].as_array().unwrap().len(), 0);
+
     common::teardown(Some(ctx)).await;
 }
