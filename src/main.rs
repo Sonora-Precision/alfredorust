@@ -772,6 +772,7 @@ async fn main() {
         .route("/api/production/floor", get(routes::api_production_floor))
         .route("/api/production/my_shift", get(routes::api_my_shift))
         .route("/api/production/my_shift/people", get(routes::api_my_shift_people))
+        .route("/api/admin/outsourcing/suppliers", get(routes::api_outsourcing_suppliers))
         .route("/api/admin/outsourcing", get(routes::api_outsourcing_index).post(routes::api_outsourcing_create))
         .route("/api/admin/outsourcing/{id}/update", axum::routing::post(routes::api_outsourcing_update))
         .route("/api/admin/outsourcing/{id}/delete", axum::routing::post(routes::api_outsourcing_delete))
