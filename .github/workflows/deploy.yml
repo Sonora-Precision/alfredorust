@@ -9,7 +9,8 @@ jobs:
     # Self-hosted runner on the 32-core "casa" box: persistent local target/ +
     # rustup cache → incremental Rust builds (~1 min vs ~3-8 on GitHub-hosted).
     # NOTE: casa must be online for deploys to run.
-    runs-on: [self-hosted, casa]
+    # TEMP (2026-11-16): casa-runner fails to start jobs; back to [self-hosted, casa] once fixed.
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
