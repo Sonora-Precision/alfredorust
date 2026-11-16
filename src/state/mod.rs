@@ -10,7 +10,7 @@ use crate::models::{
     PlannedEntry, ProcessOperation, Project, ProjectConcept, RecurringPlan, Resource, ResourceLog,
     ResourceUsage, ResourceUsageAllocation, SatConfig, ServiceOrder, Session, Transaction, User,
     UserCompany, WorkOrderEvent, MachineQueueEntry, MachineState, MaterialPrice, MaterialPricePoint, MaterialQuote, MaterialReceipt, OutsourceJob, PartComment, PartFile, ProjectDocument, Suggestion, PlantLayout, Quote, QuoteFile, QuoteSettings, ClientQuoteDefaults,
-    ShopDailyReport, AttendanceCorrection, AttendanceEmployee, AttendanceEvent,
+    ShopDailyReport, AttendanceCorrection, AttendanceHoliday, AttendanceEmployee, AttendanceEvent,
 };
 use bson::Document;
 
@@ -158,6 +158,7 @@ pub struct AppState {
     pub outsourcing_jobs: Collection<OutsourceJob>,
     pub attendance_employees: Collection<AttendanceEmployee>,
     pub attendance_corrections: Collection<AttendanceCorrection>,
+    pub attendance_holidays: Collection<AttendanceHoliday>,
 }
 
 pub async fn init_state() -> Result<AppState> {
@@ -435,6 +436,20 @@ pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppStat
         )
         .await
         .context("creating the unique attendance correction index")?;
+    db.collection::<AttendanceHoliday>("attendance_holidays")
+        .create_index(
+            IndexModel::builder()
+                .keys(mongodb::bson::doc! { "company_id": 1, "date": 1 })
+                .options(
+                    IndexOptions::builder()
+                        .name("unique_attendance_holiday".to_string())
+                        .unique(true)
+                        .build(),
+                )
+                .build(),
+        )
+        .await
+        .context("creating the unique attendance holiday index")?;
 
     let state = AppState {
         cfdi_archive_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
@@ -488,6 +503,7 @@ pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppStat
         outsourcing_jobs: db.collection::<OutsourceJob>("outsourcing_jobs"),
         attendance_employees: db.collection::<AttendanceEmployee>("attendance_employees"),
         attendance_corrections: db.collection::<AttendanceCorrection>("attendance_corrections"),
+        attendance_holidays: db.collection::<AttendanceHoliday>("attendance_holidays"),
     };
 
     let interrupted = fail_interrupted_cfdi_jobs(&state).await?;

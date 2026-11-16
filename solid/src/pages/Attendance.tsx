@@ -30,6 +30,7 @@ import {
   listAttendanceEmployees,
   saveAttendanceEmployee,
   saveCorrection,
+  saveHoliday,
 } from '../lib/api/attendance'
 import { humanizeError } from '../lib/api/client'
 
@@ -43,6 +44,7 @@ const STATUS: Record<AttendanceStatus, { label: string; class: string }> = {
   descanso: { label: 'Descanso', class: 'text-muted-foreground' },
   sin_horario: { label: '', class: '' },
   antes_alta: { label: 'Aún no entraba', class: 'text-muted-foreground' },
+  feriado: { label: 'Feriado', class: 'bg-teal-500/15 text-teal-700 dark:text-teal-300' },
 }
 
 const DAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
@@ -175,6 +177,11 @@ function DayCell(props: { day: AttendanceDay; onDeleteManual: (id: string) => vo
         <Show when={props.day.worked_min > 0}>
           <p class="tnum text-muted-foreground">{horas(props.day.worked_min)}</p>
         </Show>
+        <Show when={(props.day.paid_min ?? 0) > 0}>
+          <p class="tnum text-teal-700 dark:text-teal-300" title={`${props.day.holiday ?? 'Feriado'}: se paga como día completo`}>
+            {horas(props.day.paid_min ?? 0)} pagadas
+          </p>
+        </Show>
         <Show when={st().label}>
           <span class={`inline-block rounded px-1.5 py-px font-medium ${st().class}`}>
             {st().label}
@@ -215,6 +222,24 @@ export default function Attendance(): JSX.Element {
   }))
   const [manualOpen, setManualOpen] = createSignal(false)
   const [correcting, setCorrecting] = createSignal<{ employee_no: string; name: string; day: AttendanceDay } | null>(null)
+  const holiday = createMutation(() => ({
+    mutationFn: (p: { date: string; name?: string | null; remove?: boolean }) => saveHoliday(p),
+    onSuccess: (_, p) => {
+      toast.success(p.remove ? 'Ya no es feriado' : 'Día feriado marcado', p.remove ? '' : 'Se paga como día completo')
+      void qc.invalidateQueries({ queryKey: ['attendance-report'] })
+    },
+    onError: (err) => toast.error('No se pudo guardar', humanizeError(err, '')),
+  }))
+  const holidayOf = (date: string) => (report.data?.holidays ?? []).find((h) => h.date === date)
+  const toggleHoliday = (date: string) => {
+    const h = holidayOf(date)
+    if (h) {
+      if (confirm(`¿Quitar "${h.name}" (${diaCorto(date)}) como día feriado?`)) holiday.mutate({ date, remove: true })
+      return
+    }
+    const name = prompt(`Marcar el ${diaCorto(date)} como día feriado (se paga como día completo). Nombre:`, 'Día feriado')
+    if (name !== null) holiday.mutate({ date, name })
+  }
   const removeManual = createMutation(() => ({
     mutationFn: (id: string) => deleteManualCheck(id),
     onSuccess: () => {
@@ -278,7 +303,24 @@ export default function Attendance(): JSX.Element {
                 <TableHead>
                   <TableRow>
                     <TableHeadCell>Persona</TableHeadCell>
-                    <For each={report.data?.employees[0]?.days ?? []}>{(d) => <TableHeadCell>{diaCorto(d.date)}</TableHeadCell>}</For>
+                    <For each={report.data?.employees[0]?.days ?? []}>
+                      {(d) => (
+                        <TableHeadCell>
+                          <button
+                            type="button"
+                            class="rounded px-1 text-left hover:bg-muted"
+                            title={holidayOf(d.date) ? 'Quitar día feriado' : 'Marcar como día feriado'}
+                            disabled={holiday.isPending}
+                            onClick={() => toggleHoliday(d.date)}
+                          >
+                            {diaCorto(d.date)}
+                            <Show when={holidayOf(d.date)}>
+                              {(h) => <span class="block text-[11px] font-normal normal-case text-teal-700 dark:text-teal-300">{h().name}</span>}
+                            </Show>
+                          </button>
+                        </TableHeadCell>
+                      )}
+                    </For>
                     <TableHeadCell>Horas</TableHeadCell>
                     <TableHeadCell>Retardos</TableHeadCell>
                     <TableHeadCell>Faltas</TableHeadCell>
@@ -312,7 +354,12 @@ export default function Attendance(): JSX.Element {
                             />
                           )}
                         </For>
-                        <TableCell class="tnum align-top font-medium">{horas(e.totals.worked_min)}</TableCell>
+                        <TableCell class="tnum align-top font-medium">
+                          {horas(e.totals.worked_min)}
+                          <Show when={(e.totals.holiday_min ?? 0) > 0}>
+                            <p class="text-xs font-normal text-teal-700 dark:text-teal-300">+ {horas(e.totals.holiday_min ?? 0)} feriado</p>
+                          </Show>
+                        </TableCell>
                         <TableCell class="tnum align-top">
                           {e.totals.late_days > 0 ? `${e.totals.late_days} (${e.totals.late_min} min)` : e.shift ? '0' : '—'}
                         </TableCell>

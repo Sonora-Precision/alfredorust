@@ -4,7 +4,9 @@ use anyhow::{Result, bail};
 use futures::stream::TryStreamExt;
 use mongodb::bson::{DateTime, doc, oid::ObjectId};
 
-use crate::models::{AttendanceCorrection, AttendanceEmployee, AttendanceEvent, AttendanceShift};
+use crate::models::{
+    AttendanceCorrection, AttendanceEmployee, AttendanceEvent, AttendanceHoliday, AttendanceShift,
+};
 
 use super::AppState;
 
@@ -144,6 +146,52 @@ pub async fn delete_attendance_correction(
     let r = state
         .attendance_corrections
         .delete_one(doc! { "company_id": company_id, "employee_no": employee_no, "date": date })
+        .await?;
+    Ok(r.deleted_count > 0)
+}
+
+/// Holidays with `from <= date <= to`.
+pub async fn list_attendance_holidays(
+    state: &AppState,
+    company_id: &ObjectId,
+    from: &str,
+    to: &str,
+) -> Result<Vec<AttendanceHoliday>> {
+    let cursor = state
+        .attendance_holidays
+        .find(doc! { "company_id": company_id, "date": { "$gte": from, "$lte": to } })
+        .await?;
+    Ok(cursor.try_collect().await?)
+}
+
+/// Marks (or renames) a holiday.
+pub async fn upsert_attendance_holiday(
+    state: &AppState,
+    company_id: &ObjectId,
+    date: &str,
+    name: &str,
+    author: &str,
+) -> Result<()> {
+    state
+        .attendance_holidays
+        .update_one(
+            doc! { "company_id": company_id, "date": date },
+            doc! { "$set": { "name": name, "author": author, "updated_at": DateTime::now() } },
+        )
+        .upsert(true)
+        .await?;
+    Ok(())
+}
+
+/// Removes it; false when there was none.
+pub async fn delete_attendance_holiday(
+    state: &AppState,
+    company_id: &ObjectId,
+    date: &str,
+) -> Result<bool> {
+    let r = state
+        .attendance_holidays
+        .delete_one(doc! { "company_id": company_id, "date": date })
         .await?;
     Ok(r.deleted_count > 0)
 }

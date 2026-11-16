@@ -2301,6 +2301,21 @@ pub struct AttendanceCorrection {
     pub updated_at: DateTime,
 }
 
+/// A paid holiday (Daniel, 2026-11-16: "hoy fue día feriado ... pero se toma como día completo"):
+/// nobody comes in and the day counts as worked for everyone with a shift. One per
+/// (`company_id`, `date`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AttendanceHoliday {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub company_id: ObjectId,
+    /// YYYY-MM-DD, shop date.
+    pub date: String,
+    pub name: String,
+    pub author: String,
+    pub updated_at: DateTime,
+}
+
 /// A daily window on some weekdays.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ShiftWindow {

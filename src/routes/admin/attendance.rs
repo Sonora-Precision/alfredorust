@@ -22,15 +22,17 @@ use super::finance::helpers::require_admin_active;
 use super::project_backend::{iso, json_error};
 use crate::{
     models::{
-        AttendanceCorrection, AttendanceEmployee, AttendanceEvent, AttendanceShift, ShiftWindow,
+        AttendanceCorrection, AttendanceEmployee, AttendanceEvent, AttendanceHoliday, AttendanceShift,
+        ShiftWindow,
     },
     session::SessionUser,
     state::{
         AppState, MANUAL_DEVICE, MAX_EVENTS_PER_INGEST, NewAttendanceEvent,
-        delete_attendance_correction, delete_attendance_employee, delete_manual_attendance_event,
+        delete_attendance_correction, delete_attendance_employee, delete_attendance_holiday, delete_manual_attendance_event,
         insert_attendance_events, insert_manual_attendance_event, last_attendance_event_at,
         list_attendance_corrections, list_attendance_employees, list_attendance_events,
-        upsert_attendance_correction, upsert_attendance_employee,
+        list_attendance_holidays, upsert_attendance_correction, upsert_attendance_employee,
+        upsert_attendance_holiday,
     },
 };
 
@@ -686,6 +688,69 @@ pub async fn api_attendance_correction_save(
     }
 }
 
+// ---------- holidays ----------
+
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub struct HolidayPayload {
+    /// YYYY-MM-DD, shop date.
+    pub date: String,
+    /// e.g. "Día de la Revolución".
+    pub name: Option<String>,
+    /// True to unmark the day.
+    #[serde(default)]
+    pub remove: bool,
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/admin/attendance/holiday",
+    tag = "operations",
+    request_body = HolidayPayload,
+    responses(
+        (status = 200, description = "Day marked (or unmarked) as a paid holiday"),
+        (status = 400, description = "Invalid input"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Admin only")
+    ),
+    security(("session" = []))
+)]
+pub async fn api_attendance_holiday_save(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Json(p): Json<HolidayPayload>,
+) -> Response {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let Ok(date) = NaiveDate::parse_from_str(p.date.trim(), "%Y-%m-%d") else {
+        return json_error(StatusCode::BAD_REQUEST, "date must be YYYY-MM-DD");
+    };
+    let date = date.format("%Y-%m-%d").to_string();
+    if p.remove {
+        return match delete_attendance_holiday(&state, &company_id, &date).await {
+            Ok(_) => Json(serde_json::json!({ "ok": true })).into_response(),
+            Err(err) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()),
+        };
+    }
+    let name: String = p
+        .name
+        .as_deref()
+        .map(|n| n.trim().chars().take(80).collect::<String>())
+        .filter(|n| !n.is_empty())
+        .unwrap_or_else(|| "Día feriado".to_string());
+    let u = session_user.user();
+    let author = u
+        .display_name
+        .clone()
+        .filter(|n| !n.trim().is_empty())
+        .unwrap_or_else(|| u.username.clone());
+    match upsert_attendance_holiday(&state, &company_id, &date, &name, &author).await {
+        Ok(()) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Err(err) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()),
+    }
+}
+
 // ---------- report ----------
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -713,6 +778,10 @@ pub struct DayData {
     pub manual: Vec<ManualCheckData>,
     /// An admin's correction of the entry/exit; `entry`/`exit` above already use it.
     pub correction: Option<CorrectionData>,
+    /// The holiday's name when the day is a paid holiday.
+    pub holiday: Option<String>,
+    /// Minutes paid without working them: the shift of a holiday.
+    pub paid_min: i64,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -738,6 +807,8 @@ pub struct Totals {
     pub late_days: i64,
     pub absences: i64,
     pub incomplete: i64,
+    /// Shift minutes of holidays: paid as worked.
+    pub holiday_min: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -792,10 +863,18 @@ pub struct UnknownChecks {
 }
 
 #[derive(Debug, Serialize)]
+pub struct HolidayData {
+    pub date: String,
+    pub name: String,
+}
+
+#[derive(Debug, Serialize)]
 pub struct AttendanceReport {
     pub from: String,
     pub to: String,
     pub employees: Vec<EmployeeReport>,
+    /// Paid holidays in the range.
+    pub holidays: Vec<HolidayData>,
     /// Checks from employee numbers that are not registered here.
     pub unknown: Vec<UnknownChecks>,
 }
@@ -972,6 +1051,8 @@ fn day_data(
             note: c.note.clone(),
             author: c.author.clone(),
         }),
+        holiday: None,
+        paid_min: 0,
     }
 }
 
@@ -980,6 +1061,7 @@ pub fn build_report(
     employees: &[AttendanceEmployee],
     events: &[AttendanceEvent],
     corrections: &[AttendanceCorrection],
+    holidays: &[AttendanceHoliday],
     from: NaiveDate,
     to: NaiveDate,
     now: DateTime,
@@ -987,6 +1069,10 @@ pub fn build_report(
     let fixes: BTreeMap<(&str, &str), &AttendanceCorrection> = corrections
         .iter()
         .map(|c| ((c.employee_no.as_str(), c.date.as_str()), c))
+        .collect();
+    let holiday_names: BTreeMap<&str, &str> = holidays
+        .iter()
+        .map(|h| (h.date.as_str(), h.name.as_str()))
         .collect();
     let mut by_employee: BTreeMap<&str, BTreeMap<NaiveDate, Vec<&AttendanceEvent>>> =
         BTreeMap::new();
@@ -1025,7 +1111,19 @@ pub fn build_report(
                 // Before they started here, a day without checks is nothing, not an absence.
                 if start.is_some_and(|s| d < s) && day.entry.is_none() {
                     day.status = "antes_alta".to_string();
+                } else if let Some(name) = holiday_names.get(key.as_str()) {
+                    // A paid holiday: their shift that day counts as worked, and nobody is
+                    // missing. Hours worked anyway are on top.
+                    day.holiday = Some((*name).to_string());
+                    let weekday = d.weekday().number_from_monday() as u8;
+                    if let Some((a, b)) = emp.shift.as_ref().and_then(|s| s.window(weekday)) {
+                        day.paid_min = (minute_of(b) - minute_of(a)).max(0);
+                    }
+                    if day.entry.is_none() {
+                        day.status = "feriado".to_string();
+                    }
                 }
+                totals.holiday_min += day.paid_min;
                 totals.worked_min += day.worked_min;
                 totals.late_min += day.late_min;
                 match day.status.as_str() {
@@ -1038,7 +1136,12 @@ pub fn build_report(
             })
             .collect();
         let (hourly_rate, earned, overtime_min, triple_min) =
-            earnings(emp.weekly_pay, emp.weekly_hours, totals.worked_min, dates.len());
+            earnings(
+            emp.weekly_pay,
+            emp.weekly_hours,
+            totals.worked_min + totals.holiday_min,
+            dates.len(),
+        );
         reports.push(EmployeeReport {
             employee_no: emp.employee_no.clone(),
             name: emp.name.clone(),
@@ -1068,6 +1171,10 @@ pub fn build_report(
         from: from.format("%Y-%m-%d").to_string(),
         to: to.format("%Y-%m-%d").to_string(),
         employees: reports,
+        holidays: holidays
+            .iter()
+            .map(|h| HolidayData { date: h.date.clone(), name: h.name.clone() })
+            .collect(),
         unknown,
     }
 }
@@ -1134,15 +1241,16 @@ pub async fn api_attendance_report(
         from.format("%Y-%m-%d").to_string(),
         to.format("%Y-%m-%d").to_string(),
     );
-    let (employees, events, corrections) = match tokio::try_join!(
+    let (employees, events, corrections, holidays) = match tokio::try_join!(
         list_attendance_employees(&state, &company_id),
         list_attendance_events(&state, &company_id, work_day_start(from), range_end),
         list_attendance_corrections(&state, &company_id, &from_s, &to_s),
+        list_attendance_holidays(&state, &company_id, &from_s, &to_s),
     ) {
         Ok(v) => v,
         Err(err) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()),
     };
-    Json(build_report(&employees, &events, &corrections, from, to, now)).into_response()
+    Json(build_report(&employees, &events, &corrections, &holidays, from, to, now)).into_response()
 }
 
 #[cfg(test)]
@@ -1184,6 +1292,7 @@ mod tests {
             &[emp],
             &events,
             &[],
+            &[],
             d("2026-11-06"),
             d("2026-11-09"),
             t("2026-11-10T06:00:00Z"),
@@ -1224,7 +1333,7 @@ mod tests {
             check("0004", "2026-11-12T20:58:00Z"), // 13:58 Thu
         ];
         let now = t("2026-11-12T22:00:00Z"); // Thu 15:00
-        let r = build_report(&[emp.clone()], &events, &[], d("2026-11-11"), d("2026-11-12"), now);
+        let r = build_report(&[emp.clone()], &events, &[], &[], d("2026-11-11"), d("2026-11-12"), now);
         let (wed, thu) = (&r.employees[0].days[0], &r.employees[0].days[1]);
         assert_eq!(
             (wed.entry.as_deref(), wed.exit.as_deref(), wed.overnight, wed.worked_min, wed.status.as_str()),
@@ -1235,11 +1344,41 @@ mod tests {
 
         // Without the 02:59 check, an admin types the exit as "03:00": the next morning.
         let fixes = vec![fix("0004", "2026-11-11", None, Some("03:00"))];
-        let r = build_report(&[emp], &events[..1], &fixes, d("2026-11-11"), d("2026-11-11"), now);
+        let r = build_report(&[emp], &events[..1], &fixes, &[], d("2026-11-11"), d("2026-11-11"), now);
         let wed = &r.employees[0].days[0];
         assert_eq!((wed.exit.as_deref(), wed.overnight, wed.worked_min), (Some("03:00"), true, 13 * 60 + 5));
         assert_eq!(work_date(t("2026-11-12T12:59:00Z")), d("2026-11-11")); // 05:59 still Wed
         assert_eq!(work_date(t("2026-11-12T13:00:00Z")), d("2026-11-12")); // 06:00 Thu
+    }
+
+    #[test]
+    fn a_holiday_is_paid_as_a_full_day() {
+        // Mon 16 Nov 2026, Día de la Revolución: nobody came in.
+        let mut jose = employee("0004", Some(tarde()));
+        jose.weekly_pay = Some(2700.0); // 60/h
+        let mut carlos = employee("0005", Some(tarde()));
+        carlos.weekly_pay = Some(2700.0);
+        // Carlos came in anyway, 14:00–18:00: those 4 h are on top of the paid day.
+        let events = vec![
+            check("0005", "2026-11-16T21:00:00Z"),
+            check("0005", "2026-11-17T01:00:00Z"),
+        ];
+        let holidays = vec![AttendanceHoliday {
+            id: None,
+            company_id: ObjectId::new(),
+            date: "2026-11-16".into(),
+            name: "Día de la Revolución".into(),
+            author: "Daniel".into(),
+            updated_at: DateTime::now(),
+        }];
+        let now = t("2026-11-17T12:00:00Z");
+        let r = build_report(&[jose, carlos], &events, &[], &holidays, d("2026-11-16"), d("2026-11-22"), now);
+        let (jose, carlos) = (&r.employees[0], &r.employees[1]);
+        let mon = &jose.days[0];
+        assert_eq!((mon.status.as_str(), mon.paid_min, mon.holiday.as_deref()), ("feriado", 480, Some("Día de la Revolución")));
+        assert_eq!((jose.totals.absences, jose.totals.holiday_min, jose.earned), (0, 480, Some(480.0)));
+        assert_eq!((carlos.days[0].status.as_str(), carlos.days[0].worked_min, carlos.days[0].paid_min), ("ok", 240, 480));
+        assert_eq!(r.holidays.len(), 1);
     }
 
     fn fix(no: &str, date: &str, entry: Option<&str>, exit: Option<&str>) -> AttendanceCorrection {
@@ -1262,7 +1401,7 @@ mod tests {
         // Mon: one check at 11:01 (her fingerprint test); Tue: no checks at all.
         let events = vec![check("0006", "2026-11-09T18:01:00Z")];
         let now = t("2026-11-11T06:00:00Z");
-        let r = build_report(&[emp.clone()], &events, &[], d("2026-11-09"), d("2026-11-10"), now);
+        let r = build_report(&[emp.clone()], &events, &[], &[], d("2026-11-09"), d("2026-11-10"), now);
         assert_eq!(r.employees[0].days[0].status, "incompleto"); // one late check, no exit
         assert_eq!(r.employees[0].days[1].status, "falta");
 
@@ -1272,7 +1411,7 @@ mod tests {
             // forgot to check at all: both typed in
             fix("0006", "2026-11-10", Some("07:05"), Some("15:00")),
         ];
-        let r = build_report(&[emp], &events, &fixes, d("2026-11-09"), d("2026-11-10"), now);
+        let r = build_report(&[emp], &events, &fixes, &[], d("2026-11-09"), d("2026-11-10"), now);
         let mon = &r.employees[0].days[0];
         assert_eq!(
             (mon.entry.as_deref(), mon.exit.as_deref(), mon.status.as_str(), mon.worked_min),
@@ -1362,7 +1501,7 @@ mod tests {
             manual("2026-11-14T12:00:00-07:00"),
         ];
         let now = t("2026-11-16T09:00:00-07:00");
-        let r = build_report(&[jose], &events, &[], d("2026-11-09"), d("2026-11-15"), now);
+        let r = build_report(&[jose], &events, &[], &[], d("2026-11-09"), d("2026-11-15"), now);
         let days = &r.employees[0].days;
         let view = |i: usize| {
             (
@@ -1421,7 +1560,7 @@ mod tests {
         ];
         // Now = Friday 13 at 15:00: Friday's shift has not ended.
         let now = t("2026-11-13T15:00:00-07:00");
-        let r = build_report(&emps, &events, &[], d("2026-11-09"), d("2026-11-15"), now);
+        let r = build_report(&emps, &events, &[], &[], d("2026-11-09"), d("2026-11-15"), now);
         let jose = &r.employees[0];
         let status: Vec<&str> = jose.days.iter().map(|x| x.status.as_str()).collect();
         assert_eq!(
@@ -1457,7 +1596,8 @@ mod tests {
                 late_min: 25 + 20,
                 late_days: 2,
                 absences: 1,
-                incomplete: 1
+                incomplete: 1,
+                holiday_min: 0
             }
         );
         let daniel = &r.employees[1];

@@ -102,7 +102,7 @@ pub fn build_people(
 ) -> Vec<FloorPerson> {
     let today = work_date(now);
     // Today as the clock saw it: an admin's corrections are for the weekly report.
-    let report = build_report(employees, events, &[], today, today, now);
+    let report = build_report(employees, events, &[], &[], today, today, now);
     let days: HashMap<&str, &DayData> = report
         .employees
         .iter()

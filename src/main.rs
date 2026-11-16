@@ -864,6 +864,10 @@ async fn main() {
             post(routes::api_attendance_correction_save),
         )
         .route(
+            "/api/admin/attendance/holiday",
+            post(routes::api_attendance_holiday_save),
+        )
+        .route(
             "/api/admin/projects/{id}/machine_time",
             get(routes::api_project_machine_time),
         )

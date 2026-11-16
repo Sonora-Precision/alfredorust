@@ -56,6 +56,7 @@ export type AttendanceStatus =
   | 'pendiente'
   | 'sin_horario'
   | 'antes_alta'
+  | 'feriado'
 
 export interface AttendanceDay {
   date: string
@@ -74,6 +75,10 @@ export interface AttendanceDay {
   manual?: ManualCheck[]
   /** An admin's correction; `entry`/`exit` above already use it. */
   correction?: AttendanceCorrection | null
+  /** The holiday's name when the day is a paid holiday. */
+  holiday?: string | null
+  /** Minutes paid without working them (the shift of a holiday). */
+  paid_min?: number
 }
 
 export interface AttendanceCorrection {
@@ -97,13 +102,22 @@ export interface AttendanceEmployeeReport {
   /** Overtime past 9 h a week, paid triple. */
   triple_min?: number
   days: AttendanceDay[]
-  totals: { worked_min: number; late_min: number; late_days: number; absences: number; incomplete: number }
+  totals: {
+    worked_min: number
+    late_min: number
+    late_days: number
+    absences: number
+    incomplete: number
+    /** Shift minutes of holidays, paid as worked. */
+    holiday_min?: number
+  }
 }
 
 export interface AttendanceReport {
   from: string
   to: string
   employees: AttendanceEmployeeReport[]
+  holidays?: { date: string; name: string }[]
   unknown: { employee_no: string; checks: number }[]
 }
 
@@ -122,6 +136,9 @@ export const saveCorrection = (payload: {
   exit?: string | null
   note?: string | null
 }) => apiPost<void>('/api/admin/attendance/correction', payload)
+/** Marks a day as a paid holiday (`remove` unmarks it). */
+export const saveHoliday = (payload: { date: string; name?: string | null; remove?: boolean }) =>
+  apiPost<void>('/api/admin/attendance/holiday', payload)
 export const deleteManualCheck =(id: string) => apiPost<void>(`/api/admin/attendance/manual/${encodeURIComponent(id)}/delete`)
 export const deleteAttendanceEmployee =(employeeNo: string) =>
   apiPost<void>(`/api/admin/attendance/employees/${encodeURIComponent(employeeNo)}/delete`)
