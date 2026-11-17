@@ -6,6 +6,8 @@
 // "?draft=<id>" fills a draft made from the client's request (part numbers, quantities and
 // drawings, no prices yet; Daniel, 2026-11-07): each "Guardar borrador" rewrites it, and
 // "Generar cotización" turns it into the quote once every line has its price.
+// "?edit=<id>" fixes a generated quote in place, same folio and revision, until it is a project
+// (Daniel, 2026-11-17).
 import { A, useNavigate, useSearchParams } from '@solidjs/router'
 import { createMutation, createQuery, useQueryClient } from '@tanstack/solid-query'
 import { ArrowLeft, FileText, Image as ImageIcon, Paperclip, Plus, Trash2 } from 'lucide-solid'
@@ -69,18 +71,20 @@ const materialOf = (l: Line): PartMaterial | null => (l.mat ? { ...l.mat, ordere
 export default function QuoteEditor(): JSX.Element {
   const qc = useQueryClient()
   const navigate = useNavigate()
-  const [search, setSearch] = useSearchParams<{ rev?: string; draft?: string }>()
+  const [search, setSearch] = useSearchParams<{ rev?: string; draft?: string; edit?: string }>()
   const revOf = () => search.rev || null
   /** The draft being filled ("?draft=<id>"), saved in place until it is generated. */
   const draftOf = () => search.draft || null
+  /** A generated quote fixed in place ("?edit=<id>"): same folio and revision, until it is a project. */
+  const editOf = () => search.edit || null
 
   const contacts = createQuery(() => ({ queryKey: ['contacts'], queryFn: financeApi.listContacts }))
   const clients = createQuery(() => ({ queryKey: ['client-quote-defaults'], queryFn: quotesApi.listClientQuoteDefaults }))
   const prices = createQuery(() => ({ queryKey: ['material-prices'], queryFn: quotingApi.listMaterialPrices }))
   const previous = createQuery(() => ({
-    queryKey: ['quote', revOf() ?? draftOf()],
-    queryFn: () => quotesApi.getQuote((revOf() ?? draftOf())!),
-    enabled: !!(revOf() ?? draftOf()),
+    queryKey: ['quote', revOf() ?? draftOf() ?? editOf()],
+    queryFn: () => quotesApi.getQuote((revOf() ?? draftOf() ?? editOf())!),
+    enabled: !!(revOf() ?? draftOf() ?? editOf()),
   }))
 
   const sortedContacts = createMemo(() =>
@@ -271,7 +275,8 @@ export default function QuoteEditor(): JSX.Element {
             cycle_min: num(l.cycle),
           })),
       }
-      return draftOf() ? quotesApi.updateDraftQuote(draftOf()!, payload) : quotesApi.createQuote(payload)
+      const inPlace = draftOf() ?? editOf()
+      return inPlace ? quotesApi.updateDraftQuote(inPlace, payload) : quotesApi.createQuote(payload)
     },
     onSuccess: (q) => {
       void qc.invalidateQueries({ queryKey: ['quotes'] })
@@ -282,7 +287,7 @@ export default function QuoteEditor(): JSX.Element {
         if (draftOf() !== q.id) setSearch({ draft: q.id, rev: undefined }, { replace: true })
         return
       }
-      toast.success(`Cotización ${q.folio}`)
+      toast.success(editOf() ? `Cotización ${q.folio} corregida` : `Cotización ${q.folio}`)
       navigate(`/cotizaciones/${q.id}`)
     },
     onError: (err) => toast.error('No se pudo guardar la cotización', humanizeError(err, 'Revisa los datos')),
@@ -342,7 +347,9 @@ export default function QuoteEditor(): JSX.Element {
         title={
           revOf()
             ? `Nueva revisión de ${previous.data?.folio ?? '…'}`
-            : draftOf()
+            : editOf()
+              ? `Corregir ${previous.data?.folio ?? '…'} (misma revisión)`
+              : draftOf()
               ? `Borrador ${previous.data?.folio ?? '…'}`
               : 'Nueva cotización'
         }
@@ -712,7 +719,7 @@ export default function QuoteEditor(): JSX.Element {
         <Button variant="ghost" onClick={() => navigate('/cotizaciones')}>
           Cancelar
         </Button>
-        <Show when={!revOf()}>
+        <Show when={!revOf() && !editOf()}>
           <Button variant="outline" disabled={create.isPending} onClick={() => submit(true)}>
             Guardar borrador
             <Show when={missingPrices() > 0}>
@@ -721,7 +728,7 @@ export default function QuoteEditor(): JSX.Element {
           </Button>
         </Show>
         <Button disabled={create.isPending} onClick={() => submit(false)}>
-          {create.isPending ? 'Guardando…' : revOf() ? 'Generar revisión' : 'Generar cotización'}
+          {create.isPending ? 'Guardando…' : editOf() ? 'Guardar cambios' : revOf() ? 'Generar revisión' : 'Generar cotización'}
         </Button>
       </div>
     </div>

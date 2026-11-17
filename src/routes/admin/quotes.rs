@@ -27,7 +27,7 @@ use crate::{
         last_revision, link_folio_to_project, list_client_quote_defaults, list_material_prices, list_project_concepts,
         list_project_quotes, list_quotes, mark_quote_sent, next_folio_base, quote_totals, save_client_quote_defaults,
         save_quote_settings, set_concept_unit_price, set_part_material, set_part_quote, suggest_line, get_quote_file, time_price, TimePrice,
-        read_quote_file, save_quote_file, replace_draft_quote, save_part_drawing, get_project_concept_by_id_for_company,
+        read_quote_file, save_quote_file, replace_quote_in_place, save_part_drawing, get_project_concept_by_id_for_company,
     },
 };
 
@@ -809,8 +809,16 @@ pub async fn api_quote_update(
         Ok(v) => v,
         Err(resp) => return resp,
     };
+    // A generated quote is fixed in place too, same folio and revision (Daniel, 2026-11-17:
+    // quantities, material or prices "sin cambiar de revisión"), until it becomes a project,
+    // whose parts would no longer match. It never goes back to being a draft.
     if !old.draft {
-        return json_error(StatusCode::CONFLICT, "la cotización ya se generó: haz una nueva revisión");
+        if old.project_id.is_some() {
+            return json_error(StatusCode::CONFLICT, "la cotización ya es proyecto: cambia el proyecto o haz una nueva revisión");
+        }
+        if p.draft {
+            return json_error(StatusCode::CONFLICT, "la cotización ya se generó: no regresa a borrador");
+        }
     }
     p.revision_of = None;
     p.folio_base = None;
@@ -825,11 +833,12 @@ pub async fn api_quote_update(
         project_id: old.project_id,
         created_by: old.created_by,
         created_at: old.created_at,
-        // A draft generated today carries today's date.
-        date: if new.draft { old.date } else { new.date },
+        // A draft generated today carries today's date; a quote fixed in place keeps its own.
+        date: if old.draft && !new.draft { new.date } else { old.date },
+        sent_at: old.sent_at,
         ..new
     };
-    match replace_draft_quote(&state, &quote).await {
+    match replace_quote_in_place(&state, &quote, old.draft).await {
         Ok(true) => match quote_data(&state, quote).await {
             Some(d) => Json(d).into_response(),
             None => json_error(StatusCode::INTERNAL_SERVER_ERROR, "quote missing id"),

@@ -143,10 +143,16 @@ pub async fn mark_quote_sent(state: &AppState, company_id: &ObjectId, id: &Objec
 
 /// Replaces a draft as it is being filled; a generated quote is never changed in place.
 pub async fn replace_draft_quote(state: &AppState, quote: &Quote) -> Result<bool> {
-    let res = state
-        .quotes
-        .replace_one(doc! { "_id": quote.id, "company_id": quote.company_id, "draft": true }, quote)
-        .await?;
+    replace_quote_in_place(state, quote, true).await
+}
+
+/// Rewrites a quote in place: a draft, or a generated quote that is not a project yet.
+pub async fn replace_quote_in_place(state: &AppState, quote: &Quote, was_draft: bool) -> Result<bool> {
+    let mut filter = doc! { "_id": quote.id, "company_id": quote.company_id, "draft": was_draft };
+    if !was_draft {
+        filter.insert("project_id", mongodb::bson::Bson::Null);
+    }
+    let res = state.quotes.replace_one(filter, quote).await?;
     Ok(res.matched_count > 0)
 }
 
