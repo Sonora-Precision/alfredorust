@@ -3,7 +3,7 @@
 // the toolbar never prints. openspec add-quote-document. Admin only.
 import { A, useNavigate, useParams } from '@solidjs/router'
 import { createMutation, createQuery, useQueryClient } from '@tanstack/solid-query'
-import { ArrowLeft, Copy, FileDown, FolderPlus, Globe, Mail, MapPin, Phone, Send, User } from 'lucide-solid'
+import { ArrowLeft, Copy, FileDown, FolderPlus, Globe, Mail, MapPin, Pencil, Phone, Send, User } from 'lucide-solid'
 import { type JSX, For, Show, createMemo } from 'solid-js'
 
 import { Button } from '../components/ui/Button'
@@ -129,6 +129,21 @@ export default function QuoteDocument(): JSX.Element {
                 <Button variant={d().project_id ? 'primary' : 'outline'} onClick={() => savePdf(d())}>
                   <FileDown class="h-4 w-4" /> Guardar PDF
                 </Button>
+                {/* Fix quantities, material or prices without a new revision, until it is a project. */}
+                <Show when={!d().project_id}>
+                  <Button
+                    variant="outline"
+                    onClick={() =>
+                      (!d().sent_at ||
+                        window.confirm(
+                          `${d().folio} ya se marcó como enviada: el cliente tiene la versión anterior.\n\n¿Corregirla de todos modos sin cambiar de revisión?`,
+                        )) &&
+                      navigate(`/cotizaciones/nueva?edit=${d().id}`)
+                    }
+                  >
+                    <Pencil class="h-4 w-4" /> Editar
+                  </Button>
+                </Show>
                 <Button variant="outline" onClick={() => navigate(`/cotizaciones/nueva?rev=${d().id}`)}>
                   <Copy class="h-4 w-4" /> Nueva revisión
                 </Button>

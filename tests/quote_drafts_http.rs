@@ -174,14 +174,41 @@ async fn quote_draft_with_drawings_becomes_a_project() {
         serde_json::json!({ "contact_id": client.to_hex(), "draft": true, "delivery_from": "mañana", "lines": lines }),
     )
     .await;
-    assert_eq!(status, StatusCode::CONFLICT, "a generated quote is not rewritten");
+    assert_eq!(status, StatusCode::CONFLICT, "a generated quote does not go back to a draft");
     let (status, _) = post(format!("/api/admin/quotes/{id}/update"), serde_json::json!({ "contact_id": client.to_hex(), "draft": true, "lines": lines })).await;
     assert_eq!(status, StatusCode::CONFLICT);
+
+    // Fixed in place (Daniel, 2026-11-17): quantity and price change, same folio and revision.
+    let folio = q["folio"].as_str().unwrap().to_string();
+    let edited_lines = serde_json::json!([
+        { "quantity": 20, "description": "PA-1001\nMaquinado y soldado.\n\nIncluye material.", "drawing_id": drawing_id,
+          "image_id": picture_id, "material": alu, "unit_price": 350, "programming_h": 2, "setup_h": 1.5, "cycle_min": 12 },
+        { "quantity": 5, "description": "PA-1002", "unit_price": 950 },
+    ]);
+    let (status, body) = post(
+        format!("/api/admin/quotes/{id}/update"),
+        serde_json::json!({ "contact_id": client.to_hex(), "delivery_from": "planos", "lines": edited_lines }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let e = json(&body);
+    assert_eq!((e["id"].as_str(), e["folio"].as_str(), e["revision"].as_i64()), (Some(id.as_str()), Some(folio.as_str()), Some(0)));
+    assert_eq!((e["draft"].as_bool(), e["subtotal"].as_f64()), (Some(false), Some(11_750.0)));
+    assert_eq!(e["date"], q["date"], "it keeps its date");
+    let (_, body) = get_with_cookie(build_app(shared.clone()), host, "/api/admin/quotes", &admin).await;
+    assert_eq!(json(&body).as_array().unwrap().iter().filter(|x| x["folio"] == folio.as_str()).count(), 1, "no new revision");
 
     // Approved: the drawing is now the part's drawing.
     let (status, body) = post(format!("/api/admin/quotes/{id}/project"), serde_json::json!({})).await;
     assert_eq!(status, StatusCode::CREATED, "body: {body}");
     let pid = mongodb::bson::oid::ObjectId::parse_str(json(&body)["project_id"].as_str().unwrap()).unwrap();
+    // Once it is a project it is no longer fixed in place.
+    let (status, _) = post(
+        format!("/api/admin/quotes/{id}/update"),
+        serde_json::json!({ "contact_id": client.to_hex(), "lines": edited_lines }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
     let mut parts = alfredodev::state::list_project_concepts(&state, &company, &pid).await.unwrap();
     parts.sort_by_key(|c| c.position);
     let files = alfredodev::state::list_part_files(&state, &company, &[parts[0].id.unwrap(), parts[1].id.unwrap()]).await.unwrap();
