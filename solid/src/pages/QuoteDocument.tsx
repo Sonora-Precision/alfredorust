@@ -4,7 +4,7 @@
 import { A, useNavigate, useParams } from '@solidjs/router'
 import { createMutation, createQuery, useQueryClient } from '@tanstack/solid-query'
 import { ArrowLeft, Copy, FileDown, FolderPlus, Globe, Mail, MapPin, Phone, Send, User } from 'lucide-solid'
-import { type JSX, For, Show } from 'solid-js'
+import { type JSX, For, Show, createMemo } from 'solid-js'
 
 import { Button } from '../components/ui/Button'
 import { Spinner } from '../components/ui/Spinner'
@@ -12,6 +12,7 @@ import { toast } from '../components/ui/Toast'
 import { humanizeError } from '../lib/api/client'
 import * as quotesApi from '../lib/api/quotes'
 import type { QuoteDocument as Doc } from '../lib/api/quotes'
+import { money } from '../lib/format'
 
 const TXT = {
   es: {
@@ -49,6 +50,15 @@ export default function QuoteDocument(): JSX.Element {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const doc = createQuery(() => ({ queryKey: ['quote', params.id], queryFn: () => quotesApi.getQuote(params.id) }))
+  // Every revision of this folio is kept (Daniel, 2026-11-17: "¿las elimina el sistema?"), so
+  // any of them can be opened and printed again.
+  const all = createQuery(() => ({ queryKey: ['quotes'], queryFn: quotesApi.listQuotes }))
+  const revisions = createMemo(() => {
+    const base = doc.data?.folio_base
+    if (!base) return []
+    return (all.data ?? []).filter((q) => q.folio_base === base).sort((a, b) => a.revision - b.revision)
+  })
+  const latestRevision = () => revisions().at(-1)
 
   // Approved: the quote becomes a project in Pedidos with its parts and prices.
   const toProject = createMutation(() => ({
@@ -131,6 +141,30 @@ export default function QuoteDocument(): JSX.Element {
                 </Button>
               </div>
             </div>
+            <Show when={revisions().length > 1}>
+              <div class="no-print flex flex-wrap items-center gap-2 text-sm">
+                <span class="text-muted-foreground">Revisiones:</span>
+                <For each={revisions()}>
+                  {(r) => (
+                    <A
+                      href={r.draft ? `/cotizaciones/nueva?draft=${r.id}` : `/cotizaciones/${r.id}`}
+                      title={`${new Date(r.date).toLocaleDateString('es-MX')} · ${money(r.net)}`}
+                      class={`rounded-full border px-3 py-0.5 tabular-nums ${
+                        r.id === d().id ? 'border-primary bg-primary/15 font-semibold text-foreground' : 'border-border text-muted-foreground hover:bg-muted'
+                      }`}
+                    >
+                      Rev. {String(r.revision).padStart(2, '0')}
+                      <span class="ml-1 text-[11px] font-normal text-muted-foreground">{money(r.net)}</span>
+                    </A>
+                  )}
+                </For>
+                <Show when={latestRevision() && latestRevision()!.id !== d().id}>
+                  <span class="rounded bg-amber-500/15 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-300">
+                    Revisión anterior: la vigente es {latestRevision()!.folio}
+                  </span>
+                </Show>
+              </div>
+            </Show>
             <div class="overflow-x-auto">
               <Sheet d={d()} />
             </div>

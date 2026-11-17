@@ -1,6 +1,6 @@
 // Cotizaciones — every quote, before and after it becomes a project (Daniel, 2026-11-06).
 // Pendientes: no project yet (borrador or enviada); Aprobadas: already a project. Each folio
-// shows its latest revision; older revisions open from the document. Admin only: it is money.
+// shows its latest revision; every revision is kept and opens from the document. Admin only: it is money.
 import { A } from '@solidjs/router'
 import { createQuery } from '@tanstack/solid-query'
 import { Plus } from 'lucide-solid'
@@ -30,6 +30,12 @@ export default function Quotes(): JSX.Element {
       if (!prev || q.revision > prev.revision) by.set(q.folio_base, q)
     }
     return [...by.values()].sort((a, b) => b.created_at.localeCompare(a.created_at))
+  })
+  // Older revisions are kept; the document lets you open any of them.
+  const revisionCount = createMemo(() => {
+    const n = new Map<string, number>()
+    for (const q of quotes.data ?? []) n.set(q.folio_base, (n.get(q.folio_base) ?? 0) + 1)
+    return n
   })
   const shown = createMemo(() => {
     const t = text().trim().toLowerCase()
@@ -113,6 +119,9 @@ export default function Quotes(): JSX.Element {
                       >
                         {q.folio}
                       </A>
+                      <Show when={(revisionCount().get(q.folio_base) ?? 1) > 1}>
+                        <div class="text-[11px] text-muted-foreground">{revisionCount().get(q.folio_base)} revisiones</div>
+                      </Show>
                     </td>
                     <td class="px-3 py-2 tabular-nums text-muted-foreground">{new Date(q.date).toLocaleDateString('es-MX')}</td>
                     <td class="px-3 py-2">
