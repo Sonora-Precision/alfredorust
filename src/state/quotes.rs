@@ -148,8 +148,13 @@ pub async fn replace_draft_quote(state: &AppState, quote: &Quote) -> Result<bool
 
 /// Rewrites a quote in place: a draft, or a generated quote that is not a project yet.
 pub async fn replace_quote_in_place(state: &AppState, quote: &Quote, was_draft: bool) -> Result<bool> {
-    let mut filter = doc! { "_id": quote.id, "company_id": quote.company_id, "draft": was_draft };
-    if !was_draft {
+    let mut filter = doc! { "_id": quote.id, "company_id": quote.company_id };
+    if was_draft {
+        filter.insert("draft", true);
+    } else {
+        // A generated quote is stored without `draft` (skipped when false), so match
+        // "not a draft" rather than `draft: false`.
+        filter.insert("draft", doc! { "$ne": true });
         filter.insert("project_id", mongodb::bson::Bson::Null);
     }
     let res = state.quotes.replace_one(filter, quote).await?;
