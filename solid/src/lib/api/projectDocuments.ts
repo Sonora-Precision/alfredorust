@@ -18,6 +18,9 @@ export interface ProjectDocument {
   uploaded_at: string
   /** Opens the PDF in the browser. */
   url: string
+  /** Set when this is the quote the project was made from (not an uploaded file): the link
+   * opens the quote document, which prints its PDF, and it cannot be removed. */
+  quote_id?: string
 }
 
 export const listProjectDocuments = (projectId: string) =>

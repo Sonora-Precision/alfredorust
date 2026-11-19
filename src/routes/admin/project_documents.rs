@@ -15,11 +15,12 @@ use super::finance::helpers::require_active_company;
 use super::part_files::pdf_inline;
 use super::project_backend::{iso, json_error, parse_oid};
 use crate::{
-    models::ProjectDocument,
+    models::{ProjectDocument, Quote},
     session::SessionUser,
     state::{
-        AppState, delete_project_document, get_project_by_id_for_company, get_project_document, list_company_project_documents,
-        list_project_documents, read_project_document, save_project_document,
+        AppState, delete_project_document, folio, get_project_by_id_for_company, get_project_document,
+        list_company_project_documents, list_project_documents, list_project_quotes, list_quotes, read_project_document,
+        save_project_document,
     },
 };
 
@@ -33,6 +34,10 @@ pub struct ProjectDocumentData {
     pub uploaded_at: String,
     /// Where the SPA opens it.
     pub url: String,
+    /// Set when the entry is the quote the project was made from rather than an uploaded file:
+    /// it opens the quote document (which prints its PDF) and cannot be removed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quote_id: Option<String>,
 }
 
 fn document_data(d: ProjectDocument) -> Option<ProjectDocumentData> {
@@ -45,6 +50,33 @@ fn document_data(d: ProjectDocument) -> Option<ProjectDocumentData> {
         filename: d.original_filename,
         size_bytes: d.size_bytes,
         uploaded_at: iso(d.uploaded_at),
+        quote_id: None,
+    })
+}
+
+/// The quote a project was made from shows with its documents by itself (Daniel, 2026-11-18:
+/// "al convertir una cotizacion a proyecto ya debería de jalar en automatico la cotizacion en
+/// pdf"). Every revision of the folio points to the project; the converted one is the revision
+/// whose lines carry the parts, else the newest generated one.
+fn converted_quote<'a>(quotes: impl Iterator<Item = &'a Quote> + Clone) -> Option<&'a Quote> {
+    quotes
+        .clone()
+        .filter(|q| !q.draft)
+        .find(|q| q.lines.iter().any(|l| l.concept_id.is_some()))
+        .or_else(|| quotes.filter(|q| !q.draft).max_by_key(|q| (q.revision, q.created_at)))
+}
+
+fn quote_entry(q: &Quote) -> Option<ProjectDocumentData> {
+    let id = q.id?.to_hex();
+    Some(ProjectDocumentData {
+        url: format!("/cotizaciones/{id}"),
+        project_id: q.project_id?.to_hex(),
+        kind: "cotizacion".into(),
+        filename: format!("Cotización {}", folio(&q.folio_base, q.revision)),
+        size_bytes: 0,
+        uploaded_at: iso(q.created_at),
+        quote_id: Some(id.clone()),
+        id,
     })
 }
 
@@ -62,9 +94,23 @@ pub async fn api_project_documents(
         Ok(id) => id,
         Err(resp) => return resp,
     };
-    match list_project_documents(&state, &company_id, &project_id).await {
-        Ok(docs) => Json(docs.into_iter().filter_map(document_data).collect::<Vec<_>>()).into_response(),
-        Err(_) => json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load documents"),
+    let (docs, quotes) =
+        match (list_project_documents(&state, &company_id, &project_id).await, list_project_quotes(&state, &company_id, &project_id).await) {
+            (Ok(d), Ok(q)) => (d, q),
+            _ => return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load documents"),
+        };
+    let mut out: Vec<_> = docs.into_iter().filter_map(document_data).collect();
+    add_quote_entry(&mut out, converted_quote(quotes.iter()));
+    Json(out).into_response()
+}
+
+/// Adds the project's quote unless a quote PDF was already uploaded by hand.
+fn add_quote_entry(docs: &mut Vec<ProjectDocumentData>, quote: Option<&Quote>) {
+    if docs.iter().any(|d| d.kind == "cotizacion") {
+        return;
+    }
+    if let Some(entry) = quote.and_then(quote_entry) {
+        docs.push(entry);
     }
 }
 
@@ -74,10 +120,27 @@ pub async fn api_company_project_documents(session_user: SessionUser, State(stat
         return StatusCode::FORBIDDEN.into_response();
     }
     let company_id = require_active_company(&session_user);
-    match list_company_project_documents(&state, &company_id).await {
-        Ok(docs) => Json(docs.into_iter().filter_map(document_data).collect::<Vec<_>>()).into_response(),
-        Err(_) => json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load documents"),
+    let (docs, quotes) = match (list_company_project_documents(&state, &company_id).await, list_quotes(&state, &company_id).await) {
+        (Ok(d), Ok(q)) => (d, q),
+        _ => return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load documents"),
+    };
+    let mut by_project: std::collections::BTreeMap<_, Vec<ProjectDocumentData>> = std::collections::BTreeMap::new();
+    for d in docs {
+        let project = d.project_id;
+        if let Some(data) = document_data(d) {
+            by_project.entry(project).or_default().push(data);
+        }
     }
+    let mut quoted: std::collections::BTreeMap<_, Vec<&Quote>> = std::collections::BTreeMap::new();
+    for q in &quotes {
+        if let Some(p) = q.project_id {
+            quoted.entry(p).or_default().push(q);
+        }
+    }
+    for (project, qs) in quoted {
+        add_quote_entry(by_project.entry(project).or_default(), converted_quote(qs.into_iter()));
+    }
+    Json(by_project.into_values().flatten().collect::<Vec<_>>()).into_response()
 }
 
 /// Uploads a PDF to the project (multipart fields `file` and `kind`).

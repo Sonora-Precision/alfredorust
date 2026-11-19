@@ -119,20 +119,23 @@ export function ProjectDocuments(props: { projectId: string }): JSX.Element {
                   {d.filename}
                 </a>
                 <span class="hidden shrink-0 text-xs text-muted-foreground sm:inline">
-                  {fecha(d.uploaded_at)} · {size(d.size_bytes)}
+                  {fecha(d.uploaded_at)} · {d.quote_id ? 'de la plataforma' : size(d.size_bytes)}
                 </span>
-                <button
-                  type="button"
-                  class="shrink-0 text-muted-foreground hover:text-rose-500 disabled:opacity-50"
-                  disabled={remove.isPending}
-                  aria-label={`Quitar ${d.filename}`}
-                  title="Quitar documento"
-                  onClick={() => {
-                    if (window.confirm(`¿Quitar ${d.filename} del proyecto?`)) remove.mutate(d.id)
-                  }}
-                >
-                  <Trash2 class="h-3.5 w-3.5" />
-                </button>
+                {/* The quote the project was made from is not a file: nothing to remove. */}
+                <Show when={!d.quote_id}>
+                  <button
+                    type="button"
+                    class="shrink-0 text-muted-foreground hover:text-rose-500 disabled:opacity-50"
+                    disabled={remove.isPending}
+                    aria-label={`Quitar ${d.filename}`}
+                    title="Quitar documento"
+                    onClick={() => {
+                      if (window.confirm(`¿Quitar ${d.filename} del proyecto?`)) remove.mutate(d.id)
+                    }}
+                  >
+                    <Trash2 class="h-3.5 w-3.5" />
+                  </button>
+                </Show>
               </li>
             )}
           </For>

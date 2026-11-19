@@ -263,6 +263,22 @@ async fn quote_document_from_project() {
     let (_, body) = get(format!("/api/admin/quotes/{rev_id}"), admin.clone()).await;
     assert!(!json(&body)["lines"][0]["concept_id"].is_null());
 
+    // The converted revision shows with the project's documents by itself, opening the quote.
+    let (status, body) = get(format!("/api/admin/projects/{pid}/documents"), admin.clone()).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let docs = json(&body);
+    assert_eq!(docs.as_array().unwrap().len(), 1, "{body}");
+    assert_eq!(docs[0]["kind"], "cotizacion");
+    assert_eq!(docs[0]["quote_id"], rev_id.as_str());
+    assert_eq!(docs[0]["filename"], format!("Cotización {day}-03-01"));
+    assert_eq!(docs[0]["url"], format!("/cotizaciones/{rev_id}"));
+    let (_, body) = get("/api/admin/project_documents".into(), admin.clone()).await;
+    let all_docs = json(&body);
+    assert!(
+        all_docs.as_array().unwrap().iter().any(|d| d["project_id"] == pid.to_hex() && d["quote_id"] == rev_id.as_str()),
+        "{body}"
+    );
+
     // --- What each part was quoted / sold for ------------------------------------------
     let (status, body) = post(
         "/api/admin/quotes/references".into(),
