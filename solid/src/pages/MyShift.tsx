@@ -295,13 +295,17 @@ function PartCard(props: { part: MyPart; drawing?: string; canOpenProject: boole
       <Show when={props.drawing} fallback={<span class="text-xs text-muted-foreground">Sin plano</span>}>
         {(url) => (
           <>
-            <button
-              type="button"
-              class="inline-block text-xs font-medium text-sky-500 hover:underline"
-              onClick={() => setDrawingOpen(true)}
-            >
-              Ver plano
-            </button>
+            {/* Hovering the link previews the drawing as on the production board; clicking
+                opens the side panel (Daniel, 2026-11-18). */}
+            <DrawingHover url={url()} label={p().part} class="inline-block">
+              <button
+                type="button"
+                class="text-xs font-medium text-sky-500 hover:underline"
+                onClick={() => setDrawingOpen(true)}
+              >
+                Ver plano
+              </button>
+            </DrawingHover>
             <Modal open={drawingOpen()} onOpenChange={setDrawingOpen} title={`Plano · ${p().part}`} class="max-w-[960px]">
               <div class="space-y-3">
                 <iframe
