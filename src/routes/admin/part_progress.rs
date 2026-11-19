@@ -253,6 +253,15 @@ pub struct PartProgressPayload {
     /// The setup of `operation_id` has its program ready.
     #[serde(default)]
     pub programmed: Option<bool>,
+    /// Add the next setup to this part ("+ Setup").
+    #[serde(default)]
+    pub add_setup: Option<bool>,
+    /// Admin only: register `completed_quantity` even with the program or setups pending.
+    /// Needs `reason`; it stays in the work order log.
+    #[serde(default)]
+    pub force: Option<bool>,
+    #[serde(default)]
+    pub reason: Option<String>,
 }
 
 #[utoipa::path(
@@ -322,8 +331,23 @@ pub async fn api_project_concept_progress(
             );
         }
     };
-    if step.is_none() && payload.completed_quantity.is_none() && extra_op.is_none() {
+    let add_setup = payload.add_setup.unwrap_or(false);
+    if step.is_none() && payload.completed_quantity.is_none() && extra_op.is_none() && !add_setup {
         return json_error(StatusCode::BAD_REQUEST, "nothing to update");
+    }
+    // Only the admin forces pieces past the program/setups, and says why.
+    let force = payload.force.unwrap_or(false);
+    let reason = payload.reason.as_deref().map(str::trim).filter(|r| !r.is_empty()).map(|r| r.chars().take(300).collect::<String>());
+    if force {
+        if !session_user.is_admin() {
+            return json_error(StatusCode::FORBIDDEN, "solo el administrador puede forzar piezas terminadas");
+        }
+        if payload.completed_quantity.is_none() {
+            return json_error(StatusCode::BAD_REQUEST, "force needs completed_quantity");
+        }
+        if reason.is_none() {
+            return json_error(StatusCode::BAD_REQUEST, "di por qué se fuerzan las piezas (por ejemplo, maquila)");
+        }
     }
     let username = session_user.user().username.clone();
     // A blocked step says what holds it up (Daniel, 2026-11-06).
@@ -337,6 +361,8 @@ pub async fn api_project_concept_progress(
         note,
         pieces: extra_op.zip(payload.pieces),
         programmed: extra_op.zip(payload.programmed),
+        add_setup,
+        force,
     };
     let before = get_project_concept_by_id_for_company(&state, &id, &company_id)
         .await
@@ -365,7 +391,8 @@ pub async fn api_project_concept_progress(
                     log_step_change(&state, &session_user, before, &concept, operation_id, new_state)
                         .await;
                 }
-                log_pieces_change(&state, &session_user, before, &concept).await;
+                let why = if force { reason.as_ref().map(|r| format!("Forzado: {r}")) } else { None };
+                log_pieces_change(&state, &session_user, before, &concept, why).await;
             }
             match project_concept_data(concept) {
                 Some(mut data) => {
@@ -392,6 +419,7 @@ pub(crate) async fn log_pieces_change(
     session_user: &SessionUser,
     before: &ProjectConcept,
     after: &ProjectConcept,
+    reason: Option<String>,
 ) {
     let delta = after.completed_quantity - before.completed_quantity;
     if delta == 0.0 {
@@ -410,7 +438,7 @@ pub(crate) async fn log_pieces_change(
         actor_user_id: *session_user.user_id(),
         subject_user_id: None,
         related_to: None,
-        reason: None,
+        reason,
         pieces_delta: Some(delta),
         unit_price: after.unit_price,
         previous_user_id: None,

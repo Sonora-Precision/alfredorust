@@ -48,6 +48,29 @@ export function PartOutsourcing(props: {
   canSeeMoney: boolean
 }): JSX.Element {
   const [editing, setEditing] = createSignal<OutsourceJob | 'new' | null>(null)
+  const qc = useQueryClient()
+  // One tap when the supplier hands everything back: the server then marks the steps done
+  // and counts a whole-part job's pieces as produced, ready for quality.
+  const receiveAll = createMutation(() => ({
+    mutationFn: (j: OutsourceJob) =>
+      updateOutsourcing(j.id, {
+        supplier_id: j.supplier_id ?? '',
+        operation_ids: j.operation_ids,
+        quantity: j.quantity,
+        unit_cost: j.unit_cost ?? null,
+        material_by_us: j.material_by_us,
+        due_date: dayValue(j.due_date) || null,
+        status: 'received',
+        received_quantity: j.quantity,
+        notes: j.notes ?? null,
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['outsourcing', props.projectId] })
+      void qc.invalidateQueries({ queryKey: ['project-concepts', props.projectId] })
+      toast.success('Maquila recibida', 'Las piezas quedaron listas para que calidad las libere.')
+    },
+    onError: (err) => toast.error('No se pudo marcar como recibida', humanizeError(err, 'Intenta de nuevo.')),
+  }))
   const what = (j: OutsourceJob) =>
     j.operation_ids.length === 0
       ? 'pieza completa'
@@ -57,6 +80,18 @@ export function PartOutsourcing(props: {
     <div class="mt-0.5 space-y-0.5 text-xs">
       <For each={props.jobs}>
         {(j) => (
+          <div class="flex max-w-[26rem] flex-wrap items-center gap-1">
+          <Show when={props.canEdit && (j.status === 'planned' || j.status === 'sent') && !!j.supplier_id}>
+            <button
+              type="button"
+              class="rounded border border-emerald-500 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-500/10 disabled:opacity-40 dark:text-emerald-300"
+              disabled={receiveAll.isPending}
+              title="El proveedor entregó todas las piezas"
+              onClick={() => receiveAll.mutate(j)}
+            >
+              Recibido de maquila
+            </button>
+          </Show>
           <button
             type="button"
             class={cn('flex max-w-[22rem] flex-wrap items-center gap-1 text-left', props.canEdit && 'hover:underline')}
@@ -83,6 +118,7 @@ export function PartOutsourcing(props: {
               </span>
             </Show>
           </button>
+          </div>
         )}
       </For>
       <Show when={props.canEdit}>

@@ -118,6 +118,96 @@ pub struct PartProgressUpdate {
     pub pieces: Option<(ObjectId, f64)>,
     /// A setup whose program is ready (or not).
     pub programmed: Option<(ObjectId, bool)>,
+    /// The programmer adds the next setup to this part ("+ Setup").
+    pub add_setup: bool,
+    /// Register pieces without the program/setups done (admin only; the route checks it).
+    pub force: bool,
+}
+
+fn is_program_name(name: &str) -> bool {
+    name.trim().eq_ignore_ascii_case("programa")
+}
+
+/// What still blocks adding finished pieces: the "Programa" step (when the catalog has it)
+/// and every setup the part carries. A setup the programmer never added is not required;
+/// every setup programmed also counts as the program being done.
+pub fn pending_for_pieces(
+    concept: &ProjectConcept,
+    operations: &[ProcessOperation],
+    changed: Option<(ObjectId, StepState)>,
+) -> Vec<String> {
+    // (name, state, programmed) of the part's steps, with the one marked in this request.
+    let mut steps: Vec<(String, StepState, bool)> = concept
+        .process_steps
+        .iter()
+        .map(|s| match changed {
+            Some((op, st)) if op == s.operation_id => (s.name.clone(), st, s.programmed),
+            _ => (s.name.clone(), s.state, s.programmed),
+        })
+        .collect();
+    if let Some((op, st)) = changed {
+        if !concept.process_steps.iter().any(|s| s.operation_id == op) {
+            if let Some(o) = operations.iter().find(|o| o.id == Some(op)) {
+                steps.push((o.name.clone(), st, false));
+            }
+        }
+    }
+    let finished = |st: StepState| matches!(st, StepState::Done | StepState::NotApplicable);
+    let setups: Vec<&(String, StepState, bool)> = steps
+        .iter()
+        .filter(|(n, st, _)| n.trim().to_lowercase().starts_with("setup") && *st != StepState::NotApplicable)
+        .collect();
+    let mut pending: Vec<String> = Vec::new();
+    if operations.iter().any(|o| is_program_name(&o.name)) {
+        let program_step_ok = steps.iter().any(|(n, st, _)| is_program_name(n) && finished(*st));
+        let all_setups_programmed = !setups.is_empty() && setups.iter().all(|(_, _, p)| *p);
+        if !program_step_ok && !all_setups_programmed {
+            pending.push("Programa".to_string());
+        }
+    }
+    for (name, st, _) in setups {
+        if *st != StepState::Done {
+            pending.push(name.clone());
+        }
+    }
+    pending
+}
+
+/// Adds the next setup to the part: the first "Setup N" of the catalog the part does not
+/// carry yet, creating "Setup N+1" in the catalog when they are all taken.
+async fn add_setup_to_part(state: &AppState, concept: &ProjectConcept, now: DateTime) -> Result<()> {
+    let operations = list_process_operations(state, &concept.company_id, true).await?;
+    let on_part = |op: &ProcessOperation| {
+        op.id.is_some_and(|id| concept.process_steps.iter().any(|s| s.operation_id == id))
+    };
+    let setups: Vec<&ProcessOperation> = operations
+        .iter()
+        .filter(|o| o.is_active && o.name.trim().to_lowercase().starts_with("setup"))
+        .collect();
+    let next = match setups.iter().find(|o| !on_part(o)) {
+        Some(op) => op.id.context("setup without id")?,
+        None => {
+            let number = setups
+                .iter()
+                .filter_map(|o| o.name.trim().chars().skip(5).collect::<String>().trim().parse::<u32>().ok())
+                .max()
+                .unwrap_or(0)
+                + 1;
+            if number > 12 {
+                bail!("una pieza no puede tener más de 12 setups");
+            }
+            let position = operations.iter().map(|o| o.position).max().unwrap_or(0) + 1;
+            create_process_operation(
+                state,
+                &concept.company_id,
+                &format!("Setup {number}"),
+                position,
+                Some(WorkQueue::Setup),
+            )
+            .await?
+        }
+    };
+    ensure_step(state, concept, next, now).await
 }
 
 /// Records finished pieces and/or one step state and returns the updated part, or `None` when
@@ -146,30 +236,16 @@ pub async fn update_part_progress(
         if !completed.is_finite() || completed < floor || completed > ceiling {
             bail!("las piezas producidas deben estar entre {floor} y {ceiling}");
         }
-        // A piece only counts as finished once it went through every step (Daniel,
-        // 2026-11-02): adding pieces needs every active step done or N/A, counting the
-        // step marked in this same request. Lowering (corrections) is always allowed.
-        if completed > concept.completed_quantity {
+        // Adding pieces needs the program and every setup the programmer created for this
+        // part done or N/A (Daniel, 2026-11-19: only what someone is responsible for
+        // registering blocks), counting the step marked in this same request. Lowering
+        // (corrections) is always allowed, and an admin may force it (`force`).
+        if completed > concept.completed_quantity && !update.force {
             let operations = list_process_operations(state, company_id, false).await?;
-            let pending: Vec<&str> = operations
-                .iter()
-                .filter(|op| {
-                    let Some(op_id) = op.id else { return false };
-                    let st = match update.step {
-                        Some((changed, st)) if changed == op_id => Some(st),
-                        _ => concept
-                            .process_steps
-                            .iter()
-                            .find(|s| s.operation_id == op_id)
-                            .map(|s| s.state),
-                    };
-                    !matches!(st, Some(StepState::Done) | Some(StepState::NotApplicable))
-                })
-                .map(|op| op.name.as_str())
-                .collect();
+            let pending = pending_for_pieces(&concept, &operations, update.step);
             if !pending.is_empty() {
                 bail!(
-                    "para registrar piezas terminadas todos los pasos deben estar ✔ o N/A; faltan: {}",
+                    "para registrar piezas terminadas faltan el programa y los setups de la pieza en ✔ o N/A; faltan: {}",
                     pending.join(", ")
                 );
             }
@@ -281,6 +357,10 @@ pub async fn update_part_progress(
             .await?;
     }
 
+    if update.add_setup {
+        add_setup_to_part(state, &concept, now).await?;
+    }
+
     get_project_concept_by_id_for_company(state, id, company_id).await
 }
 
@@ -338,4 +418,71 @@ pub fn setup_programmed(concept: &ProjectConcept, setup: Option<&str>) -> bool {
     let mut setups: Vec<&PartStep> = concept.process_steps.iter().filter(applies).collect();
     setups.sort_by_key(|s| s.name.trim().to_lowercase());
     setups.first().is_some_and(|s| s.programmed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn op(name: &str) -> ProcessOperation {
+        ProcessOperation {
+            id: Some(ObjectId::new()),
+            company_id: ObjectId::new(),
+            name: name.into(),
+            position: 0,
+            is_active: true,
+            queue: None,
+            created_at: None,
+            updated_at: None,
+        }
+    }
+
+    fn part(steps: &[(&ProcessOperation, StepState, bool)]) -> ProjectConcept {
+        let steps: Vec<_> = steps
+            .iter()
+            .map(|(o, st, programmed)| {
+                doc! { "operation_id": o.id.unwrap(), "name": &o.name, "state": st.as_str(), "programmed": *programmed }
+            })
+            .collect();
+        bson::from_document(doc! {
+            "company_id": ObjectId::new(), "project_id": ObjectId::new(), "status_id": ObjectId::new(),
+            "name": "P", "process_steps": steps,
+        })
+        .expect("concept")
+    }
+
+    #[test]
+    fn only_program_and_the_parts_own_setups_block() {
+        let (material, cut, program, s1, s2, finish) =
+            (op("Material"), op("Material habilitado"), op("Programa"), op("Setup 1"), op("Setup 2"), op("Rebabeado / Limpieza"));
+        let catalog = [material.clone(), cut.clone(), program.clone(), s1.clone(), s2.clone(), finish];
+
+        // Nothing marked: only the program is missing (Setup 1/2 were never added).
+        assert_eq!(pending_for_pieces(&part(&[]), &catalog, None), ["Programa"]);
+
+        // Program done, material pending: nothing blocks.
+        let ok = part(&[(&program, StepState::Done, false), (&material, StepState::Pending, false)]);
+        assert!(pending_for_pieces(&ok, &catalog, None).is_empty());
+
+        // A setup the programmer added blocks until done or N/A.
+        let with_setups = part(&[(&program, StepState::Done, false), (&s1, StepState::Pending, false), (&s2, StepState::NotApplicable, false)]);
+        assert_eq!(pending_for_pieces(&with_setups, &catalog, None), ["Setup 1"]);
+        let s1_id = s1.id.unwrap();
+        assert!(pending_for_pieces(&with_setups, &catalog, Some((s1_id, StepState::Done))).is_empty());
+        assert!(pending_for_pieces(&with_setups, &catalog, Some((s1_id, StepState::NotApplicable))).is_empty());
+
+        // Every setup programmed counts as the program being done.
+        let programmed = part(&[(&s1, StepState::Done, true), (&s2, StepState::Done, true)]);
+        assert!(pending_for_pieces(&programmed, &catalog, None).is_empty());
+        let half = part(&[(&s1, StepState::Done, true), (&s2, StepState::Done, false)]);
+        assert_eq!(pending_for_pieces(&half, &catalog, None), ["Programa"]);
+
+        // The step marked in the same request may not be on the part yet.
+        let fresh = part(&[]);
+        assert!(pending_for_pieces(&fresh, &catalog, Some((program.id.unwrap(), StepState::Done))).is_empty());
+
+        // A company without a Programa step is not asked for it.
+        let no_program = [material, s1];
+        assert!(pending_for_pieces(&part(&[]), &no_program, None).is_empty());
+    }
 }

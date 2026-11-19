@@ -607,3 +607,144 @@ async fn programmer_ticks_steps_and_pieces_without_seeing_money() {
 
     common::teardown(Some(ctx)).await;
 }
+
+#[tokio::test]
+async fn pieces_need_only_program_and_the_setups_of_the_part() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+    let host = "gate-a.miapp.local";
+
+    let company = create_company(&state, "Gate A", "gate-a", "MXN", true, None).await.unwrap();
+    let admin_id = create_user(&state, "gate-admin@example.com", "SECRET", &[(company.clone(), UserRole::Admin)])
+        .await
+        .unwrap();
+    let jose_id = create_user_with_permissions(
+        &state,
+        "gate-jose@example.com",
+        "SECRET",
+        &[(company.clone(), UserRole::Staff, vec![UserPermission::ViewProjects, UserPermission::TakeWorkOrders])],
+    )
+    .await
+    .unwrap();
+    let admin = get_user_by_id(&state, &admin_id).await.unwrap().unwrap();
+    let jose = get_user_by_id(&state, &jose_id).await.unwrap().unwrap();
+    let admin_token = create_session(&state, &admin.username).await.unwrap();
+    let jose_token = create_session(&state, &jose.username).await.unwrap();
+
+    create_concept_status(&state, &company, "En espera", 1, None, true, false, false, true).await.unwrap();
+    let project_id =
+        create_project(&state, &company, "P", None, None, None, ProjectPriority::Medium, None, None, None)
+            .await
+            .unwrap();
+    let concept_id = create_project_concept(&state, &company, &project_id, None, "GATE-1", 10.0, None, None, None, None, None, 1)
+        .await
+        .unwrap()
+        .to_hex();
+
+    // Catalog as the shop has it: material and cut steps, the program, a few setups.
+    let mut ops = std::collections::HashMap::new();
+    for (position, name) in [(1, "Material"), (2, "Material habilitado"), (3, "Programa"), (4, "Setup 1"), (5, "Setup 2"), (6, "Rebabeado / Limpieza")] {
+        let (status, body) = post_json_with_cookie(
+            build_app(shared.clone()),
+            host,
+            "/api/admin/process_operations",
+            &admin_token,
+            serde_json::json!({ "name": name, "position": position }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "body: {body}");
+        ops.insert(name, json(&body)["id"].as_str().unwrap().to_string());
+    }
+    let progress = format!("/api/admin/project_concepts/{concept_id}/progress");
+    let concept_url = format!("/api/admin/projects/{}/concepts", project_id.to_hex());
+    macro_rules! post {
+        ($token:expr, $body:expr) => {
+            post_json_with_cookie(build_app(shared.clone()), host, &progress, $token, $body)
+        };
+    }
+
+    // Material, cut and finishing steps are not required: only the program is.
+    let (status, body) = post!(&admin_token, serde_json::json!({ "completed_quantity": 3 })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "body: {body}");
+    assert!(body.contains("Programa"), "{body}");
+    assert!(!body.contains("Material") && !body.contains("Rebabeado") && !body.contains("Setup"), "{body}");
+    let (status, body) =
+        post!(&admin_token, serde_json::json!({ "completed_quantity": 3, "operation_id": ops["Programa"], "state": "done" })).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    assert_eq!(json(&body)["completed_quantity"], 3.0);
+
+    // "+ Setup" adds the part's own setups from the catalog, then a new one past the catalog.
+    for _ in 0..3 {
+        let (status, body) = post!(&admin_token, serde_json::json!({ "add_setup": true })).await;
+        assert_eq!(status, StatusCode::OK, "body: {body}");
+    }
+    let (_, body) = get_with_cookie(build_app(shared.clone()), host, &concept_url, &admin_token).await;
+    let mut names: Vec<String> = json(&body)[0]["process_steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["name"].as_str().unwrap().to_string())
+        .filter(|n| n.starts_with("Setup"))
+        .collect();
+    names.sort();
+    assert_eq!(names, ["Setup 1", "Setup 2", "Setup 3"]);
+
+    // Now the setups the part carries block more pieces.
+    let (status, body) = post!(&admin_token, serde_json::json!({ "completed_quantity": 5 })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "body: {body}");
+    assert!(body.contains("Setup 1") && body.contains("Setup 3") && !body.contains("Programa"), "{body}");
+    for name in ["Setup 1", "Setup 2"] {
+        let (status, _) = post!(&admin_token, serde_json::json!({ "operation_id": ops[name], "state": "done" })).await;
+        assert_eq!(status, StatusCode::OK);
+    }
+    let (status, _) = post!(&admin_token, serde_json::json!({ "completed_quantity": 5 })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "Setup 3 still pending");
+    // The setup closed in the same request counts.
+    let setup3 = json(&get_with_cookie(build_app(shared.clone()), host, &concept_url, &admin_token).await.1)[0]["process_steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["name"] == "Setup 3")
+        .unwrap()["operation_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let (status, body) = post!(&admin_token, serde_json::json!({ "completed_quantity": 5, "operation_id": setup3, "state": "not_applicable" })).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+
+    // Forcing: admin only, with a reason, and it is logged.
+    let (status, body) = post!(&admin_token, serde_json::json!({ "operation_id": setup3, "state": "pending" })).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let (status, body) = post!(&admin_token, serde_json::json!({ "completed_quantity": 8, "force": true })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "reason needed: {body}");
+    let (status, body) =
+        post!(&admin_token, serde_json::json!({ "completed_quantity": 8, "force": true, "reason": "maquila Maquison" })).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    assert_eq!(json(&body)["completed_quantity"], 8.0);
+    let forced = state
+        .work_order_events
+        .find_one(doc! { "kind": "pieces_recorded", "reason": "Forzado: maquila Maquison" })
+        .await
+        .unwrap();
+    assert!(forced.is_some(), "forced pieces are logged with the reason");
+
+    // A programmer cannot force.
+    let (status, _) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        &format!("/api/production/work_orders/{concept_id}/take"),
+        &jose_token,
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, body) =
+        post!(&jose_token, serde_json::json!({ "completed_quantity": 10, "force": true, "reason": "prisa" })).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "body: {body}");
+
+    common::teardown(Some(ctx)).await;
+}

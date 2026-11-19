@@ -27,6 +27,24 @@ export function stepPieces(concept: ProjectConcept, step: PartStep | undefined):
 export const programaDone = (concept: ProjectConcept) =>
   concept.process_steps.some((s) => norm(s.name) === 'programa' && s.state === 'done')
 
+/**
+ * What still blocks adding finished pieces (the server enforces the same rule): the "Programa"
+ * step when the catalog has it, and every setup the programmer added to this part. Setups the
+ * part does not carry never block; every setup programmed counts as the program being done.
+ */
+export function pendingForPieces(concept: ProjectConcept, ops: ProcessOperation[]): string[] {
+  const finished = (s: PartStep) => s.state === 'done' || s.state === 'not_applicable'
+  const setups = concept.process_steps.filter((s) => isSetupOp(s.name) && s.state !== 'not_applicable')
+  const out: string[] = []
+  if (ops.some((o) => norm(o.name) === 'programa')) {
+    const stepOk = concept.process_steps.some((s) => norm(s.name) === 'programa' && finished(s))
+    const allProgrammed = setups.length > 0 && setups.every((s) => s.programmed)
+    if (!stepOk && !allProgrammed) out.push('Programa')
+  }
+  for (const s of setups) if (s.state !== 'done') out.push(s.name)
+  return out
+}
+
 /** "Corte 12/30 · Setup 1 6/30": the active stages of a part, for its cell. */
 export function activeCounts(concept: ProjectConcept, ops: ProcessOperation[]): { label: string; pieces: number; programmed: boolean | null }[] {
   return ops
@@ -52,7 +70,8 @@ export function SetupProgress(props: {
   const total = () => c().quantity
   const stepOf = (op: ProcessOperation) => c().process_steps.find((s) => s.operation_id === op.id)
   const isProgrammed = (op: ProcessOperation) => !!stepOf(op)?.programmed || programaDone(c())
-  const rows = () => props.ops.filter((op) => isCountOp(op.name))
+  // The cut and only the setups this part carries; "+ Setup" adds the next one.
+  const rows = () => props.ops.filter((op) => isCutOp(op.name) || (isSetupOp(op.name) && !!stepOf(op)))
 
   const save = createMutation(() => ({
     mutationFn: (payload: PartProgressPayload) => updatePartProgress(c().id, payload),
@@ -169,8 +188,16 @@ export function SetupProgress(props: {
           }}
         </For>
         <Show when={!rows().length}>
-          <p class="text-muted-foreground">El catálogo de pasos no tiene "Material habilitado" ni setups.</p>
+          <p class="text-muted-foreground">Esta pieza aún no tiene setups. Agrégalos con "+ Setup" según lo que lleve.</p>
         </Show>
+        <button
+          type="button"
+          disabled={!props.canEdit || save.isPending}
+          class="w-full rounded-lg border border-dashed border-border px-3 py-2 text-sm text-muted-foreground hover:bg-muted disabled:opacity-40"
+          onClick={() => save.mutate({ add_setup: true })}
+        >
+          + Setup
+        </button>
         <p class="text-xs text-muted-foreground">
           Un setup entra a la fila de una máquina solo si está programado. Las piezas cuentan como terminadas cuando calidad las
           libera.

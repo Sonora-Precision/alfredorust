@@ -753,6 +753,11 @@ export interface PartProgressPayload {
   pieces?: number
   /** The setup of `operation_id` has its program ready. */
   programmed?: boolean
+  /** Add the next setup to this part ("+ Setup"). */
+  add_setup?: boolean
+  /** Admin only: register `completed_quantity` with the program or setups pending; needs `reason`. */
+  force?: boolean
+  reason?: string
 }
 
 // --- machine time from the shop floor (DNC runs pushed by taller-vision) -------------

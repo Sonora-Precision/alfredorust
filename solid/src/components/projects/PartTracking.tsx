@@ -27,7 +27,7 @@ import { PartCost } from './PartCost'
 import { PartComments } from './PartComments'
 import { PartOutsourcing } from './PartOutsourcing'
 import { type OutsourceJob, listProjectOutsourcing } from '../../lib/api/outsourcing'
-import { SetupProgress, activeCounts, isCountOp, isSetupOp, programaDone, stepPieces } from './SetupProgress'
+import { SetupProgress, activeCounts, isCountOp, isSetupOp, pendingForPieces, programaDone, stepPieces } from './SetupProgress'
 import { GAP_LABEL, type Gap, GapBar, QuickPrices, gapsOf } from './PartGaps'
 import { getProjectQuote } from '../../lib/api/quoting'
 import { PartMaterialCell } from './PartMaterialCell'
@@ -294,11 +294,9 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
   const tickable = (concept: ProjectConcept) =>
     props.canEdit && (props.canTick ? props.canTick(concept) : true)
 
-  /** Steps still pending; pieces can only go up once this is empty (server enforces it). */
-  const pendingSteps = (concept: ProjectConcept) =>
-    activeOps()
-      .filter((op) => stepState(concept, op.id) === 'pending')
-      .map((op) => op.name)
+  /** The program and the setups of the part not yet ✔ or N/A; pieces can only go up once this is
+   *  empty (server enforces it; an admin may force it). */
+  const pendingSteps = (concept: ProjectConcept) => pendingForPieces(concept, activeOps())
 
   const toggleStep = (concept: ProjectConcept, op: ProcessOperation) => {
     if (!tickable(concept)) return
@@ -329,6 +327,13 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
     const v = Math.min(max, Math.max(min, value))
     if (v === concept.completed_quantity) return
     progressMutation.mutate({ id: concept.id, payload: { completed_quantity: v } })
+  }
+
+  /** Admin only: pieces past the program/setups, with a reason that stays in the log. */
+  const forceFinished = (concept: ProjectConcept, value: number, reason: string) => {
+    const { min, max } = producedBounds(concept)
+    const v = Math.min(max, Math.max(min, value))
+    progressMutation.mutate({ id: concept.id, payload: { completed_quantity: v, force: true, reason } })
   }
 
   const [configOpen, setConfigOpen] = createSignal(false)
@@ -865,7 +870,9 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
                         concept={c}
                         canEdit={tickable(c)}
                         pending={pendingSteps(c)}
+                        canForce={props.canConfigure}
                         onCommit={(v) => setFinished(c, v)}
+                        onForce={(v, reason) => forceFinished(c, v, reason)}
                       />
                       <div class="mt-1 flex items-center gap-2">
                         <Bar ratio={ratio()} />
@@ -978,6 +985,8 @@ function StepCell(props: {
         // A programmed setup waiting for the machine: violet frame (Daniel, 2026-11-08).
         state() === 'pending' && programmed() && 'border-2 border-violet-500',
         props.canEdit && state() === 'pending' && !programmed() && 'hover:border-emerald-400',
+        // A setup this part does not carry: it does not hold anything up (click adds it).
+        isSetupOp(props.op.name) && !step() && 'opacity-40',
       )}
     >
       {state() === 'done' ? '✔' : state() === 'not_applicable' ? 'N/A' : state() === 'blocked' ? '!' : '·'}
@@ -994,11 +1003,23 @@ function StepCell(props: {
 function PiecesCell(props: {
   concept: ProjectConcept
   canEdit: boolean
-  /** Steps not yet ✔ or N/A: while any remain, pieces can only go down. */
+  /** Program and setups not yet ✔ or N/A: while any remain, pieces can only go down. */
   pending: string[]
+  /** Admin: may go up anyway, saying why (maquila, a lost checklist…). */
+  canForce: boolean
   onCommit: (value: number) => void
+  onForce: (value: number, reason: string) => void
 }): JSX.Element {
   const blocked = () => props.pending.length > 0
+  /** Raise the pieces: straight when nothing is pending; an admin asks why when it is. */
+  const raise = (value: number) => {
+    if (!blocked()) return props.onCommit(value)
+    if (!props.canForce) return
+    const reason = window.prompt(
+      `Faltan: ${props.pending.join(', ')}\n¿Por qué registras ${value} piezas terminadas sin eso? (por ejemplo: maquila con Maquison)`,
+    )?.trim()
+    if (reason) props.onForce(value, reason)
+  }
   const [draft, setDraft] = createSignal<string | null>(null)
   // Type the total ("10,000") or a change ("+250", "-5"); thousands separators are
   // ignored and the result stays between 0 and the pieces ordered.
@@ -1013,9 +1034,10 @@ function PiecesCell(props: {
     const { min, max } = producedBounds(props.concept)
     const clamped = Math.min(Math.max(total, min), max)
     if (clamped > props.concept.completed_quantity && blocked()) {
+      if (props.canForce) return raise(clamped)
       toast.error(
         'Aún no se pueden registrar piezas',
-        `Marca todos los pasos ✔ o N/A. Faltan: ${props.pending.join(', ')}`,
+        `Marca el programa y los setups de la pieza ✔ o N/A. Faltan: ${props.pending.join(', ')}`,
       )
       return
     }
@@ -1056,10 +1078,10 @@ function PiecesCell(props: {
         <button
           type="button"
           class="h-7 w-7 rounded-md border border-input text-muted-foreground hover:bg-muted disabled:opacity-40"
-          disabled={blocked() || props.concept.completed_quantity >= producedBounds(props.concept).max}
-          title={blocked() ? `Faltan pasos: ${props.pending.join(', ')}` : undefined}
+          disabled={(blocked() && !props.canForce) || props.concept.completed_quantity >= producedBounds(props.concept).max}
+          title={blocked() ? `Faltan: ${props.pending.join(', ')}${props.canForce ? ' (puedes forzar con un motivo)' : ''}` : undefined}
           aria-label="Una pieza más"
-          onClick={() => props.onCommit(props.concept.completed_quantity + 1)}
+          onClick={() => raise(props.concept.completed_quantity + 1)}
         >
           +
         </button>
