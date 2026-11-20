@@ -2,6 +2,11 @@ import { apiGet, apiPost, apiPostForm } from './client'
 
 export type ProjectDocumentKind = 'orden_compra' | 'cotizacion' | 'otro'
 
+/** The assembly preview image (PNG/JPG) and the assembly drawing (PDF): one each per project,
+ * shown in the projects list; they have their own editor, not the documents list. */
+export type VisualKind = 'vista_previa' | 'plano_ensamble'
+export const isVisualKind = (k: string): k is VisualKind => k === 'vista_previa' || k === 'plano_ensamble'
+
 export const DOCUMENT_KINDS: { value: ProjectDocumentKind; label: string }[] = [
   { value: 'orden_compra', label: 'Orden de compra' },
   { value: 'cotizacion', label: 'Cotización' },
@@ -29,7 +34,7 @@ export const listProjectDocuments = (projectId: string) =>
 /** Every document of the company (projects list). */
 export const listCompanyProjectDocuments = () => apiGet<ProjectDocument[]>('/api/admin/project_documents')
 
-export const uploadProjectDocument = (projectId: string, kind: ProjectDocumentKind, file: File) => {
+export const uploadProjectDocument = (projectId: string, kind: ProjectDocumentKind | VisualKind, file: File) => {
   const form = new FormData()
   form.append('kind', kind)
   form.append('file', file)

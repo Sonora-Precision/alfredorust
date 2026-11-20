@@ -17,8 +17,8 @@ use crate::{
     models::{Project, ProjectPriority, UserPermission},
     session::SessionUser,
     state::{
-        AppState, advance_project_phase, create_project, delete_project,
-        get_project_by_id_for_company, list_projects, update_project,
+        AppState, ProjectVisuals, advance_project_phase, create_project, delete_project,
+        get_project_by_id_for_company, list_projects, project_visuals, update_project,
     },
 };
 
@@ -72,6 +72,18 @@ pub struct ProjectData {
     pub scheduled_at: Option<String>,
     pub completed_at: Option<String>,
     pub notes: Option<String>,
+    /// Small image of the main assembly (PNG/JPG), to tell projects apart in the list.
+    pub preview_url: Option<String>,
+    /// The assembly drawing (PDF), shown large on hover.
+    pub assembly_url: Option<String>,
+}
+
+/// Fills the preview and assembly drawing links from the project's documents.
+fn with_visuals(mut data: ProjectData, visuals: Option<&ProjectVisuals>) -> ProjectData {
+    let url = |id: Option<ObjectId>| id.map(|id| format!("/api/admin/project_documents/{}", id.to_hex()));
+    data.preview_url = url(visuals.and_then(|v| v.preview));
+    data.assembly_url = url(visuals.and_then(|v| v.assembly));
+    data
 }
 
 #[derive(Deserialize, utoipa::ToSchema)]
@@ -206,11 +218,16 @@ pub async fn projects_data_api(
     let projects = list_projects(&state, &company_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    // One query for every project's preview, not one per row.
+    let visuals = project_visuals(&state, &company_id, None).await.unwrap_or_default();
 
     Ok(Json(
         projects
             .into_iter()
-            .filter_map(|project| project_data(project, can_view_money))
+            .filter_map(|project| {
+                let id = project.id?;
+                project_data(project, can_view_money).map(|d| with_visuals(d, visuals.get(&id)))
+            })
             .collect(),
     ))
 }
@@ -243,9 +260,10 @@ pub async fn project_data_api(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
     let can_view_money = session_user.has_permission(UserPermission::ViewProjectMoney);
+    let visuals = project_visuals(&state, &company_id, Some(&oid)).await.unwrap_or_default();
 
     project_data(project, can_view_money)
-        .map(Json)
+        .map(|d| Json(with_visuals(d, visuals.get(&oid))))
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)
 }
 
@@ -811,6 +829,8 @@ fn project_data(project: Project, can_view_money: bool) -> Option<ProjectData> {
         } else {
             crate::redact::strip_money_opt(project.notes)
         },
+        preview_url: None,
+        assembly_url: None,
     })
 }
 

@@ -17,6 +17,8 @@ import { MaterialRequest } from '../components/projects/MaterialRequest'
 import { PartTracking } from '../components/projects/PartTracking'
 import { ProjectSourceQuote } from '../components/projects/ProjectSourceQuote'
 import { ProjectDocuments } from '../components/projects/ProjectDocuments'
+import { ProjectThumb } from '../components/projects/ProjectThumb'
+import { ProjectVisualsEditor } from '../components/projects/ProjectVisualsEditor'
 import { ProjectInvoices } from '../components/projects/ProjectInvoices'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Select } from '../components/ui/Select'
@@ -292,6 +294,16 @@ export default function ProjectDetail(): JSX.Element {
       <A href="/projects" class="text-sm text-muted-foreground hover:underline">
         ← Proyectos
       </A>
+      <div class="flex items-start gap-4">
+      <Show when={projectQuery.data?.preview_url || projectQuery.data?.assembly_url}>
+        <ProjectThumb
+          size="lg"
+          previewUrl={projectQuery.data?.preview_url}
+          assemblyUrl={projectQuery.data?.assembly_url}
+          title={projectQuery.data?.title ?? ''}
+        />
+      </Show>
+      <div class="min-w-0 flex-1">
       <PageHeader
         title={projectQuery.data?.title || 'Proyecto'}
         breadcrumb={['Operaciones', 'Proyectos']}
@@ -319,8 +331,15 @@ export default function ProjectDetail(): JSX.Element {
           </Show>
         }
       />
+      </div>
+      </div>
       <Show when={isAdmin()}>
         <ProjectSourceQuote projectId={params.id} />
+        <ProjectVisualsEditor
+          projectId={params.id}
+          previewUrl={projectQuery.data?.preview_url}
+          assemblyUrl={projectQuery.data?.assembly_url}
+        />
         <ProjectDocuments projectId={params.id} />
         <ProjectInvoices projectId={params.id} />
       </Show>
