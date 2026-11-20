@@ -209,14 +209,16 @@ function request(url, { method, headers, body }) {
     const req = mod.request(url, { method, headers, timeout: TIMEOUT_MS }, (res) => {
       const chunks = [];
       res.on("data", (c) => chunks.push(c));
-      res.on("end", () =>
+      res.on("end", () => {
+        const buffer = Buffer.concat(chunks);
         resolve({
           status: res.statusCode,
           ok: res.statusCode >= 200 && res.statusCode < 300,
           headers: res.headers,
-          text: Buffer.concat(chunks).toString("utf8"),
-        })
-      );
+          text: buffer.toString("utf8"),
+          buffer,
+        });
+      });
       res.on("error", reject);
     });
     req.on("timeout", () => req.destroy(new Error(`Sin respuesta después de ${TIMEOUT_MS / 1000}s`)));
@@ -226,7 +228,30 @@ function request(url, { method, headers, body }) {
   });
 }
 
+// Igual que `call`, pero devuelve la respuesta completa (con `buffer` binario)
+// y no valida el tipo: sirve para descargar ZIPs.
+async function callRaw(method, path, { company, query, body } = {}) {
+  return send(method, path, { company, query, body });
+}
+
 async function call(method, path, { company, query, body, raw } = {}) {
+  const res = await send(method, path, { company, query, body, raw });
+  const { text } = res;
+  const type = res.headers["content-type"] || "";
+  if (/^\s*<!doctype html/i.test(text) || (type.includes("text/html") && res.ok)) {
+    throw new Error(`La ruta ${method} ${path} no existe en el servidor (devolvió la página web).`);
+  }
+  if (res.status >= 300 && res.status < 400) {
+    throw new Error(`HTTP ${res.status}: redirección a ${res.headers.location} — token rechazado o sesión requerida.`);
+  }
+  if (!res.ok) {
+    const hint = res.status === 401 ? " (token rechazado, vencido o revocado)" : res.status === 403 ? " (sin permiso)" : "";
+    throw new Error(`HTTP ${res.status}${hint}: ${text.slice(0, 2000)}`);
+  }
+  return text;
+}
+
+async function send(method, path, { company, query, body, raw } = {}) {
   const { base, host } = target(path, company);
   const url = new URL(path, base);
   for (const [k, v] of Object.entries(query || {})) {
@@ -245,19 +270,7 @@ async function call(method, path, { company, query, body, raw } = {}) {
     },
     body: payload,
   });
-  const { text } = res;
-  const type = res.headers["content-type"] || "";
-  if (/^\s*<!doctype html/i.test(text) || (type.includes("text/html") && res.ok)) {
-    throw new Error(`La ruta ${method} ${path} no existe en el servidor (devolvió la página web).`);
-  }
-  if (res.status >= 300 && res.status < 400) {
-    throw new Error(`HTTP ${res.status}: redirección a ${res.headers.location} — token rechazado o sesión requerida.`);
-  }
-  if (!res.ok) {
-    const hint = res.status === 401 ? " (token rechazado, vencido o revocado)" : res.status === 403 ? " (sin permiso)" : "";
-    throw new Error(`HTTP ${res.status}${hint}: ${text.slice(0, 2000)}`);
-  }
-  return text;
+  return res;
 }
 
 // Nunca regresar secretos al modelo (p. ej. el detalle de usuario trae el TOTP).
@@ -459,7 +472,113 @@ server.registerTool(
   }
 );
 
-if (process.argv.includes("--check")) {
+// ---------------------------------------------------------------------------
+// Exportar CFDIs a disco. `sp_get` recorta a MAX_CHARS, así que la lista
+// completa y los XML originales se guardan en una carpeta local.
+// Sólo lee de la plataforma (el POST /archive únicamente arma un ZIP).
+// ---------------------------------------------------------------------------
+const ZIP_CHUNK = 200;
+
+async function exportCfdis({ outDir, xml = false, tipo, soloEmitidos = false, desde, company }) {
+  const { mkdirSync, writeFileSync } = await import("node:fs");
+  const { join, resolve } = await import("node:path");
+  const dir = resolve(outDir);
+  mkdirSync(dir, { recursive: true });
+
+  const data = JSON.parse(await call("GET", "/api/admin/cfdis/data", { company }));
+  const listFile = join(dir, "cfdis_data.json");
+  writeFileSync(listFile, JSON.stringify(data, null, 1));
+
+  let items = data.items || [];
+  if (tipo) items = items.filter((i) => i.tipo === tipo);
+  if (soloEmitidos) items = items.filter((i) => i.es_emitido);
+  if (desde) items = items.filter((i) => (i.fecha || "").slice(0, 10) >= desde);
+
+  const byTipo = {};
+  for (const i of items) byTipo[i.tipo] = (byTipo[i.tipo] || 0) + 1;
+  const dates = items.map((i) => (i.fecha || "").slice(0, 10)).filter(Boolean).sort();
+  const lines = [
+    `Lista completa: ${data.items?.length ?? 0} de ${data.total} CFDI → ${listFile}`,
+    `Seleccionados: ${items.length} (${Object.entries(byTipo).map(([k, v]) => `${k}=${v}`).join(", ") || "ninguno"})` +
+      (dates.length ? `, del ${dates[0]} al ${dates[dates.length - 1]}` : ""),
+  ];
+
+  if (xml && items.length) {
+    const uuids = items.map((i) => i.uuid);
+    const zips = [];
+    const failed = [];
+    for (let n = 0; n < uuids.length; n += ZIP_CHUNK) {
+      const chunk = uuids.slice(n, n + ZIP_CHUNK);
+      const res = await callRaw("POST", "/api/admin/cfdis/archive", { company, body: { uuids: chunk } });
+      if (res.ok && (res.headers["content-type"] || "").includes("zip")) {
+        const file = join(dir, `cfdis_xml_${String(zips.length + 1).padStart(3, "0")}.zip`);
+        writeFileSync(file, res.buffer);
+        zips.push({ file, count: chunk.length });
+        continue;
+      }
+      // Si un lote falla (p. ej. un CFDI sin XML archivado), se reintenta de uno en uno.
+      for (const uuid of chunk) {
+        const one = await callRaw("POST", "/api/admin/cfdis/archive", { company, body: { uuids: [uuid] } });
+        if (one.ok && (one.headers["content-type"] || "").includes("zip")) {
+          const safe = uuid.replace(/[^A-Za-z0-9_-]/g, "");
+          const file = join(dir, `uno_${safe}.zip`);
+          writeFileSync(file, one.buffer);
+          zips.push({ file, count: 1 });
+        } else {
+          failed.push(`${uuid} (HTTP ${one.status})`);
+        }
+      }
+    }
+    lines.push(`ZIPs con XML: ${zips.length} archivos, ${zips.reduce((a, z) => a + z.count, 0)} CFDI → ${dir}`);
+    if (failed.length) lines.push(`Sin XML archivado o con error (${failed.length}): ${failed.slice(0, 50).join(", ")}`);
+  }
+  return lines.join("\n");
+}
+
+server.registerTool(
+  "sp_export_cfdis",
+  {
+    title: "Exportar CFDIs a una carpeta local",
+    description:
+      "Guarda en una carpeta de esta computadora la lista COMPLETA de CFDIs (cfdis_data.json, sin el recorte de 80,000 caracteres de sp_get) " +
+      "y, con xml=true, los XML originales del SAT en ZIPs (cfdis_xml_001.zip, ...). Sólo lee de la plataforma. " +
+      "Filtros opcionales: tipo (I, E, P, N, T), solo_emitidos y desde (YYYY-MM-DD). Devuelve un resumen, no el contenido.",
+    inputSchema: {
+      out_dir: z.string().describe("Carpeta local donde guardar los archivos (se crea si no existe)"),
+      xml: z.boolean().optional().describe("true para bajar también los XML originales en ZIPs"),
+      tipo: z.string().optional().describe("Sólo este tipo de comprobante: I, E, P, N o T"),
+      solo_emitidos: z.boolean().optional().describe("Sólo los emitidos por la empresa"),
+      desde: z.string().optional().describe("Sólo desde esta fecha, YYYY-MM-DD"),
+      company: companyArg,
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+  },
+  async ({ out_dir, xml, tipo, solo_emitidos, desde, company }) => {
+    try {
+      return ok(await exportCfdis({ outDir: out_dir, xml, tipo, soloEmitidos: solo_emitidos, desde, company }));
+    } catch (e) {
+      return fail(e);
+    }
+  }
+);
+
+if (process.argv.includes("--export")) {
+  // Prueba sin MCP: node server.mjs --export <carpeta> [--xml] [--tipo P] [--emitidos] [--desde 2025-01-01]
+  const a = process.argv;
+  const arg = (name) => (a.includes(name) ? a[a.indexOf(name) + 1] : undefined);
+  exportCfdis({
+    outDir: arg("--export"),
+    xml: a.includes("--xml"),
+    tipo: arg("--tipo"),
+    soloEmitidos: a.includes("--emitidos"),
+    desde: arg("--desde"),
+  })
+    .then((t) => console.log(t))
+    .catch((e) => {
+      console.error(`ERROR: ${e.message}`);
+      process.exit(1);
+    });
+} else if (process.argv.includes("--check")) {
   // Prueba rápida sin MCP: node server.mjs --check
   call("GET", "/api/me")
     .then((t) => {
