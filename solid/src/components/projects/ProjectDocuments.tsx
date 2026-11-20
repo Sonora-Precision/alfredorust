@@ -10,6 +10,7 @@ import {
   DOCUMENT_KINDS,
   type ProjectDocumentKind,
   deleteProjectDocument,
+  isVisualKind,
   listProjectDocuments,
   uploadProjectDocument,
 } from '../../lib/api/projectDocuments'
@@ -29,6 +30,8 @@ export function ProjectDocuments(props: { projectId: string }): JSX.Element {
   const qc = useQueryClient()
   const key = () => ['project-documents', props.projectId]
   const docs = createQuery(() => ({ queryKey: key(), queryFn: () => listProjectDocuments(props.projectId) }))
+  // The assembly preview and drawing have their own editor (ProjectVisualsEditor).
+  const shown = () => (docs.data ?? []).filter((d) => !isVisualKind(d.kind))
   const [kind, setKind] = createSignal<ProjectDocumentKind>('orden_compra')
   let input: HTMLInputElement | undefined
 
@@ -97,7 +100,7 @@ export function ProjectDocuments(props: { projectId: string }): JSX.Element {
         </div>
       </div>
       <Show
-        when={(docs.data ?? []).length}
+        when={shown().length}
         fallback={
           <p class="mt-1 text-xs text-muted-foreground">
             {docs.isLoading ? 'Cargando…' : 'Sin documentos. Sube aquí la orden de compra o la cotización.'}
@@ -105,7 +108,7 @@ export function ProjectDocuments(props: { projectId: string }): JSX.Element {
         }
       >
         <ul class="mt-2 divide-y divide-border">
-          <For each={docs.data}>
+          <For each={shown()}>
             {(d) => (
               <li class="flex items-center gap-2 py-1.5 text-sm">
                 <span class={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${kindClass(d.kind)}`}>{kindLabel(d.kind)}</span>

@@ -1780,7 +1780,8 @@ pub struct ProjectDocument {
 
     pub company_id: ObjectId,
     pub project_id: ObjectId,
-    /// "orden_compra", "cotizacion" or "otro".
+    /// "orden_compra", "cotizacion", "otro", or the assembly "vista_previa" (PNG/JPG) and
+    /// "plano_ensamble" (PDF), which carry no prices.
     pub kind: String,
     pub original_filename: String,
     pub size_bytes: i64,

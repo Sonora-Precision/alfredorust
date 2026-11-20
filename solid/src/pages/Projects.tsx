@@ -24,8 +24,9 @@ import * as operationsApi from '../lib/api/operations'
 import type { ProjectPayload, ProjectPriority, ProjectRow } from '../lib/api/types'
 import { dateToRfc3339, money, rfc3339ToDate } from '../lib/format'
 import { useAuth } from '../lib/auth/AuthContext'
-import { type ProjectDocument, listCompanyProjectDocuments } from '../lib/api/projectDocuments'
+import { type ProjectDocument, isVisualKind, listCompanyProjectDocuments } from '../lib/api/projectDocuments'
 import { ProjectDocLinks } from '../components/projects/ProjectDocLinks'
+import { ProjectThumb } from '../components/projects/ProjectThumb'
 
 /** Values match the backend (`low|medium|high|urgent`). */
 const PRIORITIES: { value: ProjectPriority; label: string }[] = [
@@ -64,7 +65,8 @@ export default function Projects(): JSX.Element {
   }))
   const docsOf = createMemo(() => {
     const by = new Map<string, ProjectDocument[]>()
-    for (const d of docsQuery.data ?? []) by.set(d.project_id, [...(by.get(d.project_id) ?? []), d])
+    // The assembly preview and drawing show as the thumbnail, not as document links.
+    for (const d of (docsQuery.data ?? []).filter((d) => !isVisualKind(d.kind))) by.set(d.project_id, [...(by.get(d.project_id) ?? []), d])
     return by
   })
   const categoriesQuery = createQuery(() => ({
@@ -281,12 +283,17 @@ export default function Projects(): JSX.Element {
                       return (
                         <TableRow>
                           <TableCell class="font-medium text-foreground">
-                            {p.title}
-                            <Show when={docsOf().get(p.id)}>
-                              <div class="mt-1">
-                                <ProjectDocLinks docs={docsOf().get(p.id)} />
+                            <div class="flex items-center gap-3">
+                              <ProjectThumb previewUrl={p.preview_url} assemblyUrl={p.assembly_url} title={p.title} />
+                              <div class="min-w-0">
+                                {p.title}
+                                <Show when={docsOf().get(p.id)}>
+                                  <div class="mt-1">
+                                    <ProjectDocLinks docs={docsOf().get(p.id)} />
+                                  </div>
+                                </Show>
                               </div>
-                            </Show>
+                            </div>
                           </TableCell>
                           <TableCell>
                             <Badge tone={statusBadgeTone(statusLabel)}>{statusLabel}</Badge>
@@ -346,7 +353,10 @@ export default function Projects(): JSX.Element {
                   return (
                     <div class="rounded-lg border border-border p-3">
                       <div class="flex items-start justify-between gap-2">
-                        <p class="min-w-0 flex-1 font-medium text-foreground">{p.title}</p>
+                        <div class="flex min-w-0 flex-1 items-center gap-2">
+                          <ProjectThumb previewUrl={p.preview_url} assemblyUrl={p.assembly_url} title={p.title} />
+                          <p class="min-w-0 font-medium text-foreground">{p.title}</p>
+                        </div>
                         <div class="flex shrink-0 gap-1">
                           <A
                             href={`/projects/${p.id}`}

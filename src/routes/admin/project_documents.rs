@@ -6,7 +6,7 @@ use std::sync::Arc;
 use axum::{
     Json,
     extract::{Multipart, Path, State},
-    http::StatusCode,
+    http::{HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
 use serde::Serialize;
@@ -15,10 +15,10 @@ use super::finance::helpers::require_active_company;
 use super::part_files::pdf_inline;
 use super::project_backend::{iso, json_error, parse_oid};
 use crate::{
-    models::{ProjectDocument, Quote},
+    models::{ProjectDocument, Quote, UserPermission},
     session::SessionUser,
     state::{
-        AppState, delete_project_document, folio, get_project_by_id_for_company, get_project_document,
+        AppState, delete_project_document, image_extension, is_visual_kind, folio, get_project_by_id_for_company, get_project_document,
         list_company_project_documents, list_project_documents, list_project_quotes, list_quotes, read_project_document,
         save_project_document,
     },
@@ -194,13 +194,25 @@ pub async fn api_project_document_upload(
     }
 }
 
-/// The PDF itself, shown in the browser (inline).
+/// A preview image, served as itself.
+fn image_inline(bytes: Vec<u8>, ext: &str) -> Response {
+    let content_type = if ext == "png" { "image/png" } else { "image/jpeg" };
+    let mut resp = bytes.into_response();
+    let headers = resp.headers_mut();
+    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(content_type));
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("private, max-age=300"));
+    headers.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
+    resp
+}
+
+/// The file itself, shown in the browser (inline): the PDF, or the preview image.
 pub async fn api_project_document_download(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Response {
-    if !session_user.is_admin() {
+    // The assembly preview and drawing carry no prices: whoever sees projects opens them.
+    if !session_user.is_admin() && !session_user.has_permission(UserPermission::ViewProjects) {
         return StatusCode::FORBIDDEN.into_response();
     }
     let company_id = require_active_company(&session_user);
@@ -211,8 +223,14 @@ pub async fn api_project_document_download(
     let Ok(Some(doc)) = get_project_document(&state, &company_id, &id).await else {
         return json_error(StatusCode::NOT_FOUND, "document not found");
     };
+    if !session_user.is_admin() && !is_visual_kind(&doc.kind) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
     match read_project_document(&doc).await {
-        Ok(bytes) => pdf_inline(bytes, &doc.original_filename),
+        Ok(bytes) => match image_extension(&bytes) {
+            Some(ext) => image_inline(bytes, ext),
+            None => pdf_inline(bytes, &doc.original_filename),
+        },
         Err(_) => json_error(StatusCode::NOT_FOUND, "document file missing"),
     }
 }

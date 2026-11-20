@@ -456,6 +456,10 @@ export interface ProjectRow {
   contact_id?: string | null
   /** Set when the project was closed (delivered or cancelled). */
   completed_at?: string | null
+  /** Small image of the main assembly (PNG/JPG). */
+  preview_url?: string | null
+  /** The assembly drawing (PDF), shown large on hover. */
+  assembly_url?: string | null
 }
 
 export interface ProjectPayload {
@@ -482,6 +486,8 @@ export interface ProjectDetail {
   status_label?: string
   /** Set when the project was closed (delivered or cancelled). */
   completed_at?: string | null
+  preview_url?: string | null
+  assembly_url?: string | null
 }
 
 // --- project concepts + statuses -------------------------------------------------

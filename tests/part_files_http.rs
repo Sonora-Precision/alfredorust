@@ -205,6 +205,64 @@ async fn part_drawings_upload_open_and_delete() {
     let (_, body) = get_with_cookie(build_app(shared.clone()), host, &docs, &admin).await;
     assert_eq!(json(&body).as_array().unwrap().len(), 0, "{body}");
 
+    // Assembly preview (PNG/JPG) and drawing (PDF): admin uploads, whoever sees projects
+    // opens them; one of each per project, the newest replaces the old.
+    let png: &[u8] = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR";
+    let (status, _) = post_multipart_with_cookie(
+        build_app(shared.clone()), host, &docs, &jose,
+        &[("kind", None, &b"vista_previa"[..]), ("file", Some("iso.png"), png)],
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, body) = post_multipart_with_cookie(
+        build_app(shared.clone()), host, &docs, &admin,
+        &[("kind", None, &b"vista_previa"[..]), ("file", Some("iso.pdf"), pdf)],
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "a PDF is not a preview image: {body}");
+    let (status, body) = post_multipart_with_cookie(
+        build_app(shared.clone()), host, &docs, &admin,
+        &[("kind", None, &b"plano_ensamble"[..]), ("file", Some("iso.png"), png)],
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "the assembly drawing is a PDF: {body}");
+    let mut previews = Vec::new();
+    for name in ["iso-1.png", "iso-2.png"] {
+        let (status, body) = post_multipart_with_cookie(
+            build_app(shared.clone()), host, &docs, &admin,
+            &[("kind", None, &b"vista_previa"[..]), ("file", Some(name), png)],
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "body: {body}");
+        previews.push(json(&body)["url"].as_str().unwrap().to_string());
+    }
+    let (status, body) = post_multipart_with_cookie(
+        build_app(shared.clone()), host, &docs, &admin,
+        &[("kind", None, &b"plano_ensamble"[..]), ("file", Some("ensamble.pdf"), pdf)],
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "body: {body}");
+    let assembly = json(&body)["url"].as_str().unwrap().to_string();
+    let (_, body) = get_with_cookie(build_app(shared.clone()), host, &docs, &admin).await;
+    assert_eq!(json(&body).as_array().unwrap().len(), 2, "the second preview replaced the first: {body}");
+    for path in ["/api/admin/projects".to_string(), format!("/api/admin/projects/{}", project.to_hex())] {
+        let (status, body) = get_with_cookie(build_app(shared.clone()), host, &path, &jose).await;
+        assert_eq!(status, StatusCode::OK, "body: {body}");
+        let v = json(&body);
+        let row = if v.is_array() { v[0].clone() } else { v };
+        assert_eq!(row["preview_url"], previews[1].as_str(), "{body}");
+        assert_eq!(row["assembly_url"], assembly.as_str(), "{body}");
+    }
+    let (status, _) = get_with_cookie(build_app(shared.clone()), host, &previews[1], &jose).await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, body) = get_with_cookie(build_app(shared.clone()), host, &assembly, &jose).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.starts_with("%PDF-"), "{body}");
+    let (status, _) = get_with_cookie(build_app(shared.clone()), host, &previews[0], &jose).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "the replaced preview is gone");
+    let (status, _) = get_with_cookie(build_app(shared.clone()), "files-b.miapp.local", &assembly, &outsider).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
     let _ = std::fs::remove_dir_all(&store);
     common::teardown(Some(ctx)).await;
 }
