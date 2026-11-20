@@ -804,6 +804,9 @@ pub(crate) async fn load_cut_plan(state: &AppState, company_id: &ObjectId) -> an
         .filter_map(|p| Some((p.id?, p.title)))
         .collect();
     let project_ids: Vec<ObjectId> = projects.keys().copied().collect();
+    // A part a supplier makes whole buys its own material (unless we give it): it is not ours
+    // to cut.
+    let outsourcing = crate::state::outsourcing_by_part(state, company_id).await?;
     let parts: HashMap<ObjectId, ProjectConcept> = state
         .project_concepts
         .find(doc! {
@@ -817,6 +820,11 @@ pub(crate) async fn load_cut_plan(state: &AppState, company_id: &ObjectId) -> an
         .try_collect::<Vec<_>>()
         .await?
         .into_iter()
+        .filter(|c| {
+            !c.id
+                .and_then(|id| outsourcing.get(&id))
+                .is_some_and(|jobs| jobs.iter().any(|j| j.operation_ids.is_empty() && !j.material_by_us))
+        })
         .filter_map(|c| Some((c.id?, c)))
         .collect();
     let mut receipts = list_material_receipts(state, company_id).await?;
