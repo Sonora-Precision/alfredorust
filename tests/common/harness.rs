@@ -505,6 +505,19 @@ pub fn build_app(state: Arc<AppState>) -> Router {
         .route("/api/production/floor", get(routes::api_production_floor))
         .route("/api/production/my_shift", get(routes::api_my_shift))
         .route("/api/production/my_shift/people", get(routes::api_my_shift_people))
+        .route("/api/admin/invoices", get(routes::api_invoices))
+        .route("/api/admin/invoices/summary", get(routes::api_invoices_summary))
+        .route("/api/admin/invoices/import", axum::routing::post(routes::api_invoices_import))
+        .route("/api/admin/invoices/sync_sat", axum::routing::post(routes::api_invoices_sync_sat))
+        .route("/api/admin/invoices/{id}", get(routes::api_invoice))
+        .route("/api/admin/invoices/{id}/update", axum::routing::post(routes::api_invoice_update))
+        .route("/api/admin/invoices/{id}/payments", axum::routing::post(routes::api_invoice_payment_add))
+        .route(
+            "/api/admin/invoices/{id}/payments/{payment_id}/delete",
+            axum::routing::post(routes::api_invoice_payment_delete),
+        )
+        .route("/api/admin/invoices/{id}/files", axum::routing::post(routes::api_invoice_file_add))
+        .route("/api/admin/invoices/{id}/files/{file_id}", get(routes::api_invoice_file_download))
         .route("/api/admin/outsourcing/suppliers", get(routes::api_outsourcing_suppliers))
         .route("/api/admin/outsourcing", get(routes::api_outsourcing_index).post(routes::api_outsourcing_create))
         .route("/api/admin/outsourcing/{id}/update", axum::routing::post(routes::api_outsourcing_update))

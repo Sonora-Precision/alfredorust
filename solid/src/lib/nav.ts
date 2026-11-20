@@ -11,6 +11,7 @@ import {
   FileText,
   Fingerprint,
   Home,
+  Receipt,
   Landmark,
   Lightbulb,
   Map as MapIcon,
@@ -131,6 +132,8 @@ export const NAV: NavEntry[] = [
   },
   // Quotes come before the project (Daniel, 2026-11-06); money, so admins only.
   { id: 'cotizaciones', label: 'Cotizaciones', icon: FileText, href: '/cotizaciones', can: admin },
+  // Invoices we issue: billed, collected and what is left to collect, with each REP (Daniel, 2026-11-19). Money: admins only.
+  { id: 'facturas', label: 'Facturas', icon: Receipt, href: '/facturas', can: admin },
   // Maquila suppliers: what each has and what it costs us (Daniel, 2026-11-13). Money: admins only.
   { id: 'maquila', label: 'Proveedores de maquila', icon: Truck, href: '/maquila', can: admin },
   // They say who was at which machine and when: admins only.

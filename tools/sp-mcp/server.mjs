@@ -56,6 +56,15 @@ const ROUTES = [
   ["POST", "/api/admin/cfdis/{uuid}/check-status", "Consultar estatus del CFDI en el SAT"],
   ["POST", "/api/sat/cfdi/download", "Iniciar descarga SAT (empresa activa)"],
 
+  // Registro de facturas (cuentas por cobrar). Cargar XML/PDF es multipart: se hace desde la web.
+  ["GET", "/api/admin/invoices", "Listar facturas emitidas (q, state=abiertas|pendiente|parcial|pagada|cancelada, currency, from, to)"],
+  ["GET", "/api/admin/invoices/summary", "Facturado, cobrado y por cobrar: por moneda, mes, antigüedad y cliente"],
+  ["GET", "/api/admin/invoices/{id}", "Ver factura con conceptos, pagos (REP) y archivos"],
+  ["POST", "/api/admin/invoices/sync_sat", "Cargar al registro las facturas, REP y notas de crédito ya descargadas del SAT"],
+  ["POST", "/api/admin/invoices/{id}/update", "Editar factura ({notes?, purchase_order?, due_on?, project_id?, status?: active|cancelled})"],
+  ["POST", "/api/admin/invoices/{id}/payments", "Registrar pago recibido sin REP ({paid_on, amount, currency?, exchange_rate?, note?})"],
+  ["POST", "/api/admin/invoices/{id}/payments/{payment_id}/delete", "Quitar un pago capturado a mano"],
+
   ["GET", "/api/admin/sat-configs", "Listar configuraciones FIEL"],
   ["GET", "/api/admin/sat-configs/{id}", "Ver configuración FIEL"],
   ["POST", "/api/admin/sat-configs", "Crear configuración FIEL"],

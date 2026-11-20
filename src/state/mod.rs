@@ -9,7 +9,7 @@ use crate::models::{
     Account, ApiToken, Category, Company, ConceptStatus, Contact, Forecast, MachineRun,
     PlannedEntry, ProcessOperation, Project, ProjectConcept, RecurringPlan, Resource, ResourceLog,
     ResourceUsage, ResourceUsageAllocation, SatConfig, ServiceOrder, Session, Transaction, User,
-    UserCompany, WorkOrderEvent, MachineQueueEntry, MachineState, MaterialPrice, MaterialPricePoint, MaterialQuote, MaterialReceipt, OutsourceJob, PartComment, PartFile, ProjectDocument, Suggestion, PlantLayout, Quote, QuoteFile, QuoteSettings, ClientQuoteDefaults,
+    UserCompany, WorkOrderEvent, MachineQueueEntry, MachineState, MaterialPrice, MaterialPricePoint, MaterialQuote, MaterialReceipt, Invoice, OutsourceJob, PartComment, PartFile, ProjectDocument, Suggestion, PlantLayout, Quote, QuoteFile, QuoteSettings, ClientQuoteDefaults,
     ShopDailyReport, AttendanceCorrection, AttendanceHoliday, AttendanceEmployee, AttendanceEvent,
 };
 use bson::Document;
@@ -59,6 +59,7 @@ mod orders;
 mod plant;
 mod part_files;
 mod outsourcing;
+mod invoices;
 mod project_documents;
 mod my_shift;
 mod process_operations;
@@ -88,6 +89,7 @@ pub use orders::*;
 pub use plant::*;
 pub use part_files::*;
 pub use outsourcing::*;
+pub use invoices::*;
 pub use project_documents::*;
 pub use my_shift::*;
 pub use process_operations::*;
@@ -156,6 +158,7 @@ pub struct AppState {
     pub quote_files: Collection<QuoteFile>,
     pub attendance_events: Collection<AttendanceEvent>,
     pub outsourcing_jobs: Collection<OutsourceJob>,
+    pub invoices: Collection<Invoice>,
     pub attendance_employees: Collection<AttendanceEmployee>,
     pub attendance_corrections: Collection<AttendanceCorrection>,
     pub attendance_holidays: Collection<AttendanceHoliday>,
@@ -385,6 +388,24 @@ pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppStat
         )
         .await
         .context("creating the outsourcing jobs index")?;
+    // One invoice per SAT UUID within a company; the list reads newest first.
+    db.collection::<Invoice>("invoices")
+        .create_index(
+            IndexModel::builder()
+                .keys(mongodb::bson::doc! { "company_id": 1, "uuid": 1 })
+                .options(IndexOptions::builder().unique(true).build())
+                .build(),
+        )
+        .await
+        .context("creating the invoices uuid index")?;
+    db.collection::<Invoice>("invoices")
+        .create_index(
+            IndexModel::builder()
+                .keys(mongodb::bson::doc! { "company_id": 1, "issued_at": -1 })
+                .build(),
+        )
+        .await
+        .context("creating the invoices date index")?;
     // Time-clock checks are re-sent by the agent; the unique key makes that a no-op.
     db.collection::<AttendanceEvent>("attendance_events")
         .create_index(
@@ -501,6 +522,7 @@ pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppStat
         quote_files: db.collection::<QuoteFile>("quote_files"),
         attendance_events: db.collection::<AttendanceEvent>("attendance_events"),
         outsourcing_jobs: db.collection::<OutsourceJob>("outsourcing_jobs"),
+        invoices: db.collection::<Invoice>("invoices"),
         attendance_employees: db.collection::<AttendanceEmployee>("attendance_employees"),
         attendance_corrections: db.collection::<AttendanceCorrection>("attendance_corrections"),
         attendance_holidays: db.collection::<AttendanceHoliday>("attendance_holidays"),

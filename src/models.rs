@@ -2434,3 +2434,190 @@ pub struct MaterialQuoteLine {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub material: Option<String>,
 }
+
+/// ---------- INVOICES (cuentas por cobrar) ----------
+
+/// What became of an issued invoice at the SAT.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum InvoiceStatus {
+    Active,
+    /// Cancelled: it does not count as billed or owed.
+    Cancelled,
+    /// Cancelled and issued again (the substitute carries the same work).
+    Replaced,
+}
+
+/// One line of the invoice; the description is usually the part number, which ties the
+/// invoice to the project's parts.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct InvoiceLine {
+    pub description: String,
+    pub quantity: f64,
+    pub unit_value: f64,
+    pub amount: f64,
+}
+
+/// A payment (REP), credit note or manual entry applied to an invoice.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InvoicePayment {
+    pub id: ObjectId,
+    pub paid_on: DateTime,
+    /// What came in, in `currency`.
+    pub amount: f64,
+    pub currency: String,
+    /// Exchange rate used to bring `amount` to the invoice currency: for a USD invoice paid
+    /// in MXN it is the MXN per USD of the payment day (DOF). 1 when both are the same.
+    pub exchange_rate: f64,
+    /// What it takes off the invoice, in the invoice's own currency.
+    pub applied: f64,
+    /// "rep" (payment complement), "nota_credito" or "manual" (money received, REP not
+    /// issued yet).
+    pub source: String,
+    /// UUID of the REP or credit note that backs it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cfdi_uuid: Option<String>,
+    /// Instalment number the REP declares.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub installment: Option<i32>,
+    /// Balance the REP says is left after this payment (for cross-checking ours).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub balance_after: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// A file kept with the invoice: its XML and PDF, and those of each REP or credit note.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InvoiceFile {
+    pub id: ObjectId,
+    /// "factura_xml", "factura_pdf", "rep_xml", "rep_pdf", "nc_xml", "nc_pdf" or "otro".
+    pub kind: String,
+    pub filename: String,
+    pub size_bytes: i64,
+    /// Path under the file store root.
+    pub storage_key: String,
+    /// UUID of the CFDI the file belongs to (the invoice's own, or the REP's).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cfdi_uuid: Option<String>,
+    pub uploaded_at: DateTime,
+}
+
+/// An invoice we issued, with what was paid on it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Invoice {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub company_id: ObjectId,
+    /// SAT UUID, lowercase.
+    pub uuid: String,
+    #[serde(default)]
+    pub serie: String,
+    pub folio: String,
+    pub issued_at: DateTime,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub due_on: Option<DateTime>,
+    pub customer_rfc: String,
+    pub customer_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contact_id: Option<ObjectId>,
+    /// "MXN" or "USD".
+    pub currency: String,
+    /// Exchange rate written on the invoice, when it is not MXN.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exchange_rate: Option<f64>,
+    pub subtotal: f64,
+    /// VAT charged.
+    #[serde(default)]
+    pub tax: f64,
+    /// Taxes withheld by the customer (ISR 1.25% and the like).
+    #[serde(default)]
+    pub withholding: f64,
+    /// What the customer owes: subtotal + VAT − withholdings.
+    pub total: f64,
+    /// "PPD" (paid later, needs a REP) or "PUE" (paid at once).
+    pub payment_method: String,
+    pub status: InvoiceStatus,
+    /// UUID of the invoice that took its place.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replaced_by: Option<String>,
+    /// UUIDs of the invoices this one replaces (its CFDI relation "04").
+    #[serde(default)]
+    pub replaces: Vec<String>,
+    #[serde(default)]
+    pub lines: Vec<InvoiceLine>,
+    #[serde(default)]
+    pub payments: Vec<InvoicePayment>,
+    #[serde(default)]
+    pub files: Vec<InvoiceFile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<ObjectId>,
+    /// The customer's purchase order number.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub purchase_order: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+    pub created_at: DateTime,
+    pub updated_at: DateTime,
+}
+
+fn cents(v: f64) -> f64 {
+    (v * 100.0).round() / 100.0
+}
+
+impl Invoice {
+    /// Total applied by payments and credit notes, in the invoice currency.
+    pub fn paid(&self) -> f64 {
+        cents(self.payments.iter().map(|p| p.applied).sum())
+    }
+
+    /// What is still owed. A cancelled or replaced invoice owes nothing, and a PUE one
+    /// without payments on record was paid when issued.
+    ///
+    /// With REPs on record the SAT's own running balance wins: the balance the latest REP
+    /// declares, less what was paid or credited outside a REP. That keeps the number right even
+    /// when an earlier REP is missing from our files. Without REPs it is the total less what was
+    /// applied.
+    pub fn balance(&self) -> f64 {
+        match self.status {
+            InvoiceStatus::Cancelled | InvoiceStatus::Replaced => 0.0,
+            InvoiceStatus::Active => {
+                if self.payments.is_empty() && self.payment_method == "PUE" {
+                    return 0.0;
+                }
+                let latest_rep = self
+                    .payments
+                    .iter()
+                    .filter(|p| p.source == "rep" && p.balance_after.is_some())
+                    .max_by_key(|p| (p.installment.unwrap_or(0), p.paid_on.timestamp_millis()));
+                let owed = match latest_rep.and_then(|p| p.balance_after) {
+                    Some(declared) => {
+                        let outside: f64 = self.payments.iter().filter(|p| p.source != "rep").map(|p| p.applied).sum();
+                        cents((declared - outside).max(0.0))
+                    }
+                    None => cents((self.total - self.paid()).max(0.0)),
+                };
+                // A cent or two left by the SAT's rounding is not money owed.
+                let rounding = if self.currency == "USD" { 0.05 } else { 1.0 };
+                if !self.payments.is_empty() && owed < rounding { 0.0 } else { owed }
+            }
+        }
+    }
+
+    /// What was settled: the total less what is still owed (so paid + owed always make the
+    /// total), or the raw sum for an invoice that no longer counts.
+    pub fn settled(&self) -> f64 {
+        match self.status {
+            InvoiceStatus::Active => cents((self.total - self.balance()).max(0.0)),
+            _ => self.paid(),
+        }
+    }
+
+    /// Share still owed, 0–100 (100 = nothing paid, 0 = settled).
+    pub fn pending_pct(&self) -> f64 {
+        if self.total <= 0.0 {
+            return 0.0;
+        }
+        ((self.balance() / self.total) * 10_000.0).round() / 100.0
+    }
+}

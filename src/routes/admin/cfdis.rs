@@ -484,7 +484,7 @@ pub async fn cfdi_transactions_bulk_api(
     Ok(Json(response))
 }
 
-fn cfdi_archive_candidates(
+pub(crate) fn cfdi_archive_candidates(
     root: &std::path::Path,
     slug: &str,
     company_rfcs: &[String],

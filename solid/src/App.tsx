@@ -25,6 +25,7 @@ const Accounts = lazyWithReload(() => import('./pages/Accounts'))
 const Categories = lazyWithReload(() => import('./pages/Categories'))
 const Contacts = lazyWithReload(() => import('./pages/Contacts'))
 const OutsourcingSuppliers = lazyWithReload(() => import('./pages/OutsourcingSuppliers'))
+const Invoices = lazyWithReload(() => import('./pages/Invoices'))
 const Transactions = lazyWithReload(() => import('./pages/Transactions'))
 const RecurringPlans = lazyWithReload(() => import('./pages/RecurringPlans'))
 const PlannedEntries = lazyWithReload(() => import('./pages/PlannedEntries'))
@@ -78,6 +79,7 @@ export default function App(): JSX.Element {
         <Route path="/categories" component={Categories} />
         <Route path="/contacts" component={Contacts} />
         <Route path="/maquila" component={OutsourcingSuppliers} />
+        <Route path="/facturas" component={Invoices} />
         <Route path="/transactions" component={Transactions} />
         <Route path="/recurring-plans" component={RecurringPlans} />
         <Route path="/planned-entries" component={PlannedEntries} />

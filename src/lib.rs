@@ -1,4 +1,5 @@
 pub mod cfdi;
+pub mod invoices;
 pub mod filters;
 pub mod models;
 pub mod redact;
