@@ -18,14 +18,14 @@ import {
   updatePartProgress,
   updateProcessOperation,
 } from '../../lib/api/operations'
-import { getPlant, listBoardMembers, releaseWorkOrder, setPartOwner, setPartProgrammer, takeWorkOrder } from '../../lib/api/production'
+import { getPlant, listBoardMembers, recordQuality, releaseWorkOrder, setPartOwner, setPartProgrammer, takeWorkOrder } from '../../lib/api/production'
 import { PartMachines, placesByPart } from './PartMachines'
 import { folioOf, matchesWorkOrder } from '../production/WorkOrderSearch'
 import { type PartFile, listProjectPartFiles } from '../../lib/api/partFiles'
 import { PartDrawing } from './PartDrawing'
 import { PartCost } from './PartCost'
 import { PartComments } from './PartComments'
-import { PartOutsourcing } from './PartOutsourcing'
+import { PartOutsourcing, ProjectOutsourceModal } from './PartOutsourcing'
 import { type OutsourceJob, listProjectOutsourcing } from '../../lib/api/outsourcing'
 import { SetupProgress, activeCounts, isCountOp, isSetupOp, pendingForPieces, programaDone, stepPieces } from './SetupProgress'
 import { GAP_LABEL, type Gap, GapBar, QuickPrices, gapsOf } from './PartGaps'
@@ -395,6 +395,34 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
     for (const j of outsourcingQuery.data ?? []) map.set(j.concept_id, [...(map.get(j.concept_id) ?? []), j])
     return map
   })
+  /** The supplier that makes the whole part (pieza completa), if any: it is not ours to make. */
+  const wholeJobOf = (conceptId: string): OutsourceJob | undefined =>
+    (outsourcingOf().get(conceptId) ?? []).find((j) => j.status !== 'cancelled' && j.operation_ids.length === 0)
+  const [outsourceAllOpen, setOutsourceAllOpen] = createSignal(false)
+  // Pieces produced and waiting for quality; the admin releases them all once quality has looked.
+  const awaitingOf = (c: ProjectConcept) => Math.max(0, c.completed_quantity - releasedOf(c) - rejectedOf(c))
+  const awaitingParts = createMemo(() => counted().filter((c) => awaitingOf(c) > 0))
+  const awaitingPieces = () => awaitingParts().reduce((s, c) => s + awaitingOf(c), 0)
+  const releaseAll = createMutation(() => ({
+    mutationFn: async () => {
+      for (const c of awaitingParts()) await recordQuality(c.id, { released: awaitingOf(c), rejected: 0 })
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['project-concepts', props.projectId] })
+      void qc.invalidateQueries({ queryKey: ['production'] })
+      toast.success('Piezas liberadas')
+    },
+    onError: (err) => {
+      void qc.invalidateQueries({ queryKey: ['project-concepts', props.projectId] })
+      toast.error('No se pudo liberar todo', humanizeError(err, 'Algunas partes pueden haber quedado liberadas; revisa.'))
+    },
+  }))
+  const releaseAllAsk = () => {
+    const ok = window.confirm(
+      '¿Calidad ya revisó ' + num(awaitingPieces()) + ' piezas de ' + awaitingParts().length + ' números de parte?\nSe liberan todas.',
+    )
+    if (ok) releaseAll.mutate()
+  }
   // Each part's row in the saw's cut list ("Pasar a corte" / place in the queue).
   const cutQuery = createQuery(() => ({ queryKey: ['cut-list'], queryFn: getCutList }))
   const cutOf = createMemo(() => new Map((cutQuery.data ?? []).map((i) => [i.concept_id, i])))
@@ -484,6 +512,9 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
               <p>
                 <span class="font-semibold text-foreground">{num(totals().finished)}</span> de {num(totals().ordered)} piezas liberadas
               </p>
+              <Show when={awaitingParts().length > 0}>
+                <p class="font-medium text-amber-600">{num(awaitingPieces())} producidas, por liberar en Calidad</p>
+              </Show>
               <p>
                 {totals().partsDone} de {totals().parts} números de parte completos
               </p>
@@ -579,6 +610,20 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
             />
             Ordenar por material
           </label>
+          <Show when={props.canConfigure}>
+            <div class="mt-2 flex flex-wrap gap-2">
+              <Show when={props.canSeeMoney}>
+                <Button variant="outline" class="h-8 px-3 text-xs" onClick={() => setOutsourceAllOpen(true)}>
+                  Mandar todo el proyecto a maquila
+                </Button>
+              </Show>
+              <Show when={awaitingParts().length > 0}>
+                <Button variant="outline" class="h-8 px-3 text-xs" disabled={releaseAll.isPending} onClick={releaseAllAsk}>
+                  Liberar lo producido ({num(awaitingPieces())} pzs)
+                </Button>
+              </Show>
+            </div>
+          </Show>
           <Show when={props.canEdit}>
             <GapBar
               counts={gapCounts()}
@@ -658,6 +703,9 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
                         file={drawingOf().get(c.id)}
                         canUpload={props.canUploadFiles}
                       />
+                      <Show
+                        when={wholeJobOf(c.id) && !wholeJobOf(c.id)!.material_by_us}
+                        fallback={
                       <PartMaterialCell
                         conceptId={c.id}
                         partName={c.name}
@@ -668,13 +716,21 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
                         canEdit={props.canEdit && !cancelled()}
                         cut={cutOf().get(c.id)}
                       />
-                      <PartMachines
-                        conceptId={c.id}
-                        partName={c.name}
-                        places={placesOf().get(c.id) ?? []}
-                        machines={machines()}
-                        canEdit={props.canEdit && !cancelled()}
-                      />
+                        }
+                      >
+                        <p class="mt-0.5 text-xs text-muted-foreground">
+                          Material: lo compra {wholeJobOf(c.id)!.supplier_name ?? 'el proveedor'}
+                        </p>
+                      </Show>
+                      <Show when={!wholeJobOf(c.id)}>
+                        <PartMachines
+                          conceptId={c.id}
+                          partName={c.name}
+                          places={placesOf().get(c.id) ?? []}
+                          machines={machines()}
+                          canEdit={props.canEdit && !cancelled()}
+                        />
+                      </Show>
                       {/* Held up steps say what is missing, in sight (Daniel, 2026-11-06). */}
                       <For each={c.process_steps.filter((s) => s.state === 'blocked')}>
                         {(s) => (
@@ -735,6 +791,10 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
                     </TableCell>
                     <Show when={props.canSeeAssignees}>
                       <TableCell class="whitespace-nowrap text-sm">
+                        <Show
+                          when={wholeJobOf(c.id)}
+                          fallback={
+                        <>
                         {/* The responsible person makes the part and holds its setups; the
                             programmer may be someone else (Daniel, 2026-11-10). */}
                         <Show
@@ -852,6 +912,15 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
                             </div>
                           )}
                         </Show>
+                        </>
+                          }
+                        >
+                          {(job) => (
+                            <span class="rounded bg-sky-500/15 px-1.5 py-0.5 text-xs font-semibold text-sky-700 dark:text-sky-300">
+                              {job().status === 'received' ? 'Recibida de' : 'En maquila con'} {job().supplier_name ?? 'el proveedor'}
+                            </span>
+                          )}
+                        </Show>
                       </TableCell>
                     </Show>
                     <For each={activeOps()}>{(op) => (
@@ -884,10 +953,10 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
                           {' · '}
                           <span class="text-rose-500">✖ {num(rejectedOf(c))} rechazadas</span>
                         </Show>
-                        <Show when={c.completed_quantity - releasedOf(c) - rejectedOf(c) > 0}>
+                        <Show when={awaitingOf(c) > 0}>
                           {' · '}
-                          <span class="text-amber-600">
-                            {num(c.completed_quantity - releasedOf(c) - rejectedOf(c))} en liberación
+                          <span class="font-semibold text-amber-600">
+                            {num(awaitingOf(c))} {wholeJobOf(c.id) ? 'recibidas, por liberar en Calidad' : 'en liberación'}
                           </span>
                         </Show>
                       </p>
@@ -900,6 +969,14 @@ export function PartTracking(props: PartTrackingProps): JSX.Element {
         </div>
       </Card>
 
+      <Show when={outsourceAllOpen()}>
+        <ProjectOutsourceModal
+          projectId={props.projectId}
+          parts={counted()}
+          jobs={outsourcingQuery.data ?? []}
+          onClose={() => setOutsourceAllOpen(false)}
+        />
+      </Show>
       <ProcessOperationsModal open={configOpen()} onOpenChange={setConfigOpen} operations={opsQuery.data ?? []} />
       <Show when={quickPrices()}>
         {(parts) => <QuickPrices projectId={props.projectId} parts={parts()} onClose={() => setQuickPrices(null)} />}

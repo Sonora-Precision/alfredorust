@@ -376,3 +376,120 @@ function OutsourceModal(props: {
     </Modal>
   )
 }
+
+/**
+ * "Mandar todo el proyecto a maquila": one whole-part job per part with the same supplier, the
+ * cost split in proportion to each part's sale price (so every part keeps the same margin).
+ * Parts that already have a whole-part job are left alone.
+ */
+export function ProjectOutsourceModal(props: {
+  projectId: string
+  parts: ProjectConcept[]
+  jobs: OutsourceJob[]
+  onClose: () => void
+}): JSX.Element {
+  const qc = useQueryClient()
+  const contacts = createQuery(() => ({ queryKey: ['contacts'], queryFn: listContacts }))
+  const suppliers = createMemo(() =>
+    (contacts.data ?? [])
+      .filter((c) => c.kind === 'supplier' || c.kind === 'service')
+      .sort(
+        (a, b) =>
+          Number(!!b.outsourcing) - Number(!!a.outsourcing) || (a.alias ?? a.name).localeCompare(b.alias ?? b.name, 'es'),
+      ),
+  )
+  const hasWholeJob = (id: string) => props.jobs.some((j) => j.concept_id === id && j.status !== 'cancelled' && j.operation_ids.length === 0)
+  const todo = createMemo(() => props.parts.filter((c) => !hasWholeJob(c.id)))
+  const [supplierId, setSupplierId] = createSignal('')
+  const [totalCost, setTotalCost] = createSignal('')
+  const [status, setStatus] = createSignal<OutsourceStatus>('received')
+  const sale = createMemo(() => todo().reduce((s, c) => s + (c.unit_price ?? 0) * c.quantity, 0))
+  const cost = () => {
+    const v = Number(totalCost().replace(/[\s,]/g, ''))
+    return totalCost().trim() !== '' && Number.isFinite(v) && v >= 0 ? v : null
+  }
+  const share = () => (cost() != null && sale() > 0 ? cost()! / sale() : null)
+
+  const send = createMutation(() => ({
+    mutationFn: async () => {
+      for (const c of todo()) {
+        await createOutsourcing({
+          concept_id: c.id,
+          supplier_id: supplierId(),
+          operation_ids: [],
+          quantity: c.quantity,
+          unit_cost: share() != null && c.unit_price != null ? Math.round(c.unit_price * share()! * 100) / 100 : null,
+          material_by_us: false,
+          due_date: null,
+          status: status(),
+          received_quantity: status() === 'received' ? c.quantity : 0,
+          notes: null,
+        })
+      }
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['outsourcing', props.projectId] })
+      void qc.invalidateQueries({ queryKey: ['project-concepts', props.projectId] })
+      toast.success('Proyecto mandado a maquila', `${todo().length} partes con el proveedor.`)
+      props.onClose()
+    },
+    onError: (err) => {
+      void qc.invalidateQueries({ queryKey: ['outsourcing', props.projectId] })
+      toast.error('No se pudo mandar todo a maquila', humanizeError(err, 'Algunas partes pueden haber quedado registradas; revisa.'))
+    },
+  }))
+
+  const label = 'text-xs font-medium text-muted-foreground'
+  return (
+    <Modal open onOpenChange={(o) => !o && props.onClose()} title="Mandar todo el proyecto a maquila">
+      <div class="space-y-3 text-sm">
+        <p class="text-muted-foreground">
+          Crea un envío de pieza completa por cada número de parte ({todo().length} de {props.parts.length}). Las que ya tienen
+          maquila de pieza completa no se tocan. El proveedor compra el material.
+        </p>
+        <div class="space-y-1">
+          <label class={label} for="project-outsource-supplier">Proveedor</label>
+          <select
+            id="project-outsource-supplier"
+            class="h-9 w-full rounded-md border border-border bg-background px-2 text-foreground"
+            onChange={(e) => setSupplierId(e.currentTarget.value)}
+          >
+            <option value="" selected>Elige un proveedor</option>
+            <For each={suppliers()}>{(c) => <option value={c.id}>{c.alias ?? c.name}</option>}</For>
+          </select>
+        </div>
+        <div class="space-y-1">
+          <label class={label} for="project-outsource-cost">Costo total al proveedor (sin IVA, opcional)</label>
+          <Input id="project-outsource-cost" inputmode="decimal" value={totalCost()} onInput={setTotalCost} placeholder="22431.79" />
+          <Show when={share() != null}>
+            <p class="tnum text-xs text-muted-foreground">
+              {money(cost()!)} de {money(sale())} de venta: el proveedor se lleva {(share()! * 100).toFixed(1)}% y a nosotros nos queda{' '}
+              {money(sale() - cost()!)} ({((1 - share()!) * 100).toFixed(1)}%). Se reparte en proporción al precio de cada parte.
+            </p>
+          </Show>
+        </div>
+        <div class="space-y-1">
+          <label class={label} for="project-outsource-status">Estado</label>
+          <select
+            id="project-outsource-status"
+            class="h-9 w-full rounded-md border border-border bg-background px-2 text-foreground"
+            onChange={(e) => setStatus(e.currentTarget.value as OutsourceStatus)}
+          >
+            <For each={['planned', 'sent', 'received'] as OutsourceStatus[]}>
+              {(s) => <option value={s} selected={s === status()}>{STATUS_LABEL[s]}</option>}
+            </For>
+          </select>
+          <Show when={status() === 'received'}>
+            <p class="text-xs text-muted-foreground">Las piezas quedan producidas y esperan la revisión de Calidad.</p>
+          </Show>
+        </div>
+        <div class="flex justify-end gap-2 pt-1">
+          <Button variant="ghost" onClick={props.onClose}>Cancelar</Button>
+          <Button disabled={!supplierId() || todo().length === 0 || send.isPending} onClick={() => send.mutate()}>
+            {send.isPending ? 'Mandando…' : `Mandar ${todo().length} partes`}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
