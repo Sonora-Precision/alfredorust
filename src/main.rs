@@ -782,6 +782,8 @@ async fn main() {
         .route("/api/admin/invoices/sync_sat", axum::routing::post(routes::api_invoices_sync_sat))
         .route("/api/admin/invoices/{id}", get(routes::api_invoice))
         .route("/api/admin/invoices/{id}/update", axum::routing::post(routes::api_invoice_update))
+        .route("/api/admin/invoices/{id}/project_suggestions", get(routes::api_invoice_project_suggestions))
+        .route("/api/admin/projects/{id}/invoices", get(routes::api_project_invoices))
         .route("/api/admin/invoices/{id}/payments", axum::routing::post(routes::api_invoice_payment_add))
         .route(
             "/api/admin/invoices/{id}/payments/{payment_id}/delete",

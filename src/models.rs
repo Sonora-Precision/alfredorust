@@ -2550,8 +2550,10 @@ pub struct Invoice {
     pub payments: Vec<InvoicePayment>,
     #[serde(default)]
     pub files: Vec<InvoiceFile>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub project_id: Option<ObjectId>,
+    /// Projects this invoice bills (Daniel, 2026-11-20): one PO can span several projects
+    /// and one invoice can cover several of them, so the link is many-to-many.
+    #[serde(default)]
+    pub project_ids: Vec<ObjectId>,
     /// The customer's purchase order number.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub purchase_order: Option<String>,

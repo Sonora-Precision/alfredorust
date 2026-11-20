@@ -2,6 +2,7 @@
 // se ha cobrado y lo que falta por cobrar, factura por factura, con su PDF/XML y cada
 // complemento de pago (REP). Los montos salen del XML, no de porcentajes a ojo: 100% es que
 // te deben toda la factura y 0% que ya se pagó. Dinero: sólo administradores.
+import { A } from '@solidjs/router'
 import { createMutation, createQuery, useQueryClient } from '@tanstack/solid-query'
 import { FileDown, FileText, RefreshCw, Trash2, Upload } from 'lucide-solid'
 import { type JSX, For, Show, createMemo, createSignal } from 'solid-js'
@@ -18,6 +19,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeadCell, TableRow } from 
 import { toast } from '../components/ui/Toast'
 import { humanizeError } from '../lib/api/client'
 import * as api from '../lib/api/invoices'
+import { listProjectOptions } from '../lib/api/operations'
 import { FILE_KIND_LABEL, type ImportReport, type InvoiceDetail, type InvoiceRow, type InvoiceState, STATE_LABEL } from '../lib/api/invoices'
 import { cn } from '../lib/cn'
 import { money } from '../lib/format'
@@ -373,6 +375,21 @@ function InvoiceDrawer(props: { id: string | null; onClose: () => void; onChange
   }))
   const inv = () => detail.data
 
+  // Projects to link to, and the ones whose part numbers the invoice lines name.
+  const projects = createQuery(() => ({
+    queryKey: ['project-options'],
+    queryFn: listProjectOptions,
+    enabled: !!props.id,
+    staleTime: 60_000,
+  }))
+  const projectTitle = (pid: string) => (projects.data ?? []).find((p) => p.id === pid)?.title ?? 'Proyecto'
+  const suggestionsQuery = createQuery(() => ({
+    queryKey: ['invoice-project-suggestions', props.id],
+    queryFn: () => api.invoiceProjectSuggestions(props.id as string),
+    enabled: !!props.id,
+  }))
+  const suggestions = () => (suggestionsQuery.data ?? []).filter((s) => !(inv()?.project_ids ?? []).includes(s.project_id))
+
   const saved = (d: InvoiceDetail) => {
     qc.setQueryData(['invoice', d.id], d)
     props.onChanged()
@@ -421,6 +438,7 @@ function InvoiceDrawer(props: { id: string | null; onClose: () => void; onChange
       setDue(null)
       setPo(null)
       setNotes(null)
+      void qc.invalidateQueries({ queryKey: ['project-invoices'] })
       toast.success('Guardado')
     },
     onError: fail('No se pudo guardar'),
@@ -488,6 +506,60 @@ function InvoiceDrawer(props: { id: string | null; onClose: () => void; onChange
                 <Input value={notes() ?? d().notes ?? ''} onInput={setNotes} />
               </label>
             </div>
+            <section>
+              <span class="text-[11px] uppercase tracking-wide text-muted-foreground">Proyectos que cubre</span>
+              <div class="mt-1 flex flex-wrap items-center gap-1.5">
+                <For each={d().project_ids}>
+                  {(pid) => (
+                    <span class="inline-flex items-center gap-1 rounded-full bg-sky-500/15 px-2 py-0.5 text-xs font-medium text-sky-600">
+                      <A href={`/projects/${pid}`} class="hover:underline">{projectTitle(pid)}</A>
+                      <button
+                        type="button"
+                        class="text-sky-600/70 hover:text-rose-500"
+                        aria-label={`Quitar ${projectTitle(pid)}`}
+                        disabled={updateMutation.isPending}
+                        onClick={() => updateMutation.mutate({ project_ids: d().project_ids.filter((x) => x !== pid) })}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  )}
+                </For>
+                <Show when={d().project_ids.length === 0}>
+                  <span class="text-xs text-muted-foreground">Sin proyecto. Vincúlala para ver su factura y pagos dentro del proyecto.</span>
+                </Show>
+              </div>
+              <Show when={suggestions().length > 0}>
+                <div class="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                  Por números de parte:
+                  <For each={suggestions()}>
+                    {(s) => (
+                      <button
+                        type="button"
+                        class="rounded-full border border-dashed border-sky-500/60 px-2 py-0.5 font-medium text-sky-600 hover:bg-sky-500/10"
+                        disabled={updateMutation.isPending}
+                        onClick={() => updateMutation.mutate({ project_ids: [...d().project_ids, s.project_id] })}
+                      >
+                        + {s.title} ({s.matches} {s.matches === 1 ? 'partida' : 'partidas'})
+                      </button>
+                    )}
+                  </For>
+                </div>
+              </Show>
+              <Select
+                class="mt-2 max-w-xs"
+                aria-label="Vincular a un proyecto"
+                value=""
+                onChange={(v) => {
+                  if (v) updateMutation.mutate({ project_ids: [...d().project_ids, v] })
+                }}
+              >
+                <option value="">+ Vincular a otro proyecto…</option>
+                <For each={(projects.data ?? []).filter((p) => !d().project_ids.includes(p.id))}>
+                  {(p) => <option value={p.id}>{p.title}</option>}
+                </For>
+              </Select>
+            </section>
             <div class="flex flex-wrap gap-2">
               <Show when={dirty()}>
                 <Button

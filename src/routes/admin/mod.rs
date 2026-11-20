@@ -65,7 +65,8 @@ pub use floor::api_production_floor;
 pub use my_shift::{api_my_shift, api_my_shift_people};
 pub use invoices::{
     api_invoice, api_invoice_file_add, api_invoice_file_download, api_invoice_payment_add, api_invoice_payment_delete,
-    api_invoice_update, api_invoices, api_invoices_import, api_invoices_summary, api_invoices_sync_sat,
+    api_invoice_project_suggestions, api_invoice_update, api_invoices, api_invoices_import, api_invoices_summary,
+    api_invoices_sync_sat, api_project_invoices,
 };
 pub use outsourcing::{api_outsourcing_create, api_outsourcing_delete, api_outsourcing_index, api_outsourcing_suppliers, api_outsourcing_update};
 pub use material_cost::{

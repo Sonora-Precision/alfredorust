@@ -31,6 +31,17 @@ pub async fn list_invoices(state: &AppState, company_id: &ObjectId) -> Result<Ve
         .await?)
 }
 
+/// Invoices linked to a project, newest first.
+pub async fn list_project_invoices(state: &AppState, company_id: &ObjectId, project_id: &ObjectId) -> Result<Vec<Invoice>> {
+    Ok(state
+        .invoices
+        .find(doc! { "company_id": company_id, "project_ids": project_id })
+        .sort(doc! { "issued_at": -1 })
+        .await?
+        .try_collect()
+        .await?)
+}
+
 pub async fn get_invoice(state: &AppState, company_id: &ObjectId, id: &ObjectId) -> Result<Option<Invoice>> {
     Ok(state.invoices.find_one(doc! { "_id": id, "company_id": company_id }).await?)
 }
@@ -238,7 +249,7 @@ fn new_invoice(company_id: ObjectId, p: &ParsedInvoice) -> Invoice {
         lines: p.lines.clone(),
         payments: Vec::new(),
         files: Vec::new(),
-        project_id: None,
+        project_ids: Vec::new(),
         purchase_order: None,
         notes: None,
         created_at: now,

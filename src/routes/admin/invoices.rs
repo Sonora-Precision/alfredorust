@@ -25,8 +25,8 @@ use crate::{
     session::SessionUser,
     state::{
         AppState, ManualPayment, UploadedFile, add_invoice_file, add_manual_payment, delete_manual_payment,
-        get_company_by_id, get_invoice, get_project_by_id_for_company, import_files, list_invoices, list_sat_configs,
-        read_invoice_file, replace_invoice,
+        get_company_by_id, get_invoice, get_project_by_id_for_company, import_files, list_invoices, list_project_invoices,
+        list_projects, list_sat_configs, read_invoice_file, replace_invoice,
     },
 };
 
@@ -65,7 +65,7 @@ pub struct InvoiceRow {
     /// Money received that has no REP yet (PPD): ask the accountant for it.
     pub missing_rep: bool,
     pub purchase_order: Option<String>,
-    pub project_id: Option<String>,
+    pub project_ids: Vec<String>,
     pub notes: Option<String>,
 }
 
@@ -162,7 +162,7 @@ fn row_of(inv: &Invoice, now_ms: i64) -> Option<InvoiceRow> {
             && inv.payment_method == "PPD"
             && inv.payments.iter().any(|p| p.source == "manual"),
         purchase_order: inv.purchase_order.clone(),
-        project_id: inv.project_id.map(|p| p.to_hex()),
+        project_ids: inv.project_ids.iter().map(|p| p.to_hex()).collect(),
         notes: inv.notes.clone(),
     })
 }
@@ -299,6 +299,89 @@ pub async fn api_invoice(
         Ok(None) => json_error(StatusCode::NOT_FOUND, "invoice not found"),
         Err(_) => json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not load invoice"),
     }
+}
+
+/// The invoices of a project with their files (XML, PDF, REPs) and payments, so the whole
+/// paper trail is found inside the project (Daniel, 2026-11-20).
+pub async fn api_project_invoices(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(project_id): Path<String>,
+) -> Response {
+    if !session_user.is_admin() {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let company_id = require_active_company(&session_user);
+    let project_id = match parse_oid(&project_id) {
+        Ok(id) => id,
+        Err(resp) => return resp,
+    };
+    match list_project_invoices(&state, &company_id, &project_id).await {
+        Ok(invoices) => Json(invoices.iter().filter_map(detail_of).collect::<Vec<_>>()).into_response(),
+        Err(_) => json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not list the project's invoices"),
+    }
+}
+
+#[derive(Serialize)]
+struct ProjectSuggestion {
+    project_id: String,
+    title: String,
+    /// Invoice lines that name a part of this project.
+    matches: usize,
+}
+
+/// Projects whose parts appear in the invoice lines: the part number is the link between
+/// what we quoted and what the accountant billed.
+pub async fn api_invoice_project_suggestions(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Response {
+    if !session_user.is_admin() {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let company_id = require_active_company(&session_user);
+    let id = match parse_oid(&id) {
+        Ok(id) => id,
+        Err(resp) => return resp,
+    };
+    let Ok(Some(inv)) = get_invoice(&state, &company_id, &id).await else {
+        return json_error(StatusCode::NOT_FOUND, "invoice not found");
+    };
+    let (Ok(projects), Ok(concepts)) = (
+        list_projects(&state, &company_id).await,
+        state.project_concepts.find(doc! { "company_id": company_id }).await,
+    ) else {
+        return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not read the projects");
+    };
+    use futures::stream::TryStreamExt;
+    let Ok(concepts) = concepts.try_collect::<Vec<_>>().await else {
+        return json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not read the project parts");
+    };
+    let lines: Vec<String> = inv.lines.iter().map(|l| l.description.to_lowercase()).collect();
+    let mut counts: BTreeMap<ObjectId, usize> = BTreeMap::new();
+    for line in &lines {
+        let mut hit: Vec<ObjectId> = Vec::new();
+        for c in &concepts {
+            let name = c.name.trim().to_lowercase();
+            // Short names ("1", "base") would match everything.
+            if name.len() >= 5 && line.contains(&name) && !hit.contains(&c.project_id) {
+                hit.push(c.project_id);
+            }
+        }
+        for p in hit {
+            *counts.entry(p).or_default() += 1;
+        }
+    }
+    let mut out: Vec<ProjectSuggestion> = counts
+        .into_iter()
+        .filter_map(|(pid, matches)| {
+            let p = projects.iter().find(|p| p.id == Some(pid))?;
+            Some(ProjectSuggestion { project_id: pid.to_hex(), title: p.title.clone(), matches })
+        })
+        .collect();
+    out.sort_by(|a, b| b.matches.cmp(&a.matches));
+    Json(out).into_response()
 }
 
 // ── Summary ───────────────────────────────────────────────────────────────
@@ -649,8 +732,8 @@ pub struct InvoiceUpdate {
     pub purchase_order: Option<String>,
     /// YYYY-MM-DD; empty clears it.
     pub due_on: Option<String>,
-    /// Project hex id; empty clears it.
-    pub project_id: Option<String>,
+    /// Projects the invoice bills (hex ids); replaces the whole list, empty clears it.
+    pub project_ids: Option<Vec<String>>,
     /// "active" or "cancelled" (the SAT status the XML cannot tell).
     pub status: Option<String>,
 }
@@ -694,20 +777,21 @@ pub async fn api_invoice_update(
             },
         };
     }
-    if let Some(v) = clean(body.project_id) {
-        inv.project_id = match v {
-            None => None,
-            Some(p) => {
-                let pid = match parse_oid(&p) {
-                    Ok(pid) => pid,
-                    Err(resp) => return resp,
-                };
-                if !matches!(get_project_by_id_for_company(&state, &pid, &company_id).await, Ok(Some(_))) {
-                    return json_error(StatusCode::NOT_FOUND, "project not found");
-                }
-                Some(pid)
+    if let Some(list) = body.project_ids {
+        let mut ids: Vec<ObjectId> = Vec::new();
+        for p in list.iter().map(|p| p.trim()).filter(|p| !p.is_empty()) {
+            let pid = match parse_oid(p) {
+                Ok(pid) => pid,
+                Err(resp) => return resp,
+            };
+            if !matches!(get_project_by_id_for_company(&state, &pid, &company_id).await, Ok(Some(_))) {
+                return json_error(StatusCode::NOT_FOUND, "project not found");
             }
-        };
+            if !ids.contains(&pid) {
+                ids.push(pid);
+            }
+        }
+        inv.project_ids = ids;
     }
     match body.status.as_deref() {
         None | Some("") => {}

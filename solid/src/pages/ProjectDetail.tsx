@@ -17,6 +17,7 @@ import { MaterialRequest } from '../components/projects/MaterialRequest'
 import { PartTracking } from '../components/projects/PartTracking'
 import { ProjectSourceQuote } from '../components/projects/ProjectSourceQuote'
 import { ProjectDocuments } from '../components/projects/ProjectDocuments'
+import { ProjectInvoices } from '../components/projects/ProjectInvoices'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Select } from '../components/ui/Select'
 import { Spinner } from '../components/ui/Spinner'
@@ -321,6 +322,7 @@ export default function ProjectDetail(): JSX.Element {
       <Show when={isAdmin()}>
         <ProjectSourceQuote projectId={params.id} />
         <ProjectDocuments projectId={params.id} />
+        <ProjectInvoices projectId={params.id} />
       </Show>
 
       <Show when={(machineQuery.data?.runs ?? 0) > 0}>

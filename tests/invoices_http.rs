@@ -273,6 +273,59 @@ async fn invoice_register_flow_and_permissions() {
     .await;
     assert_eq!(status.as_u16(), 400);
 
+    // Projects: the part numbers on the invoice suggest the project, the link is many-to-many
+    // and the project lists the invoice with its files and payments.
+    create_concept_status(&state, &company, "En espera", 1, None, true, false, false, true).await.unwrap();
+    let project = create_project(&state, &company, "Estaciones Braba", None, None, None, ProjectPriority::Medium, Some(9000.0), None, None)
+        .await
+        .unwrap();
+    let other = create_project(&state, &company, "Otro proyecto", None, None, None, ProjectPriority::Medium, Some(1.0), None, None)
+        .await
+        .unwrap();
+    create_project_concept(
+        &state, &company, &project, None, "ZBL124-A", 1.0, Some("pza".into()), None, None, Some(1000.0), None, 1,
+    )
+    .await
+    .unwrap();
+    let (status, body) = get(format!("/api/admin/invoices/{id}/project_suggestions"), admin.clone()).await;
+    assert_eq!(status.as_u16(), 200, "{body}");
+    let sug = json(&body);
+    assert_eq!(sug.as_array().unwrap().len(), 1);
+    assert_eq!(sug[0]["project_id"], project.to_hex());
+    assert_eq!(sug[0]["matches"], 1);
+    let (status, body) = post(
+        format!("/api/admin/invoices/{id}/update"),
+        admin.clone(),
+        serde_json::json!({ "project_ids": [project.to_hex(), other.to_hex(), project.to_hex()] }),
+    )
+    .await;
+    assert_eq!(status.as_u16(), 200, "{body}");
+    assert_eq!(json(&body)["project_ids"].as_array().unwrap().len(), 2, "no duplicates");
+    let (status, body) = get(format!("/api/admin/projects/{}/invoices", project.to_hex()), admin.clone()).await;
+    assert_eq!(status.as_u16(), 200, "{body}");
+    let linked = json(&body);
+    assert_eq!(linked.as_array().unwrap().len(), 1);
+    assert_eq!(linked[0]["folio"], "141");
+    assert!(linked[0]["files"].as_array().unwrap().iter().any(|f| f["kind"] == "rep_xml"));
+    assert!(linked[0]["payments"].as_array().unwrap().iter().any(|p| p["source"] == "rep"));
+    let (_, body) = post(
+        format!("/api/admin/invoices/{id}/update"),
+        admin.clone(),
+        serde_json::json!({ "project_ids": [other.to_hex()] }),
+    )
+    .await;
+    assert_eq!(json(&body)["project_ids"].as_array().unwrap().len(), 1);
+    let (_, body) = get(format!("/api/admin/projects/{}/invoices", project.to_hex()), admin.clone()).await;
+    assert_eq!(json(&body).as_array().unwrap().len(), 0, "unlinked from the first project");
+    let (status, _) = post(
+        format!("/api/admin/invoices/{id}/update"),
+        admin.clone(),
+        serde_json::json!({ "project_ids": [ObjectId::new().to_hex()] }),
+    )
+    .await;
+    assert_eq!(status.as_u16(), 404, "a project that does not exist");
+    assert_eq!(get(format!("/api/admin/projects/{}/invoices", project.to_hex()), staff.clone()).await.0.as_u16(), 403);
+
     // Another company never sees it.
     let (status, _) = get(format!("/api/admin/invoices/{}", ObjectId::new().to_hex()), admin.clone()).await;
     assert_eq!(status.as_u16(), 404);

@@ -39,7 +39,8 @@ export interface InvoiceRow {
   /** Money received that has no REP yet. */
   missing_rep: boolean
   purchase_order: string | null
-  project_id: string | null
+  /** Projects this invoice bills (one PO can span several). */
+  project_ids: string[]
   notes: string | null
 }
 
@@ -164,9 +165,25 @@ export interface InvoiceUpdate {
   purchase_order?: string
   /** YYYY-MM-DD; empty clears it. */
   due_on?: string
-  project_id?: string
+  /** Replaces the whole list of linked projects. */
+  project_ids?: string[]
   status?: 'active' | 'cancelled'
 }
+
+/** The paper trail of a project: its invoices with XML, PDF, REPs and payments. */
+export const listProjectInvoices = (projectId: string) =>
+  apiGet<InvoiceDetail[]>(`/api/admin/projects/${projectId}/invoices`)
+
+export interface ProjectSuggestion {
+  project_id: string
+  title: string
+  /** Invoice lines that name a part of that project. */
+  matches: number
+}
+
+/** Projects whose part numbers appear in the invoice lines. */
+export const invoiceProjectSuggestions = (id: string) =>
+  apiGet<ProjectSuggestion[]>(`/api/admin/invoices/${id}/project_suggestions`)
 
 export const updateInvoice = (id: string, body: InvoiceUpdate) =>
   apiPost<InvoiceDetail>(`/api/admin/invoices/${id}/update`, body)
