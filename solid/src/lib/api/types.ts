@@ -694,6 +694,8 @@ export interface PlantMachine {
   name: string
   status: MachineStatus | null
   source: 'dnc' | 'movimiento' | 'manual' | 'none'
+  /** The order was set by hand, not read from the machine's run. */
+  by_hand?: boolean
   since: string | null
   note: string | null
   program: string | null

@@ -69,7 +69,7 @@ export function MachinePanel(props: {
   // Changing only the light keeps the order and setup it runs.
   const setStatus = (status: MachineStatus) => {
     const machine = m()!
-    const keep = status !== 'stopped' && machine.source === 'manual' ? machine.order : null
+    const keep = status !== 'stopped' && (machine.source === 'manual' || machine.by_hand) ? machine.order : null
     run.mutate({
       fn: () =>
         productionApi.setMachineState(machine.resource_id, {
@@ -213,7 +213,7 @@ export function MachinePanel(props: {
                       </p>
                       <StockAndCuts order={o()} canEdit={props.canEdit} />
                     </div>
-                    <Show when={props.canEdit && machine().source === 'manual'}>
+                    <Show when={props.canEdit && (machine().source === 'manual' || machine().by_hand)}>
                       <div class="flex shrink-0 flex-col items-end justify-center gap-1.5">
                         <MoveTo
                           machines={others()}

@@ -118,6 +118,8 @@ pub struct MachineData {
     /// Who put it to run here (a programmer picks the machine they work on).
     pub running_by: Option<PersonData>,
     pub programmer: Option<PersonData>,
+    /// The order was set by hand (not read from the run), so it can be finished or moved here.
+    pub by_hand: bool,
     /// What runs next here, first to run first.
     pub queue: Vec<QueueEntryData>,
 }
@@ -281,16 +283,24 @@ pub async fn api_production_plant(
         );
 
         // The order: from the live run's part number, else the one set by hand.
-        let concept_id = match (resolved.source, run) {
+        let from_run = match (resolved.source, run) {
             ("dnc" | "movimiento", Some(run)) if active => match index.match_run(run.part_key.as_deref(), run.started_at) {
                 RunMatch::Matched { shares } => shares
                     .first()
                     .and_then(|s| ObjectId::parse_str(&s.concept_id).ok()),
                 _ => None,
             },
-            ("manual", _) if active => manual_state.and_then(|m| m.concept_id),
             _ => None,
         };
+        // A live run that names no known part (the motion sensor never does) keeps the order
+        // someone put on the machine by hand (Daniel, 2026-11-19: OT-0025 on the VF-3).
+        let from_hand = match from_run {
+            None if active => manual_state
+                .filter(|m| m.status != MachineStatus::Stopped)
+                .and_then(|m| m.concept_id),
+            _ => None,
+        };
+        let concept_id = from_run.or(from_hand);
         let order = match concept_id {
             Some(c) if !orders.contains_key(&c) => {
                 let more = orders_by_id(&state, &company_id, &[c]).await;
@@ -300,7 +310,7 @@ pub async fn api_production_plant(
             Some(c) => orders.get(&c).cloned(),
             None => None,
         };
-        let by_hand = resolved.source == "manual" && order.is_some();
+        let by_hand = from_hand.is_some() && order.is_some();
         let label = manual_state.filter(|_| by_hand).and_then(|m| m.label.clone());
         let running_by = manual_state.filter(|_| by_hand).map(|m| person(m.set_by, &names));
         let queue = queues
@@ -340,6 +350,7 @@ pub async fn api_production_plant(
             label,
             running_by,
             programmer,
+            by_hand,
             queue,
         });
     }
