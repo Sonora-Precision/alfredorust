@@ -4,7 +4,7 @@
 // and pieces. `onQuery` lets the screen also filter its own list. No money.
 import { createQuery } from '@tanstack/solid-query'
 import { Search, X } from 'lucide-solid'
-import { type JSX, For, Show, createEffect, createSignal, onCleanup } from 'solid-js'
+import { type JSX, For, Show, Suspense, createEffect, createSignal, onCleanup } from 'solid-js'
 
 import * as productionApi from '../../lib/api/production'
 import { PartName } from './PartName'
@@ -79,18 +79,22 @@ export function WorkOrderSearch(props: {
       </div>
       <Show when={query().length > 0}>
         <div class="rounded-lg border border-border bg-card p-2 text-sm">
-          <Show
-            when={(results.data?.length ?? 0) > 0}
-            fallback={
-              <p class="px-1 text-xs text-muted-foreground">
-                {results.isLoading ? 'Buscando…' : 'Sin resultados.'}
-              </p>
-            }
-          >
-            <ul class="divide-y divide-border">
-              <For each={results.data}>{(hit) => <SearchHitRow hit={hit} />}</For>
-            </ul>
-          </Show>
+          {/* Its own Suspense: a new search must not suspend the whole page (and steal the
+              cursor from the box) on every keystroke. */}
+          <Suspense fallback={<p class="px-1 text-xs text-muted-foreground">Buscando…</p>}>
+            <Show
+              when={(results.data?.length ?? 0) > 0}
+              fallback={
+                <p class="px-1 text-xs text-muted-foreground">
+                  {results.isLoading ? 'Buscando…' : 'Sin resultados.'}
+                </p>
+              }
+            >
+              <ul class="divide-y divide-border">
+                <For each={results.data}>{(hit) => <SearchHitRow hit={hit} />}</For>
+              </ul>
+            </Show>
+          </Suspense>
         </div>
       </Show>
     </div>
