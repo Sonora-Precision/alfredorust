@@ -273,6 +273,7 @@ export default function Plant(): JSX.Element {
                   canEdit={canEditMachines()}
                   onClose={() => setSelectedMachine(null)}
                   onDropPart={(part, resourceId) => queuePart(part, resourceId)}
+                  machines={plant().machines ?? []}
                 />
                 <ProjectPartsTray
                   machines={plant().machines ?? []}
