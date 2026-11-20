@@ -5,7 +5,7 @@
 // programmer picks the machine they work on and finishes their job there. No money.
 import { createMutation, createQuery, useQueryClient } from '@tanstack/solid-query'
 import { ArrowDown, ArrowUp, GripVertical, Play, Plus, Square, X } from 'lucide-solid'
-import { type JSX, For, Show, createEffect, createSignal, on, onCleanup } from 'solid-js'
+import { type JSX, For, Show, Suspense, createEffect, createSignal, on, onCleanup } from 'solid-js'
 
 import { Button } from '../ui/Button'
 import { toast } from '../ui/Toast'
@@ -531,6 +531,8 @@ function AddJob(props: {
         />
       </div>
       <Show when={query().length > 0}>
+        {/* Own Suspense: a search must not suspend the page and steal the cursor. */}
+        <Suspense fallback={<p class="px-3 py-2 text-xs text-muted-foreground">Buscando…</p>}>
         <ul class="divide-y divide-border rounded-lg border border-border bg-card text-sm">
           <Show when={(results.data?.length ?? 0) === 0}>
             <li class="px-3 py-2 text-xs text-muted-foreground">
@@ -588,6 +590,7 @@ function AddJob(props: {
             )}
           </For>
         </ul>
+        </Suspense>
       </Show>
     </section>
   )
