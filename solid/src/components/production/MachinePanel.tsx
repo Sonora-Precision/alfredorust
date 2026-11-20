@@ -39,6 +39,8 @@ export function MachinePanel(props: {
   onClose: () => void
   /** A project's part dropped on this list goes to the end of the machine's queue. */
   onDropPart?: (part: PickedPart, resourceId: string) => void
+  /** Every machine of the plant, to move a job put on the wrong one. */
+  machines?: { resource_id: string; name: string }[]
 }): JSX.Element {
   const qc = useQueryClient()
   const [partOver, setPartOver] = createSignal(false)
@@ -77,6 +79,32 @@ export function MachinePanel(props: {
         }),
     })
   }
+
+  // A part put on the wrong machine comes off without counting as finished, or moves to the
+  // end of the right machine's queue (Daniel, 2026-11-19). Queued on the new machine first,
+  // so a refusal there (setup without program) leaves it where it was.
+  const clearRunning = () =>
+    productionApi.setMachineState(m()!.resource_id, { status: 'stopped', concept_id: null, label: null })
+  const moveRunning = (to: { resource_id: string; name: string }) => {
+    const machine = m()!
+    const o = machine.order!
+    run.mutate({
+      fn: async () => {
+        await productionApi.queueOnMachine(to.resource_id, o.id, machine.label)
+        await clearRunning()
+      },
+      done: `${o.folio} pasó a la fila de ${to.name}`,
+    })
+  }
+  const moveQueued = (e: { id: string; label: string | null; order: { id: string; folio: string } }, to: { resource_id: string; name: string }) =>
+    run.mutate({
+      fn: async () => {
+        await productionApi.queueOnMachine(to.resource_id, e.order.id, e.label)
+        await productionApi.removeQueueEntry(e.id)
+      },
+      done: `${e.order.folio} pasó a la fila de ${to.name}`,
+    })
+  const others = () => (props.machines ?? []).filter((x) => x.resource_id !== m()?.resource_id)
 
   // One list, top to bottom (Daniel, 2026-11-05): first what runs now, then the queue in the
   // order it will run. Drag a queued job to another place, or use the arrows.
@@ -186,7 +214,29 @@ export function MachinePanel(props: {
                       <StockAndCuts order={o()} canEdit={props.canEdit} />
                     </div>
                     <Show when={props.canEdit && machine().source === 'manual'}>
-                      <div class="shrink-0 self-center">
+                      <div class="flex shrink-0 flex-col items-end justify-center gap-1.5">
+                        <MoveTo
+                          machines={others()}
+                          folio={o().folio}
+                          disabled={run.isPending}
+                          onPick={moveRunning}
+                        />
+                        <Button
+                          variant="outline"
+                          class="h-8 px-3 text-xs"
+                          disabled={run.isPending}
+                          onClick={() => {
+                            if (
+                              window.confirm(
+                                `¿Quitar ${o().folio} de ${machine().name}? No cuenta como terminado; la máquina queda libre.`,
+                              )
+                            )
+                              run.mutate({ fn: clearRunning, done: `${o().folio} quitado de ${machine().name}` })
+                          }}
+                        >
+                          <X class="h-4 w-4" />
+                          Quitar de la máquina
+                        </Button>
                         <Button
                           variant="primary"
                           disabled={run.isPending}
@@ -279,13 +329,26 @@ export function MachinePanel(props: {
                         </Button>
                         <Button
                           variant="ghost"
+                          class="text-xs"
                           aria-label={`Quitar ${e.order.folio} de la fila`}
                           disabled={run.isPending}
-                          onClick={() => run.mutate({ fn: () => productionApi.removeQueueEntry(e.id) })}
+                          onClick={() =>
+                            run.mutate({
+                              fn: () => productionApi.removeQueueEntry(e.id),
+                              done: `${e.order.folio} quitado de ${machine().name}`,
+                            })
+                          }
                         >
                           <X class="h-4 w-4" />
+                          Quitar
                         </Button>
                       </div>
+                      <MoveTo
+                        machines={others()}
+                        folio={e.order.folio}
+                        disabled={run.isPending}
+                        onPick={(to) => moveQueued(e, to)}
+                      />
                       <Button
                         variant={i() === 0 ? 'primary' : 'outline'}
                         disabled={run.isPending}
@@ -322,6 +385,34 @@ export function MachinePanel(props: {
           </Show>
         </section>
       )}
+    </Show>
+  )
+}
+
+/** "Mover a…": sends a job to another machine's queue. */
+function MoveTo(props: {
+  machines: { resource_id: string; name: string }[]
+  folio: string
+  disabled: boolean
+  onPick: (to: { resource_id: string; name: string }) => void
+}): JSX.Element {
+  return (
+    <Show when={props.machines.length > 0}>
+      <select
+        class="h-8 max-w-[11rem] rounded-md border border-border bg-background px-2 text-xs text-foreground"
+        aria-label={`Mover ${props.folio} a otra máquina`}
+        disabled={props.disabled}
+        value=""
+        onChange={(ev) => {
+          const id = ev.currentTarget.value
+          ev.currentTarget.value = ''
+          const to = props.machines.find((x) => x.resource_id === id)
+          if (to) props.onPick(to)
+        }}
+      >
+        <option value="">Mover a…</option>
+        <For each={props.machines}>{(x) => <option value={x.resource_id}>{x.name}</option>}</For>
+      </select>
     </Show>
   )
 }
